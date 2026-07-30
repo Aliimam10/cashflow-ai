@@ -31,16 +31,23 @@ separately versioned model artefacts.
 
 ## Developer commands
 
-The foundation stage provides:
+Use the `uv`-managed environment for all project commands:
 
 ```bash
 make setup
+make format
+make format-check
+make lint
+make typecheck
 make test
+make pre-commit
+make check
 make check-import
 ```
 
-Formatting, linting, typing, and pre-commit commands will be introduced in the
-quality-tooling stage. Once present, run all applicable checks before handoff.
+Run `make format` while editing. Run `make check` and `make pre-commit` before
+handoff. Do not bypass failing checks; fix the cause or document a justified,
+reviewed exception.
 
 ## Money and date conventions
 
@@ -82,4 +89,3 @@ quality-tooling stage. Once present, run all applicable checks before handoff.
 A change is complete only when its acceptance criteria are met, relevant tests
 pass, error behaviour and public interfaces are documented, and the diff contains
 no unrelated changes or private data.
-

@@ -22,13 +22,77 @@ dependencies = []
 
 [dependency-groups]
 dev = [
+    "mypy>=1.15,<2",
+    "pre-commit>=4,<5",
     "pytest>=8.3,<9",
+    "pytest-cov>=6,<7",
+    "ruff>=0.11,<1",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/cashflow_ai"]
 
 [tool.pytest.ini_options]
-addopts = "-ra"
+addopts = [
+    "-ra",
+    "--strict-config",
+    "--strict-markers",
+    "--cov=cashflow_ai",
+    "--cov-report=term-missing",
+    "--cov-report=xml",
+    "--cov-fail-under=100",
+]
 testpaths = ["tests"]
+
+[tool.coverage.run]
+branch = true
+source = ["cashflow_ai"]
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+]
+show_missing = true
+skip_covered = true
+
+[tool.mypy]
+python_version = "3.12"
+strict = true
+files = ["src", "tests"]
+pretty = true
+show_error_codes = true
+warn_unreachable = true
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "A",
+    "B",
+    "C4",
+    "D",
+    "E",
+    "F",
+    "I",
+    "N",
+    "PT",
+    "RUF",
+    "SIM",
+    "UP",
+    "W",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**/*.py" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+docstring-code-format = true
+quote-style = "double"
 

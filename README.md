@@ -5,9 +5,9 @@ and financial-insight application. It will import transaction CSV files,
 normalise and categorise transactions, identify recurring activity and unusual
 transactions, and produce explainable balance forecasts with uncertainty.
 
-The repository is currently at the **project foundation** stage. Financial
-features, APIs, persistence, user interfaces, and machine-learning components
-have not been implemented yet.
+The repository currently contains the **project foundation and quality
+tooling**. Financial features, APIs, persistence, user interfaces, and
+machine-learning components have not been implemented yet.
 
 ## Problem
 
@@ -64,6 +64,14 @@ Run the current test suite:
 make test
 ```
 
+Format the code and run all quality checks:
+
+```bash
+make format
+make check
+make pre-commit
+```
+
 Verify that the package imports:
 
 ```bash
@@ -89,10 +97,10 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 
 ## Status and roadmap
 
-The planned implementation is deliberately incremental. The next stages will
-add quality tooling, typed settings, reproducible synthetic data, canonical data
-contracts, ingestion and persistence, analytics, evaluated ML components, APIs,
-the frontend, deployment, and release documentation.
+The planned implementation is deliberately incremental. Project quality tooling
+is configured; the next stages will add typed settings, reproducible synthetic
+data, canonical data contracts, ingestion and persistence, analytics, evaluated
+ML components, APIs, the frontend, deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.
@@ -105,4 +113,3 @@ and evaluation are present in the repository.
 ## Licence
 
 This project is licensed under the [MIT License](LICENSE).
-
