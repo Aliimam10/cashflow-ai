@@ -5,9 +5,10 @@ and financial-insight application. It will import transaction CSV files,
 normalise and categorise transactions, identify recurring activity and unusual
 transactions, and produce explainable balance forecasts with uncertainty.
 
-The repository currently contains the **project foundation and quality
-tooling**. Financial features, APIs, persistence, user interfaces, and
-machine-learning components have not been implemented yet.
+The repository currently contains the **project foundation, quality tooling,
+typed configuration, and structured logging**. Financial features, APIs,
+persistence, user interfaces, and machine-learning components have not been
+implemented yet.
 
 ## Problem
 
@@ -58,6 +59,15 @@ Install the project and development dependencies:
 make setup
 ```
 
+Copy the safe local configuration template if you need environment overrides:
+
+```bash
+cp .env.example .env
+```
+
+Configuration keys use the `CASHFLOW_` prefix. Development defaults work
+without a `.env` file.
+
 Run the current test suite:
 
 ```bash
@@ -97,10 +107,11 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 
 ## Status and roadmap
 
-The planned implementation is deliberately incremental. Project quality tooling
-is configured; the next stages will add typed settings, reproducible synthetic
-data, canonical data contracts, ingestion and persistence, analytics, evaluated
-ML components, APIs, the frontend, deployment, and release documentation.
+The planned implementation is deliberately incremental. The project foundation,
+quality tooling, typed settings, and structured logging are configured. The next
+stages will add reproducible synthetic data, canonical data contracts, ingestion
+and persistence, analytics, evaluated ML components, APIs, the frontend,
+deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

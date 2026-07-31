@@ -18,7 +18,9 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
     "Typing :: Typed",
 ]
-dependencies = []
+dependencies = [
+    "pydantic-settings>=2.10,<3",
+]
 
 [dependency-groups]
 dev = [
@@ -95,4 +97,3 @@ convention = "google"
 [tool.ruff.format]
 docstring-code-format = true
 quote-style = "double"
-
