@@ -41,6 +41,8 @@ logs/
 
 # Private imports and generated data
 uploads/
+data/demo/generated/*
+!data/demo/generated/.gitkeep
 data/raw/*
 !data/raw/.gitkeep
 data/processed/*
@@ -62,4 +64,3 @@ mlruns/
 .idea/
 .vscode/
 *.swp
-

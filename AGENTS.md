@@ -14,6 +14,8 @@ separately versioned model artefacts.
   to application or domain services.
 - Keep data ingestion, analytics, categorisation, recurrence, forecasting,
   anomaly detection, and financial planning as explicit modules.
+- Keep CSV parsing, digital-PDF extraction, and OCR as source adapters that
+  produce the same canonical transaction candidates.
 - Use typed schemas or entities at module boundaries instead of passing
   unvalidated DataFrames throughout the application.
 - Do not replace the modular-monolith architecture or introduce microservices
@@ -67,6 +69,11 @@ reviewed exception.
   appear in fixtures, screenshots, logs, or model artefacts committed to Git.
 - Do not log raw transaction descriptions in normal application logs.
 - Preserve every source row in an auditable raw-import record.
+- Preserve extraction provenance and confidence for values derived from PDFs.
+- Never persist PDF- or OCR-derived transactions until the user has reviewed
+  the extraction preview and explicitly confirmed the import.
+- Prefer embedded text/table extraction for digital PDFs; use OCR only for
+  image-based pages or when reliable text extraction is unavailable.
 - Quarantine malformed rows with useful errors; never silently discard them.
 - Automatically exclude only deterministic exact duplicates. Flag probable
   duplicates for review.

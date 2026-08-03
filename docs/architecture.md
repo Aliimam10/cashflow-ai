@@ -7,11 +7,42 @@ and important architectural decisions as those components are implemented.
 The approved high-level flow is:
 
 ```text
-data sources -> ingestion -> relational storage -> analytics and ML
-             -> FastAPI -> Streamlit
+CSV ----------------------> CSV parser -----------+
+digital bank PDF ---------> text/table extractor +--> review and confirmation
+scanned or camera PDF ----> OCR extractor --------+             |
+synthetic demo data ------> generated records ------------------+
+                                                               v
+                                            canonical validation and cleaning
+                                                               |
+                                                               v
+                                                relational storage -> analytics
+                                                               |
+                                                               v
+                                                     FastAPI -> Streamlit
 ```
 
 Business logic will remain outside API routes and Streamlit pages.
+
+## Statement-source adapters
+
+Source adapters are responsible only for turning an uploaded document into
+provisional transaction candidates plus provenance, confidence, warnings, and
+the preserved raw source representation.
+
+- CSV adapters parse encodings, infer column mappings, and preserve each row.
+- Digital-PDF adapters prefer embedded text and table structure from statements
+  downloaded from an online banking application.
+- OCR adapters handle scanned or camera-captured PDF pages and retain page,
+  region, and recognition-confidence metadata.
+
+Adapters do not categorise transactions, calculate analytics, or write accepted
+transactions directly to the database. All sources pass through the same
+canonical validation rules after the user reviews the extraction preview.
+
+PDF extraction is a two-stage decision: attempt digital extraction first, then
+fall back to OCR only for pages without usable embedded text. Low-confidence,
+ambiguous, or unreconciled rows are highlighted. No PDF-derived transaction is
+accepted until the user explicitly confirms the preview.
 
 ## Configuration
 

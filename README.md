@@ -1,14 +1,15 @@
 # CashFlow AI
 
 CashFlow AI is a planned local-first personal cash-flow forecasting, budgeting,
-and financial-insight application. It will import transaction CSV files,
-normalise and categorise transactions, identify recurring activity and unusual
-transactions, and produce explainable balance forecasts with uncertainty.
+and financial-insight application. It will import transaction CSV files and
+digital or scanned PDF bank statements, normalise and categorise transactions,
+identify recurring activity and unusual transactions, and produce explainable
+balance forecasts with uncertainty.
 
 The repository currently contains the **project foundation, quality tooling,
-typed configuration, and structured logging**. Financial features, APIs,
-persistence, user interfaces, and machine-learning components have not been
-implemented yet.
+typed configuration, structured logging, and reproducible synthetic demo-data
+generator**. CSV ingestion, APIs, persistence, user interfaces, and
+machine-learning components have not been implemented yet.
 
 ## Problem
 
@@ -23,10 +24,13 @@ and model limitations visible.
 The application will be a Python modular monolith:
 
 ```text
-CSV and synthetic demo data
-            |
-            v
-Import, validation, and normalisation
+CSV, digital PDF, scanned PDF, and synthetic demo data
+                       |
+                       v
+        Source extraction and user confirmation
+                       |
+                       v
+          Validation and normalisation
             |
             v
 Relational database
@@ -45,6 +49,21 @@ Relational database
 The planned local database is SQLite, with PostgreSQL used by the full Docker
 environment. FastAPI and Streamlit will be added in later, separately reviewed
 stages.
+
+### Planned statement import
+
+- CSV exports will use preview, column mapping, and validation.
+- Digital PDFs downloaded from online banking will use embedded text and table
+  extraction where possible.
+- Camera-captured or scanned PDFs will use OCR and retain confidence and source
+  location for extracted values.
+- Every PDF produces a reviewable draft. The user must confirm the recognised
+  dates, descriptions, amounts, and balances before transactions are imported.
+- All three input paths converge on the same canonical transaction contracts;
+  PDFs are not trusted merely because they can be converted to tabular text.
+
+PDF ingestion is planned Version 1 functionality but is not implemented in the
+current repository stage.
 
 ## Development setup
 
@@ -88,6 +107,16 @@ Verify that the package imports:
 make check-import
 ```
 
+Generate all three synthetic demonstration profiles using the default seed:
+
+```bash
+make demo-data
+```
+
+Generated files are written under `data/demo/generated/` and are intentionally
+ignored because they can be reproduced from source. Run the CLI with `--help`
+to select a profile, date range, seed, output directory, or CSV layout.
+
 ## Privacy
 
 This repository must never contain real bank statements, credentials, personal
@@ -101,6 +130,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/data_contracts.md`](docs/data_contracts.md)
+- [`docs/imports.md`](docs/imports.md)
 - [`docs/modelling.md`](docs/modelling.md)
 - [`docs/evaluation.md`](docs/evaluation.md)
 - [`docs/privacy.md`](docs/privacy.md)
@@ -108,10 +138,10 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 ## Status and roadmap
 
 The planned implementation is deliberately incremental. The project foundation,
-quality tooling, typed settings, and structured logging are configured. The next
-stages will add reproducible synthetic data, canonical data contracts, ingestion
-and persistence, analytics, evaluated ML components, APIs, the frontend,
-deployment, and release documentation.
+quality tooling, typed settings, structured logging, and privacy-safe synthetic
+data are configured. The next stages will add canonical data contracts,
+ingestion and persistence, analytics, evaluated ML components, APIs, the
+frontend, deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

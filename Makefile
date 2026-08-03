@@ -1,4 +1,4 @@
-.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import
+.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import demo-data
 
 setup:
 	uv sync --dev
@@ -28,3 +28,6 @@ check: format-check lint typecheck test
 
 check-import:
 	uv run python -c "import cashflow_ai; print(cashflow_ai.__version__)"
+
+demo-data:
+	uv run python scripts/generate_demo_data.py --profile all
