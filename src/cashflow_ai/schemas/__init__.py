@@ -6,6 +6,14 @@ from cashflow_ai.schemas.categories import (
     CategoryTaxonomy,
     load_taxonomy,
 )
+from cashflow_ai.schemas.csv_imports import (
+    CsvColumnMapping,
+    CsvColumnSuggestions,
+    CsvEncoding,
+    CsvImportPlan,
+    CsvPreview,
+    CsvPreviewRow,
+)
 from cashflow_ai.schemas.imports import (
     ExtractionMethod,
     ExtractionProvenance,
@@ -48,6 +56,12 @@ __all__ = [
     "CategoryDefinition",
     "CategoryTaxonomy",
     "CoverageStatus",
+    "CsvColumnMapping",
+    "CsvColumnSuggestions",
+    "CsvEncoding",
+    "CsvImportPlan",
+    "CsvPreview",
+    "CsvPreviewRow",
     "Currency",
     "DateRange",
     "Direction",

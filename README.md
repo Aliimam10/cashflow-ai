@@ -7,10 +7,10 @@ identify recurring activity and unusual transactions, and produce explainable
 balance forecasts with uncertainty.
 
 The repository currently contains the **project foundation, quality tooling,
-typed configuration, structured logging, and reproducible synthetic demo-data
-generator, plus canonical transaction, source-lineage, coverage, balance, and
-import contracts**. CSV/PDF parsing, APIs, persistence, user interfaces, and
-machine-learning components have not been implemented yet.
+typed configuration, structured logging, reproducible synthetic demo data,
+canonical transaction and statement contracts, and safe CSV preview and column
+mapping**. Transaction cleaning, accepted-import persistence, PDF parsing, APIs,
+user interfaces, and machine-learning components have not been implemented yet.
 
 ## Problem
 
@@ -53,7 +53,10 @@ Streamlit will be added in later, separately reviewed stages.
 
 ### Planned statement import
 
-- CSV exports will use preview, column mapping, and validation.
+- CSV exports can now be decoded and structurally validated into a limited,
+  non-persistent preview. Common headings produce mapping suggestions, while the
+  user-selected mapping supports either a signed amount or separate debit and
+  credit columns.
 - Digital PDFs downloaded from online banking will use embedded text and table
   extraction where possible.
 - Camera-captured or scanned PDFs will use OCR and retain confidence and source
@@ -63,8 +66,9 @@ Streamlit will be added in later, separately reviewed stages.
 - All three input paths converge on the same canonical transaction contracts;
   PDFs are not trusted merely because they can be converted to tabular text.
 
-PDF ingestion is planned Version 1 functionality but is not implemented in the
-current repository stage.
+The CSV preview is currently a Python service rather than an upload screen and
+does not yet create accepted transactions. PDF ingestion is planned Version 1
+functionality but is not implemented in the current repository stage.
 
 ## Development setup
 
@@ -140,9 +144,10 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 
 The planned implementation is deliberately incremental. The project foundation,
 quality tooling, typed settings, structured logging, privacy-safe synthetic
-data, and canonical data contracts are configured. The next stages will add
-CSV and PDF source adapters, persistence, analytics, evaluated ML components,
-APIs, the frontend, deployment, and release documentation.
+data, canonical data contracts, and CSV preview/mapping adapter are configured.
+The next stages will add transaction cleaning, import persistence, PDF source
+adapters, analytics, evaluated ML components, APIs, the frontend, deployment,
+and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.
