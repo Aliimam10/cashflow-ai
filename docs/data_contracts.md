@@ -1,46 +1,80 @@
-# Data Contracts
+# Data contracts
 
-Canonical transaction, import, money, date, and model-metadata contracts will be
-defined in the dedicated data-contract stage.
-
-Foundational invariants:
-
-- income and refunds are positive;
-- expenses and outgoing transfers are negative;
-- stored money uses fixed precision;
-- API dates use ISO 8601;
-- timestamps are timezone-aware;
-- raw source rows are preserved;
-- malformed required values are rejected with explicit reasons.
-
-## Planned import-source contract
-
-Commit 5 will represent the source type as CSV, digital PDF, or OCR-derived PDF.
-Every provisional row will carry:
-
-- source document and import-batch identifiers;
-- page number and source region where applicable;
-- preserved raw text or row payload;
-- extraction method;
-- field-level or row-level confidence;
-- warnings and validation errors;
-- user-review status.
-
-PDF extraction produces provisional values, not accepted transactions. Required
-dates, descriptions, amounts, signs, and balances remain editable during review.
-User confirmation is mandatory before the normal cleaning and persistence flow.
-An optional CSV representation may be exported for inspection, but CSV is not
-the internal contract between PDF extraction and validation.
-
-## Synthetic demonstration records
-
-The demo-data generator currently exposes a typed provisional transaction
-record. It uses the required sign convention, ISO-formatted dates, two-decimal
-GBP values, and explicit truth labels for categories, recurrence, anomalies, and
-duplicate examples. Commit 5 will define the canonical application schemas;
-those schemas, not the provisional generator record, will become the ingestion
+The schemas under `cashflow_ai.schemas` are the validated boundaries between
+statement-source adapters, cleaning, persistence, APIs, and later ML pipelines.
+Models reject unknown fields so accidental source data cannot silently cross a
 boundary.
 
-An exact duplicate row repeats its source transaction and does not affect the
-reconstructed balance. A probable duplicate is a separate debit and remains in
-the balance unless a later deterministic import rule proves otherwise.
+## Canonical transaction
+
+Required fields:
+
+- `transaction_date`: ISO 8601 date;
+- `description`: non-empty source description;
+- `amount`: non-zero signed decimal with at most two fractional digits;
+- `direction`: `inflow` or `outflow`, consistent with the amount sign;
+- `currency`: GBP in Version 1;
+- `account_id`: application account identifier.
+
+Optional fields:
+
+- `posting_date`;
+- `merchant`;
+- `balance_after`;
+- `external_id`;
+- `transaction_type`;
+- `category_id`.
+
+Income and refunds are positive. Expenses and outgoing transfers are negative.
+Python and storage boundaries use `Decimal`; JSON serializes money as decimal
+strings. Floating-point money input is rejected rather than silently rounded.
+Dates have no implicit timezone. Timestamps use timezone-aware ISO 8601 values.
+
+Missing transaction date, description, amount, direction, currency, or account
+rejects a canonical transaction. A missing balance, merchant, external ID,
+transaction type, or category remains valid. Provisional extraction drafts may
+be incomplete while awaiting correction.
+
+## Import documents and candidates
+
+`ImportDocument` records document identity, batch identity, source type, safe
+filename, SHA-256 hash, detected MIME type, byte size, and an aware upload time.
+The supported Version 1 source types are:
+
+- CSV;
+- digital PDF;
+- OCR-derived PDF.
+
+`ImportCandidate` preserves the raw source payload alongside a provisional
+transaction, provenance, confidence, issues, and review state. CSV candidates
+require a source row number. PDF candidates require a page number. OCR
+provenance additionally requires recognition confidence.
+
+Extraction methods must match their source: CSV row parsing, PDF embedded text,
+PDF table extraction, or OCR. PDF regions use non-negative page coordinates and
+positive dimensions.
+
+Candidates move through `pending`, `needs_review`, `confirmed`, or `rejected`.
+The `confirmed` state is invalid unless explicit user confirmation is recorded;
+confirmation cannot be attached to any other state.
+
+## Confidence and issues
+
+Confidence values are bounded from 0 to 1. At most one confidence record is
+allowed per transaction field. Confidence does not make a value correct; PDF
+and OCR rows still require user review.
+
+Issues contain a stable code, human-readable message, severity, and optional
+field reference. Later adapters will use them for missing values, ambiguous
+signs, low OCR confidence, balance mismatches, and unsupported layouts.
+
+## Category taxonomy
+
+`configs/categories.yaml` is taxonomy version `1.0`. It contains the stable
+Version 1 top-level categories, including `other` and `needs_review`. Category
+IDs and names must be unique; parent references must exist and cannot contain
+self-references or cycles.
+
+The demo-data schema remains a generator-specific labelled format. Source
+adapters convert generated or uploaded rows into the same canonical contracts;
+the demo schema is not a second application ingestion boundary.

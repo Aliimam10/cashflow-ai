@@ -1,0 +1,44 @@
+version: "1.0"
+categories:
+  - id: income
+    name: Income
+    is_income: true
+  - id: housing
+    name: Housing
+  - id: utilities
+    name: Utilities
+  - id: groceries
+    name: Groceries
+  - id: eating_out
+    name: Eating Out
+  - id: transport
+    name: Transport
+  - id: shopping
+    name: Shopping
+  - id: health
+    name: Health
+  - id: education
+    name: Education
+  - id: entertainment
+    name: Entertainment
+  - id: travel
+    name: Travel
+  - id: subscriptions
+    name: Subscriptions
+  - id: fees_and_charges
+    name: Fees and Charges
+  - id: transfers
+    name: Transfers
+    is_transfer: true
+  - id: cash_withdrawal
+    name: Cash Withdrawal
+  - id: savings
+    name: Savings
+    is_transfer: true
+  - id: refund
+    name: Refund
+    is_income: true
+  - id: other
+    name: Other
+  - id: needs_review
+    name: Needs Review

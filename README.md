@@ -8,8 +8,9 @@ balance forecasts with uncertainty.
 
 The repository currently contains the **project foundation, quality tooling,
 typed configuration, structured logging, and reproducible synthetic demo-data
-generator**. CSV ingestion, APIs, persistence, user interfaces, and
-machine-learning components have not been implemented yet.
+generator, plus canonical transaction and import contracts**. CSV/PDF parsing,
+APIs, persistence, user interfaces, and machine-learning components have not
+been implemented yet.
 
 ## Problem
 
@@ -138,10 +139,10 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 ## Status and roadmap
 
 The planned implementation is deliberately incremental. The project foundation,
-quality tooling, typed settings, structured logging, and privacy-safe synthetic
-data are configured. The next stages will add canonical data contracts,
-ingestion and persistence, analytics, evaluated ML components, APIs, the
-frontend, deployment, and release documentation.
+quality tooling, typed settings, structured logging, privacy-safe synthetic
+data, and canonical data contracts are configured. The next stages will add
+source-specific ingestion, persistence, analytics, evaluated ML components,
+APIs, the frontend, deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

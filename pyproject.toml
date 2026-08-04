@@ -20,6 +20,7 @@ classifiers = [
 ]
 dependencies = [
     "pydantic-settings>=2.10,<3",
+    "pyyaml>=6,<7",
 ]
 
 [dependency-groups]
@@ -29,6 +30,7 @@ dev = [
     "pytest>=8.3,<9",
     "pytest-cov>=6,<7",
     "ruff>=0.11,<1",
+    "types-pyyaml>=6.0.12,<7",
 ]
 
 [tool.hatch.build.targets.wheel]
