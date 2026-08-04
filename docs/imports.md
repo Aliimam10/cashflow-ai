@@ -57,9 +57,37 @@ filename. It performs no filesystem writes. The adapter:
 - detects comma, semicolon, tab, or pipe delimiters;
 - validates the full file while retaining at most 25 rows in the preview; and
 - suggests common date, description, amount, debit, credit, balance, identifier,
-  and transaction-type headings.
+  currency, and transaction-type headings.
 
 Failures use stable `CsvImportErrorCode` values so a later API or interface can
-show useful messages without parsing exception text. This stage does not parse
-dates or amounts, create `ImportCandidate` records, persist uploads, or accept
-transactions. Those behaviours belong to later cleaning and import commits.
+show useful messages without parsing exception text.
+
+## Implemented normalisation boundary
+
+`cashflow_ai.imports.normalise_csv_row` maps one preserved CSV row into the
+source-independent normaliser. It supports ISO and unambiguous UK dates, signed
+amounts or debit/credit pairs, common dot/comma thousands and decimal layouts,
+parenthesised/DR negatives, GBP symbols/codes, optional running balances, and
+optional posting dates. It performs Unicode/whitespace cleaning and conservative
+merchant cleanup while retaining every original value separately.
+
+The result contains the normaliser name/version, derived calendar fields, an
+exact source fingerprint, and a canonical matching fingerprint. Stable
+`NormalisationErrorCode` values cover missing/invalid dates or amounts,
+conflicting debit/credit values, unsupported currency, and invalid rows.
+
+## Implemented duplicate safeguards
+
+- `calculate_file_hash` and `assess_repeated_file` detect byte-identical uploads.
+- `assess_transaction_duplicate` automatically skips only exact source records
+  or equal non-empty bank transaction IDs on the same account.
+- Equal amount, merchant similarity, and date distance of zero to two days form
+  an explainable probable score. Probable matches require review.
+- Different non-empty transaction IDs prevent otherwise similar purchases from
+  being treated as probable duplicates.
+- `assess_statement_overlap` reports inclusive same-account coverage overlap
+  without claiming that all transactions in the overlap are duplicates.
+
+This stage still does not create an upload interface, persist an import, create
+database records, or accept/reject review decisions. Complete CSV import and
+quarantine behavior follow persistence in later commits.

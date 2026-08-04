@@ -147,7 +147,43 @@ these amount layouts:
 - one signed-amount column; or
 - separate debit and credit columns.
 
-Optional selections cover posting date, running balance, external ID, and
-transaction type. A source column cannot be assigned two meanings, and selected
-columns must exist in the preview. `CsvImportPlan` links the mapping to an
-account and the Commit 6 statement context; both must name the same account.
+Optional selections cover posting date, running balance, currency, external ID,
+and transaction type. A source column cannot be assigned two meanings, and
+selected columns must exist in the preview. `CsvImportPlan` links the mapping to
+an account and the Commit 6 statement context; both must name the same account.
+
+## Normalised transactions and fingerprints
+
+`OriginalTransactionValues` retains the original date, description, amount,
+debit/credit, balance, currency, identifier, type, and every raw heading/value
+pair without trimming the cell strings. `NormalisedTransaction` keeps that
+source evidence beside:
+
+- a cleaned, signed, fixed-precision `TransactionDraft`;
+- derived year, month, day, weekday, ISO week, and weekend fields;
+- the versioned parser identity;
+- an exact CSV-row or PDF-page/record identity;
+- an immutable source fingerprint; and
+- a canonical matching fingerprint.
+
+Both fingerprints are SHA-256 digests. The source fingerprint includes the
+document hash, exact location, and original values, so reprocessing does not
+change source identity. The canonical fingerprint uses cleaned account, date,
+amount, currency, and merchant/description values so different source formats
+can be compared. A canonical match is evidence for review, not proof that one
+transaction should be deleted.
+
+## Duplicate and statement-overlap results
+
+`DuplicateAssessment` has `unique`, `probable`, and `exact` states. Their only
+valid actions are respectively `keep`, `review`, and `skip`. Only the same
+source record or the same non-empty bank external ID on one account produces an
+exact result. A probable result can be produced by equal amounts, similar
+descriptions, and dates no more than two days apart. Distinct external IDs cap
+the score below the probable threshold to protect legitimate repeated
+purchases.
+
+`RepeatedFileAssessment` compares exact document hashes.
+`StatementOverlapAssessment` separately reports no, partial, or exact inclusive
+date-range overlap for statements on the same account. Overlap never silently
+removes a transaction.

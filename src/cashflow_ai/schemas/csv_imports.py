@@ -8,7 +8,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
 
 from cashflow_ai.schemas.statements import ImportContext
-from cashflow_ai.schemas.transactions import Identifier
+from cashflow_ai.schemas.transactions import Currency, Identifier
 
 ColumnName = Annotated[str, Field(min_length=1, max_length=255)]
 
@@ -33,6 +33,12 @@ class _CsvContract(BaseModel):
 class CsvPreviewRow(_CsvContract):
     """One source row retained in a limited, non-persistent preview."""
 
+    model_config = ConfigDict(
+        extra="forbid",
+        frozen=True,
+        str_strip_whitespace=False,
+    )
+
     source_row_number: PositiveInt
     values: tuple[str, ...]
 
@@ -47,6 +53,7 @@ class CsvColumnSuggestions(_CsvContract):
     debit_amount: tuple[ColumnName, ...] = ()
     credit_amount: tuple[ColumnName, ...] = ()
     running_balance: tuple[ColumnName, ...] = ()
+    currency: tuple[ColumnName, ...] = ()
     external_id: tuple[ColumnName, ...] = ()
     transaction_type: tuple[ColumnName, ...] = ()
 
@@ -75,6 +82,7 @@ class CsvColumnMapping(_CsvContract):
     credit_amount_column: ColumnName | None = None
     posting_date_column: ColumnName | None = None
     running_balance_column: ColumnName | None = None
+    currency_column: ColumnName | None = None
     external_id_column: ColumnName | None = None
     transaction_type_column: ColumnName | None = None
 
@@ -98,6 +106,7 @@ class CsvColumnMapping(_CsvContract):
                 self.credit_amount_column,
                 self.posting_date_column,
                 self.running_balance_column,
+                self.currency_column,
                 self.external_id_column,
                 self.transaction_type_column,
             )
@@ -122,6 +131,7 @@ class CsvColumnMapping(_CsvContract):
                 self.credit_amount_column,
                 self.posting_date_column,
                 self.running_balance_column,
+                self.currency_column,
                 self.external_id_column,
                 self.transaction_type_column,
             )
@@ -133,6 +143,7 @@ class CsvImportPlan(_CsvContract):
     """Account, statement context, and column choices for a CSV import."""
 
     account_id: Identifier
+    account_currency: Currency = Currency.GBP
     statement_context: ImportContext
     mapping: CsvColumnMapping
 

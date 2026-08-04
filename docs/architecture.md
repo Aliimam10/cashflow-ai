@@ -36,7 +36,7 @@ the preserved raw source representation.
 - CSV mapping contracts keep account selection, statement context, and the
   user's heading choices explicit. They support either one signed-amount column
   or a pair of debit and credit columns, plus optional posting date, running
-  balance, external ID, and transaction-type columns.
+  balance, currency, external ID, and transaction-type columns.
 - Digital-PDF adapters prefer embedded text and table structure from statements
   downloaded from an online banking application.
 - OCR adapters handle scanned or camera-captured PDF pages and retain page,
@@ -50,6 +50,23 @@ PDF extraction is a two-stage decision: attempt digital extraction first, then
 fall back to OCR only for pages without usable embedded text. Low-confidence,
 ambiguous, or unreconciled rows are highlighted. No PDF-derived transaction is
 accepted until the user explicitly confirms the preview.
+
+## Normalisation and duplicate detection
+
+The normaliser is source-independent: CSV mapping currently creates its input,
+and later digital-PDF and OCR adapters will create the same preserved-value
+contract. It converts supported UK/ISO dates and common bank amount formats,
+cleans Unicode and whitespace, removes conservative bank-description wrappers,
+derives a merchant and calendar fields, and emits a complete provisional draft.
+The exact source values and versioned parser identity remain attached.
+
+Duplicate detection consumes normalised records without mutating them. Exact
+source-row fingerprints and matching bank external IDs are high-confidence
+duplicates eligible for automatic skipping. Canonical matches, similar
+descriptions, equal amounts, and dates up to two days apart contribute to a
+probable-match score; probable matches always require review. Repeated-file and
+statement-date overlap checks are separate because overlapping statements can
+contain both duplicates and legitimate transactions.
 
 ## Configuration
 
