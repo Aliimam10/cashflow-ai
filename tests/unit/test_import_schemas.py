@@ -14,11 +14,13 @@ from cashflow_ai.schemas import (
     ImportDocument,
     ImportIssue,
     IssueSeverity,
+    ParserIdentity,
     ReviewStatus,
     SourceRegion,
     SourceType,
     TransactionDraft,
     TransactionField,
+    VerificationStatus,
 )
 
 DOCUMENT_ID = UUID("00000000-0000-0000-0000-000000000001")
@@ -67,6 +69,7 @@ def test_csv_document_and_candidate_are_valid() -> None:
     candidate = ImportCandidate.model_validate(valid_candidate_payload())
 
     assert document.source_type is SourceType.CSV
+    assert document.verification_status is VerificationStatus.UNVERIFIED
     assert candidate.review_status is ReviewStatus.PENDING
     assert candidate.source_row_number == 2
 
@@ -95,9 +98,11 @@ def test_ocr_provenance_requires_and_accepts_confidence() -> None:
         method=ExtractionMethod.OCR,
         page_number=2,
         confidence=0.72,
+        parser=ParserIdentity(name="local_ocr", version="1.0.0"),
     )
 
     assert provenance.confidence == 0.72
+    assert provenance.parser is not None
 
 
 @pytest.mark.parametrize(

@@ -8,9 +8,9 @@ balance forecasts with uncertainty.
 
 The repository currently contains the **project foundation, quality tooling,
 typed configuration, structured logging, and reproducible synthetic demo-data
-generator, plus canonical transaction and import contracts**. CSV/PDF parsing,
-APIs, persistence, user interfaces, and machine-learning components have not
-been implemented yet.
+generator, plus canonical transaction, source-lineage, coverage, balance, and
+import contracts**. CSV/PDF parsing, APIs, persistence, user interfaces, and
+machine-learning components have not been implemented yet.
 
 ## Problem
 
@@ -47,9 +47,9 @@ Relational database
       Streamlit frontend
 ```
 
-The planned local database is SQLite, with PostgreSQL used by the full Docker
-environment. FastAPI and Streamlit will be added in later, separately reviewed
-stages.
+Version 1 uses SQLite locally and in the Docker environment. PostgreSQL is
+postponed until the local single-user application is complete. FastAPI and
+Streamlit will be added in later, separately reviewed stages.
 
 ### Planned statement import
 
@@ -141,7 +141,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 The planned implementation is deliberately incremental. The project foundation,
 quality tooling, typed settings, structured logging, privacy-safe synthetic
 data, and canonical data contracts are configured. The next stages will add
-source-specific ingestion, persistence, analytics, evaluated ML components,
+CSV and PDF source adapters, persistence, analytics, evaluated ML components,
 APIs, the frontend, deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation

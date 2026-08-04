@@ -47,6 +47,15 @@ class ReviewStatus(StrEnum):
     REJECTED = "rejected"
 
 
+class VerificationStatus(StrEnum):
+    """Trust state of an imported document or derived record."""
+
+    UNVERIFIED = "unverified"
+    NEEDS_REVIEW = "needs_review"
+    VERIFIED = "verified"
+    REJECTED = "rejected"
+
+
 class IssueSeverity(StrEnum):
     """Severity of an extraction or validation issue."""
 
@@ -85,6 +94,17 @@ class SourceRegion(_ContractModel):
     height: float = Field(gt=0)
 
 
+class ParserIdentity(_ContractModel):
+    """Named and versioned parser used to produce extracted values."""
+
+    name: str = Field(min_length=1, max_length=100)
+    version: str = Field(
+        min_length=1,
+        max_length=50,
+        pattern=r"^[0-9A-Za-z][0-9A-Za-z._+-]*$",
+    )
+
+
 class ExtractionProvenance(_ContractModel):
     """Where and how a provisional row was extracted."""
 
@@ -93,6 +113,7 @@ class ExtractionProvenance(_ContractModel):
     page_number: PositiveInt | None = None
     region: SourceRegion | None = None
     confidence: Confidence | None = None
+    parser: ParserIdentity | None = None
 
     @model_validator(mode="after")
     def validate_source_method(self) -> ExtractionProvenance:
@@ -150,6 +171,7 @@ class ImportDocument(_ContractModel):
     mime_type: str = Field(min_length=1, max_length=100)
     byte_size: PositiveInt
     uploaded_at: AwareDatetime
+    verification_status: VerificationStatus = VerificationStatus.UNVERIFIED
 
     @model_validator(mode="after")
     def validate_mime_type(self) -> ImportDocument:

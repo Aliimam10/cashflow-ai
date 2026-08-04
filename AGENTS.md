@@ -16,6 +16,8 @@ separately versioned model artefacts.
   anomaly detection, and financial planning as explicit modules.
 - Keep CSV parsing, digital-PDF extraction, and OCR as source adapters that
   produce the same canonical transaction candidates.
+- Keep transaction category separate from financial role so transfers, refunds,
+  reimbursements, and cash withdrawals are not misreported as income or expense.
 - Use typed schemas or entities at module boundaries instead of passing
   unvalidated DataFrames throughout the application.
 - Do not replace the modular-monolith architecture or introduce microservices
@@ -60,6 +62,9 @@ reviewed exception.
   and outgoing transfers.
 - Use ISO 8601 in APIs, date types for dates without times, and timezone-aware
   timestamps. Make timezone conversions explicit.
+- Treat uncovered statement dates as unknown data, never as zero spending.
+- Treat a balance snapshot as evidence of an account balance, never as a
+  synthetic transaction.
 
 ## Privacy and source-data preservation
 
@@ -74,6 +79,8 @@ reviewed exception.
   the extraction preview and explicitly confirmed the import.
 - Prefer embedded text/table extraction for digital PDFs; use OCR only for
   image-based pages or when reliable text extraction is unavailable.
+- Store free-text statement notes as reference metadata only. Notes must not
+  directly change categories, financial roles, analytics, or forecasts.
 - Quarantine malformed rows with useful errors; never silently discard them.
 - Automatically exclude only deterministic exact duplicates. Flag probable
   duplicates for review.

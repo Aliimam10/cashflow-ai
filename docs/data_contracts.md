@@ -78,3 +78,55 @@ self-references or cycles.
 The demo-data schema remains a generator-specific labelled format. Source
 adapters convert generated or uploaded rows into the same canonical contracts;
 the demo schema is not a second application ingestion boundary.
+
+## Accounts and financial roles
+
+Version 1 supports current, checking, and savings accounts. Credit-card
+accounts are intentionally excluded. Currency belongs to the account; Version 1
+currently validates GBP. Later consolidated analytics may combine accounts only
+when their currencies match.
+
+Category describes what a transaction concerns. `FinancialRole` independently
+describes how it affects analytics: income, expense, transfer in, transfer out,
+refund, reimbursement, cash withdrawal, excluded, or unknown. Canonical
+transactions default to `unknown` until later rules or an explicit user decision
+assign a role. Commit 6 does not infer roles.
+
+## Source lineage and verification
+
+Extraction provenance can include a validated parser name and version alongside
+the existing source type, extraction method, page, region, and confidence.
+Documents use `unverified`, `needs_review`, `verified`, or `rejected` status.
+These fields allow a later import to be reproduced and prevent unverified OCR
+data from silently entering trusted calculations.
+
+## Statement coverage
+
+`StatementCoverage` records statement start and end dates, coverage status, and
+explicit missing periods. A complete statement cannot contain missing periods;
+a gapped statement must identify at least one. Gaps must be chronological,
+non-overlapping, and contained inside the overall statement period.
+
+Missing coverage means unknown financial activity. It must never be filled with
+zero-valued spending or income.
+
+## Statement balances and snapshots
+
+`StatementBalances` holds optional opening and closing statement balances and
+requires at least one value. It does not claim reconciliation; arithmetic
+reconciliation is implemented in a later commit.
+
+`BalanceSnapshot` records an account balance at a date and time, its source, and
+verification status. Statement and running-balance snapshots retain their source
+document ID; manually entered snapshots must not claim a source document. A
+snapshot is not a transaction and never appears in transaction totals.
+
+## Statement context
+
+`ImportContext` links an account, coverage, optional balances, structured flags,
+and an optional free-text note. Flags record explicit facts such as known
+transfers, refunds, reimbursements, cash withdrawals, unusual one-off expenses,
+possible missing dates/pages, or historical archive status.
+
+Free-text notes are inert reference metadata. They cannot assign a category or
+financial role and cannot directly change analytics, anomalies, or forecasts.
