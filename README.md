@@ -9,9 +9,10 @@ balance forecasts with uncertainty.
 The repository currently contains the **project foundation, quality tooling,
 typed configuration, structured logging, reproducible synthetic demo data,
 canonical transaction and statement contracts, safe CSV preview and mapping,
-transaction normalisation, and conservative duplicate/overlap detection**.
-Accepted-import persistence, PDF parsing, APIs, user interfaces, and
-machine-learning components have not been implemented yet.
+transaction normalisation, conservative duplicate/overlap detection, and a
+migrated local SQLite persistence layer**. Complete import orchestration, PDF
+parsing, APIs, user interfaces, and machine-learning components have not been
+implemented yet.
 
 ## Problem
 
@@ -71,7 +72,9 @@ Streamlit will be added in later, separately reviewed stages.
   PDFs are not trusted merely because they can be converted to tabular text.
 
 The CSV preview and normalisation pipeline currently consists of Python services
-rather than an upload screen and does not yet persist accepted transactions.
+rather than an upload screen. SQLite repositories and migrations are available,
+but the workflow connecting confirmed rows to persistence belongs to the next
+stage.
 PDF ingestion is planned Version 1 functionality but is not implemented in the
 current repository stage.
 
@@ -117,6 +120,18 @@ Verify that the package imports:
 make check-import
 ```
 
+Create or upgrade the local SQLite database:
+
+```bash
+make db-upgrade
+```
+
+The default is `data/cashflow.db`. Override it locally with
+`CASHFLOW_DATABASE_URL`; Version 1 accepts local SQLite URLs only. Database files
+are private runtime data and ignored by Git. `make db-downgrade` removes all
+application tables and should be used only when intentionally discarding the
+local schema.
+
 Generate all three synthetic demonstration profiles using the default seed:
 
 ```bash
@@ -141,6 +156,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/data_contracts.md`](docs/data_contracts.md)
 - [`docs/imports.md`](docs/imports.md)
+- [`docs/persistence.md`](docs/persistence.md)
 - [`docs/modelling.md`](docs/modelling.md)
 - [`docs/evaluation.md`](docs/evaluation.md)
 - [`docs/privacy.md`](docs/privacy.md)
@@ -149,11 +165,11 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 
 The planned implementation is deliberately incremental. The project foundation,
 quality tooling, typed settings, structured logging, privacy-safe synthetic
-data, canonical data contracts, and CSV preview/mapping adapter are configured.
-Transaction cleaning and duplicate/statement-overlap detection are implemented.
-The next stages will add SQLite persistence, complete imports, PDF source
-adapters, analytics, evaluated ML components, APIs, the frontend, deployment,
-and release documentation.
+data, canonical data contracts, CSV preview/mapping, transaction cleaning,
+duplicate/statement-overlap detection, and SQLite persistence are configured.
+The next stages will add complete imports, PDF source adapters, analytics,
+evaluated ML components, APIs, the frontend, deployment, and release
+documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

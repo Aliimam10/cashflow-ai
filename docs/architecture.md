@@ -68,6 +68,31 @@ probable-match score; probable matches always require review. Repeated-file and
 statement-date overlap checks are separate because overlapping statements can
 contain both duplicates and legitimate transactions.
 
+## Local persistence
+
+SQLAlchemy 2.x maps explicit persistence records to SQLite tables. Alembic owns
+schema creation and upgrades; application startup must not silently call
+`create_all`. SQLite foreign-key enforcement is enabled on every application
+connection.
+
+Persistence keeps these boundaries explicit:
+
+- raw transactions retain source payload, original text, parser identity, and
+  fingerprints;
+- verified transactions reference one raw row and contain calculation-ready
+  fixed-precision values;
+- categories and financial roles use independent foreign keys;
+- balance snapshots never share the verified-transaction table;
+- import context and statement coverage retain their own one-to-one records;
+  and
+- model metadata is independent of forecast runs and anomaly alerts so model
+  provenance can be reused and audited.
+
+Repositories accept a transaction-scoped SQLAlchemy session and flush changes
+without committing. `session_scope` owns the unit of work: it commits once on
+success and rolls back every staged change on failure. Import orchestration will
+compose these repositories in Commit 11.
+
 ## Configuration
 
 Application configuration is loaded explicitly through

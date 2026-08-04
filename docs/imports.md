@@ -88,6 +88,7 @@ conflicting debit/credit values, unsupported currency, and invalid rows.
 - `assess_statement_overlap` reports inclusive same-account coverage overlap
   without claiming that all transactions in the overlap are duplicates.
 
-This stage still does not create an upload interface, persist an import, create
-database records, or accept/reject review decisions. Complete CSV import and
-quarantine behavior follow persistence in later commits.
+The SQLite schema can now store these records, but this stage still does not
+create an upload interface, orchestrate a complete import, or accept/reject
+review decisions. Complete CSV import, summaries, and quarantine behavior belong
+to Commit 11.
