@@ -28,6 +28,20 @@ class Direction(StrEnum):
     OUTFLOW = "outflow"
 
 
+class FinancialRole(StrEnum):
+    """How a transaction contributes to financial calculations."""
+
+    INCOME = "income"
+    EXPENSE = "expense"
+    TRANSFER_IN = "transfer_in"
+    TRANSFER_OUT = "transfer_out"
+    REFUND = "refund"
+    REIMBURSEMENT = "reimbursement"
+    CASH_WITHDRAWAL = "cash_withdrawal"
+    EXCLUDED = "excluded"
+    UNKNOWN = "unknown"
+
+
 class _TransactionBase(BaseModel):
     model_config = ConfigDict(
         extra="forbid",
@@ -47,6 +61,7 @@ class _TransactionBase(BaseModel):
     transaction_type: Identifier | None = None
     direction: Direction | None = None
     category_id: CategoryId | None = None
+    financial_role: FinancialRole | None = None
 
 
 class TransactionDraft(_TransactionBase):
@@ -62,6 +77,7 @@ class CanonicalTransaction(_TransactionBase):
     currency: Currency = Currency.GBP
     account_id: Identifier
     direction: Direction
+    financial_role: FinancialRole = FinancialRole.UNKNOWN
 
     @model_validator(mode="after")
     def validate_signed_direction(self) -> CanonicalTransaction:
