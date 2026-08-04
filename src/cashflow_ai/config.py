@@ -80,6 +80,7 @@ class _SettingsInput(BaseSettings):
     log_level: str | None = None
     log_format: LogFormat | None = None
     timezone: str = "UTC"
+    database_url: str = "sqlite:///data/cashflow.db"
 
 
 class Settings(BaseModel):
@@ -93,6 +94,7 @@ class Settings(BaseModel):
     log_level: str
     log_format: LogFormat
     timezone: str
+    database_url: str = "sqlite:///data/cashflow.db"
 
     @field_validator("log_level")
     @classmethod
@@ -114,6 +116,15 @@ class Settings(BaseModel):
         except ZoneInfoNotFoundError as exc:
             msg = f"unknown IANA timezone: {value!r}"
             raise ValueError(msg) from exc
+        return value
+
+    @field_validator("database_url")
+    @classmethod
+    def validate_database_url(cls, value: str) -> str:
+        """Restrict Version 1 persistence to local SQLite URLs."""
+        if not value.startswith(("sqlite:///", "sqlite+pysqlite:///")):
+            msg = "Version 1 database URL must use local SQLite"
+            raise ValueError(msg)
         return value
 
 
@@ -155,4 +166,5 @@ def load_settings(
         log_level=profile.log_level if raw.log_level is None else raw.log_level,
         log_format=profile.log_format if raw.log_format is None else raw.log_format,
         timezone=raw.timezone,
+        database_url=raw.database_url,
     )

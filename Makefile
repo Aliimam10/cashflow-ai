@@ -1,4 +1,4 @@
-.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import demo-data
+.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import demo-data db-upgrade db-downgrade
 
 setup:
 	uv sync --dev
@@ -31,3 +31,9 @@ check-import:
 
 demo-data:
 	uv run python scripts/generate_demo_data.py --profile all
+
+db-upgrade:
+	uv run alembic upgrade head
+
+db-downgrade:
+	uv run alembic downgrade base

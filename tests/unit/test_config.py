@@ -13,6 +13,7 @@ CONFIG_ENVIRONMENT_VARIABLES = (
     "CASHFLOW_LOG_LEVEL",
     "CASHFLOW_LOG_FORMAT",
     "CASHFLOW_TIMEZONE",
+    "CASHFLOW_DATABASE_URL",
 )
 
 
@@ -33,6 +34,7 @@ def test_development_profile_is_the_default(tmp_path: Path) -> None:
     assert settings.log_level == "DEBUG"
     assert settings.log_format is LogFormat.CONSOLE
     assert settings.timezone == "UTC"
+    assert settings.database_url == "sqlite:///data/cashflow.db"
 
 
 @pytest.mark.parametrize(
@@ -69,6 +71,7 @@ def test_environment_variables_override_profile_defaults(
     monkeypatch.setenv("CASHFLOW_LOG_LEVEL", "warning")
     monkeypatch.setenv("CASHFLOW_LOG_FORMAT", "console")
     monkeypatch.setenv("CASHFLOW_TIMEZONE", "Europe/London")
+    monkeypatch.setenv("CASHFLOW_DATABASE_URL", "sqlite:///data/test.db")
 
     settings = load_settings(env_file=tmp_path / "missing.env")
 
@@ -77,6 +80,7 @@ def test_environment_variables_override_profile_defaults(
     assert settings.log_level == "WARNING"
     assert settings.log_format is LogFormat.CONSOLE
     assert settings.timezone == "Europe/London"
+    assert settings.database_url == "sqlite:///data/test.db"
 
 
 def test_explicit_environment_takes_precedence(
@@ -151,4 +155,14 @@ def test_invalid_timezone_fails_clearly(
     monkeypatch.setenv("CASHFLOW_TIMEZONE", "Mars/Olympus")
 
     with pytest.raises(ValidationError, match="unknown IANA timezone"):
+        load_settings(env_file=tmp_path / "missing.env")
+
+
+def test_non_sqlite_database_url_is_rejected(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.setenv("CASHFLOW_DATABASE_URL", "postgresql://localhost/cashflow")
+
+    with pytest.raises(ValidationError, match="must use local SQLite"):
         load_settings(env_file=tmp_path / "missing.env")

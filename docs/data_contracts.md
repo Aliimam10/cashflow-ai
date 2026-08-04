@@ -187,3 +187,23 @@ purchases.
 `StatementOverlapAssessment` separately reports no, partial, or exact inclusive
 date-range overlap for statements on the same account. Overlap never silently
 removes a transaction.
+
+## Relational persistence contracts
+
+The initial SQLite migration creates tables for the user profile, accounts,
+import batches and context, statement coverage, balance snapshots, raw and
+verified transactions, categories, financial roles, user flags, category
+corrections, recurring series, budgets, savings goals, scenarios, forecast runs,
+anomaly alerts, and model metadata.
+
+Money columns use `NUMERIC(18, 2)` and return `Decimal`. Verified transaction
+constraints reject zero amounts and sign/direction disagreement. Timestamps are
+accepted only when timezone-aware, stored as UTC, and restored with explicit UTC
+awareness. Dates without times use SQL `DATE`.
+
+Database constraints supplement rather than replace Pydantic validation. They
+enforce supported account/source/status values, statement and forecast date
+ordering, exact file/source-fingerprint uniqueness, foreign-key integrity, and
+one verified record per raw transaction. Deleting the local profile cascades to
+its private financial records; stable lookup rows use restrictive or nulling
+foreign keys where silent deletion would damage meaning.

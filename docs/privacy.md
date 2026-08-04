@@ -23,6 +23,16 @@ Repository rules:
 - Keep original source values beside cleaned values locally so a user can audit
   or correct the import; never overwrite the original evidence during cleaning.
 
+## Local database
+
+- The Version 1 database is a local SQLite file and must remain ignored by Git.
+- Treat the database, SQLite journal/WAL files, backups, and inspection exports
+  as private financial data.
+- SQLite foreign keys are enabled so deletion and lineage rules are enforced
+  rather than silently leaving orphaned private records.
+- Database migrations define structure only; they must never contain real user
+  data or statement-derived fixtures.
+
 ## PDF and OCR handling
 
 - Process digital and scanned statements locally by default.
