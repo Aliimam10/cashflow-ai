@@ -56,9 +56,11 @@ def assert_error(
 
 def test_utf8_signed_amount_preview_is_limited_but_counts_every_row() -> None:
     content = (
-        "Transaction Date,Narrative,Amount,Running Balance,Transaction ID,Type\n"
-        "2026-07-01,Caf\N{LATIN SMALL LETTER E WITH ACUTE},-4.50,995.50,txn-1,Card\n"
-        "2026-07-02,Salary,1200.00,2195.50,txn-2,Transfer\n"
+        "Transaction Date,Narrative,Amount,Running Balance,Currency,"
+        "Transaction ID,Type\n"
+        "2026-07-01,Caf\N{LATIN SMALL LETTER E WITH ACUTE},-4.50,995.50,"
+        "GBP,txn-1,Card\n"
+        "2026-07-02,Salary,1200.00,2195.50,GBP,txn-2,Transfer\n"
     ).encode()
 
     preview = preview_csv(content, "../../July statement.csv", preview_rows=1)
@@ -74,6 +76,7 @@ def test_utf8_signed_amount_preview_is_limited_but_counts_every_row() -> None:
     assert preview.suggestions.description == ("Narrative",)
     assert preview.suggestions.signed_amount == ("Amount",)
     assert preview.suggestions.running_balance == ("Running Balance",)
+    assert preview.suggestions.currency == ("Currency",)
     assert preview.suggestions.external_id == ("Transaction ID",)
     assert preview.suggestions.transaction_type == ("Type",)
 

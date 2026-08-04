@@ -76,6 +76,7 @@ _COLUMN_ALIASES: Final[dict[str, frozenset[str]]] = {
     "running_balance": frozenset(
         {"account balance", "balance", "balance gbp", "running balance"}
     ),
+    "currency": frozenset({"currency", "currency code", "iso currency"}),
     "external_id": frozenset(
         {"external id", "reference id", "transaction id", "txn id"}
     ),

@@ -13,6 +13,16 @@ Repository rules:
 - preserve raw imported rows for local audit while applying safe retention and
   deletion controls in later stages.
 
+## Import fingerprints
+
+- Treat source and canonical transaction fingerprints as private local metadata.
+- A SHA-256 fingerprint helps compare exact or cleaned values but is not
+  anonymisation and must not be published as a privacy substitute.
+- Do not place original transaction descriptions or fingerprint input material
+  in normal logs.
+- Keep original source values beside cleaned values locally so a user can audit
+  or correct the import; never overwrite the original evidence during cleaning.
+
 ## PDF and OCR handling
 
 - Process digital and scanned statements locally by default.

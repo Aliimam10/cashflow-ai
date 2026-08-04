@@ -32,6 +32,7 @@ def test_signed_amount_mapping_and_import_plan_are_valid() -> None:
         signed_amount_column="Amount",
         posting_date_column="Posting Date",
         running_balance_column="Balance",
+        currency_column="Currency",
         external_id_column="Transaction ID",
         transaction_type_column="Type",
     )
@@ -48,6 +49,7 @@ def test_signed_amount_mapping_and_import_plan_are_valid() -> None:
         "Amount",
         "Posting Date",
         "Balance",
+        "Currency",
         "Transaction ID",
         "Type",
     )
