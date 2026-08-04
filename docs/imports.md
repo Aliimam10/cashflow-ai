@@ -42,3 +42,24 @@ separate safeguards.
 
 No real bank statement will be committed as a fixture. PDF tests will be built
 from synthetic transaction histories and fictional statement templates.
+
+## Implemented CSV preview boundary
+
+`cashflow_ai.imports.preview_csv` accepts CSV bytes and the client-supplied
+filename. It performs no filesystem writes. The adapter:
+
+- reduces path-like filenames to a safe basename and requires a `.csv` suffix;
+- rejects empty files and files above the default 10 MiB limit;
+- detects UTF-8, UTF-8 with a byte-order mark, UTF-16 with a byte-order mark,
+  and Windows-1252;
+- rejects binary control characters, duplicate or blank headings, more than 100
+  columns, structurally inconsistent rows, and excessively large cells;
+- detects comma, semicolon, tab, or pipe delimiters;
+- validates the full file while retaining at most 25 rows in the preview; and
+- suggests common date, description, amount, debit, credit, balance, identifier,
+  and transaction-type headings.
+
+Failures use stable `CsvImportErrorCode` values so a later API or interface can
+show useful messages without parsing exception text. This stage does not parse
+dates or amounts, create `ImportCandidate` records, persist uploads, or accept
+transactions. Those behaviours belong to later cleaning and import commits.

@@ -130,3 +130,24 @@ possible missing dates/pages, or historical archive status.
 
 Free-text notes are inert reference metadata. They cannot assign a category or
 financial role and cannot directly change analytics, anomalies, or forecasts.
+
+## CSV preview and mapping
+
+`CsvPreview` is a non-persistent structural view of one uploaded CSV. It records
+the safe basename, byte size, detected encoding and delimiter, unique source
+headings, total data-row count, truncation state, and up to the configured
+number of preview rows. Preview rows retain their logical source-row number and
+unmodified string values; dates and money are deliberately not cleaned yet.
+
+`CsvColumnSuggestions` reports exact matches for common bank-export headings.
+Suggestions are advisory: the user or later UI still selects the mapping.
+`CsvColumnMapping` requires a transaction date, description, and exactly one of
+these amount layouts:
+
+- one signed-amount column; or
+- separate debit and credit columns.
+
+Optional selections cover posting date, running balance, external ID, and
+transaction type. A source column cannot be assigned two meanings, and selected
+columns must exist in the preview. `CsvImportPlan` links the mapping to an
+account and the Commit 6 statement context; both must name the same account.

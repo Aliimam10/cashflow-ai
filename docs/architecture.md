@@ -29,7 +29,14 @@ Source adapters are responsible only for turning an uploaded document into
 provisional transaction candidates plus provenance, confidence, warnings, and
 the preserved raw source representation.
 
-- CSV adapters parse encodings, infer column mappings, and preserve each row.
+- The CSV preview adapter accepts in-memory bytes, enforces a 10 MiB default
+  limit, detects supported text encodings and delimiters, validates every row's
+  shape, and retains only the first 25 rows in its returned preview. It writes
+  neither the upload nor accepted transactions to storage.
+- CSV mapping contracts keep account selection, statement context, and the
+  user's heading choices explicit. They support either one signed-amount column
+  or a pair of debit and credit columns, plus optional posting date, running
+  balance, external ID, and transaction-type columns.
 - Digital-PDF adapters prefer embedded text and table structure from statements
   downloaded from an online banking application.
 - OCR adapters handle scanned or camera-captured PDF pages and retain page,
