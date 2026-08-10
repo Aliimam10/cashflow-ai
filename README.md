@@ -10,9 +10,9 @@ The repository currently contains the **project foundation, quality tooling,
 typed configuration, structured logging, reproducible synthetic demo data,
 canonical transaction and statement contracts, safe CSV preview and mapping,
 transaction normalisation, conservative duplicate/overlap detection, a migrated
-local SQLite persistence layer, and atomic confirmed CSV imports**. PDF
-parsing, APIs, user interfaces, and machine-learning components have not been
-implemented yet.
+local SQLite persistence layer, atomic confirmed CSV imports, and review-only
+embedded-text PDF extraction**. OCR, PDF persistence, APIs, user interfaces,
+and machine-learning components have not been implemented yet.
 
 ## Problem
 
@@ -67,8 +67,10 @@ Streamlit will be added in later, separately reviewed stages.
   probable duplicates await review, and invalid rows retain structured issues.
   Statement context, gaps, overlaps, notes, flags, and reported balances are
   stored with the import, and an unexpected failure rolls everything back.
-- Digital PDFs downloaded from online banking will use embedded text and table
-  extraction where possible.
+- Digital PDFs downloaded from online banking can now be validated and parsed
+  in memory using embedded text, recognised tables, or a conservative generic
+  fallback. Candidates retain their source page and require review; no PDF row
+  is persisted yet.
 - Camera-captured or scanned PDFs will use OCR and retain confidence and source
   location for extracted values.
 - Every PDF produces a reviewable draft. The user must confirm the recognised
@@ -78,8 +80,8 @@ Streamlit will be added in later, separately reviewed stages.
 
 The CSV preview, confirmation, and persistence pipeline currently consists of
 Python services rather than an upload or review screen.
-PDF ingestion is planned Version 1 functionality but is not implemented in the
-current repository stage.
+Text-based PDF preview extraction is also a Python service. OCR and the shared
+PDF confirmation/persistence workflow remain later stages.
 
 ## Development setup
 
@@ -170,9 +172,9 @@ The planned implementation is deliberately incremental. The project foundation,
 quality tooling, typed settings, structured logging, privacy-safe synthetic
 data, canonical data contracts, CSV preview/mapping, transaction cleaning,
 duplicate/statement-overlap detection, and SQLite persistence are configured.
-Confirmed CSV imports are implemented. The next stages will add PDF source
-adapters, analytics, evaluated ML components, APIs, the frontend, deployment,
-and release documentation.
+Confirmed CSV imports and text-PDF extraction are implemented. The next stages
+will add scanned-PDF OCR and statement review, analytics, evaluated ML
+components, APIs, the frontend, deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

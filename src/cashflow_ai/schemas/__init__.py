@@ -52,6 +52,12 @@ from cashflow_ai.schemas.normalisation import (
     SourceFieldValue,
     SourceRecordIdentity,
 )
+from cashflow_ai.schemas.pdf_imports import (
+    PdfExtractionLayout,
+    PdfPageExtraction,
+    PdfTransactionCandidate,
+    TextPdfPreview,
+)
 from cashflow_ai.schemas.statements import (
     BalanceSnapshot,
     BalanceSnapshotSource,
@@ -111,6 +117,9 @@ __all__ = [
     "NormalisedTransaction",
     "OriginalTransactionValues",
     "ParserIdentity",
+    "PdfExtractionLayout",
+    "PdfPageExtraction",
+    "PdfTransactionCandidate",
     "RepeatedFileAssessment",
     "ReviewStatus",
     "SourceFieldValue",
@@ -123,6 +132,7 @@ __all__ = [
     "StatementOverlapAssessment",
     "StatementOverlapStatus",
     "StatementRecord",
+    "TextPdfPreview",
     "TransactionDraft",
     "TransactionField",
     "VerificationStatus",

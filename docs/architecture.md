@@ -37,8 +37,11 @@ the preserved raw source representation.
   user's heading choices explicit. They support either one signed-amount column
   or a pair of debit and credit columns, plus optional posting date, running
   balance, currency, external ID, and transaction-type columns.
-- Digital-PDF adapters prefer embedded text and table structure from statements
-  downloaded from an online banking application.
+- The digital-PDF adapter validates in-memory documents with PyMuPDF, requires
+  usable embedded text on every page, extracts recognised tables with
+  pdfplumber, and uses a conservative text fallback for supported layouts.
+  It returns review-only candidates and never writes PDF-derived rows directly
+  to persistence.
 - OCR adapters handle scanned or camera-captured PDF pages and retain page,
   region, and recognition-confidence metadata.
 
@@ -55,6 +58,10 @@ PDF extraction is a two-stage decision: attempt digital extraction first, then
 fall back to OCR only for pages without usable embedded text. Low-confidence,
 ambiguous, or unreconciled rows are highlighted. No PDF-derived transaction is
 accepted until the user explicitly confirms the preview.
+
+At the current stage, a page requiring OCR stops the digital extractor and
+reports its page number. Commit 13 will implement the local OCR fallback; the
+current adapter does not partially accept the remaining pages.
 
 ## Normalisation and duplicate detection
 

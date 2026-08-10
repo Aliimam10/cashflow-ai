@@ -121,5 +121,43 @@ locations, repeated-file status, and coverage findings.
 
 Any unexpected database error rolls back the complete import. There is still no
 upload interface or row-review screen; those presentation layers will call this
-service later. Digital-PDF and OCR adapters remain future stages and must reuse
-the confirmation and preservation safeguards rather than bypassing them.
+service later. The PDF confirmation/persistence workflow and OCR adapter remain
+future stages and must reuse the confirmation and preservation safeguards
+rather than bypassing them.
+
+## Implemented embedded-text PDF extraction
+
+`cashflow_ai.imports.extract_text_pdf` accepts in-memory PDF bytes, a
+client-supplied filename, MIME type, and destination account identity. It uses
+PyMuPDF to validate and inspect the document and pdfplumber to extract tables.
+The adapter:
+
+- sanitises the filename and requires a `.pdf` suffix, `application/pdf` MIME
+  type, a PDF signature, and a supported byte/page limit;
+- rejects malformed and password-protected documents;
+- measures embedded alphanumeric text on every page and reports the page
+  numbers that require OCR instead of silently omitting them;
+- preserves embedded page text in the in-memory preview and performs no
+  filesystem or database writes;
+- recognises common date, description, signed amount, debit, credit, balance,
+  currency, identifier, and transaction-type table headings;
+- removes repeated table headers and page-number rows;
+- joins description-only continuation rows to the preceding transaction;
+- falls back to conservative pipe-delimited or spatially separated text rows
+  when no supported table is detected;
+- extracts common statement-period, opening-balance, and closing-balance labels;
+  and
+- returns source-independent transaction drafts with exact page/record lineage,
+  source and canonical fingerprints, parser identity, and structured issues.
+
+Every PDF candidate remains `needs_review`. Invalid dates, amounts, currencies,
+or row combinations keep their extracted source values but do not receive a
+canonical fingerprint. Generic fallback use and missing/invalid statement
+metadata are surfaced as warnings. This stage does not persist PDF rows or
+accept a confirmation decision.
+
+Support is deliberately limited to tested bordered tables and a conservative
+generic text fallback. PDF layouts are not standardised, so this implementation
+does not claim universal bank compatibility. Image-only, scanned,
+camera-captured, and mixed PDFs containing pages without enough embedded text
+are routed to the future OCR adapter rather than partially imported.

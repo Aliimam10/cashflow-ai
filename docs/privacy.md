@@ -49,3 +49,9 @@ Repository rules:
 - Display extraction confidence and require review before persistence.
 - Do not send statement pages or OCR text to an external service without a
   separate, explicit privacy decision and user consent.
+
+The embedded-text PDF adapter processes uploaded bytes in memory. It returns
+page text and candidates only to the caller for a later local review and does
+not create temporary files, database records, or normal-log entries. Committed
+tests generate fictional PDFs in memory; the repository contains no real or
+redacted personal statement fixture.
