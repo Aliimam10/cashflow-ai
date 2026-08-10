@@ -20,7 +20,9 @@ classifiers = [
 ]
 dependencies = [
     "alembic>=1.16,<2",
+    "pdfplumber>=0.11,<1",
     "pydantic-settings>=2.10,<3",
+    "pymupdf>=1.26,<2",
     "pyyaml>=6,<7",
     "sqlalchemy>=2.0,<3",
 ]
@@ -47,6 +49,11 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-report=xml",
     "--cov-fail-under=100",
+]
+filterwarnings = [
+    "ignore:builtin type SwigPyObject has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type SwigPyPacked has no __module__ attribute:DeprecationWarning",
+    "ignore:builtin type swigvarlink has no __module__ attribute:DeprecationWarning",
 ]
 testpaths = ["tests"]
 

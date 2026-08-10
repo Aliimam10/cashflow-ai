@@ -122,7 +122,8 @@ def _optional_clean_text(value: str | None) -> str | None:
     return cleaned or None
 
 
-def _parse_date(value: str, field_name: str) -> date:
+def parse_date_value(value: str, field_name: str = "date") -> date:
+    """Parse one supported ISO or unambiguous UK date value."""
     cleaned = _clean_unicode_text(value)
     for date_format in _DATE_FORMATS:
         try:
@@ -138,7 +139,7 @@ def _parse_date(value: str, field_name: str) -> date:
 def _optional_date(value: str | None, field_name: str) -> date | None:
     if value is None or not _clean_unicode_text(value):
         return None
-    return _parse_date(value, field_name)
+    return parse_date_value(value, field_name)
 
 
 def _decimal_separator_normalise(value: str) -> str:
@@ -166,7 +167,8 @@ def _decimal_separator_normalise(value: str) -> str:
     )
 
 
-def _parse_amount(value: str, field_name: str) -> Decimal:
+def parse_amount_value(value: str, field_name: str = "amount") -> Decimal:
+    """Parse one supported bank money representation into fixed precision."""
     cleaned = _clean_unicode_text(value).upper()
     if not cleaned:
         raise TransactionNormalisationError(
@@ -206,12 +208,12 @@ def _parse_amount(value: str, field_name: str) -> Decimal:
 def _optional_amount(value: str | None, field_name: str) -> Decimal | None:
     if value is None or not _clean_unicode_text(value):
         return None
-    return _parse_amount(value, field_name)
+    return parse_amount_value(value, field_name)
 
 
 def _resolve_amount(original: OriginalTransactionValues) -> Decimal:
     if original.signed_amount_text is not None:
-        amount = _parse_amount(original.signed_amount_text, "signed amount")
+        amount = parse_amount_value(original.signed_amount_text, "signed amount")
     else:
         debit = _optional_amount(original.debit_amount_text, "debit amount")
         credit = _optional_amount(original.credit_amount_text, "credit amount")
@@ -304,7 +306,7 @@ def normalise_transaction(
     parser: ParserIdentity = NORMALISER_IDENTITY,
 ) -> NormalisedTransaction:
     """Clean one preserved source record into a provisional transaction draft."""
-    transaction_date = _parse_date(
+    transaction_date = parse_date_value(
         original.transaction_date_text,
         "transaction date",
     )

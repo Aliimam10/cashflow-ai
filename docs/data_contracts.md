@@ -181,6 +181,26 @@ amount, currency, and merchant/description values so different source formats
 can be compared. A canonical match is evidence for review, not proof that one
 transaction should be deleted.
 
+## Text-PDF extraction previews
+
+`TextPdfPreview` represents one non-persistent, embedded-text PDF extraction.
+It records the safe filename, byte size and SHA-256 hash, complete ordered page
+previews, extraction layouts, optional statement coverage and balances,
+document-level issues, and one or more transaction candidates. The contract
+always requires later user confirmation.
+
+`PdfPageExtraction` preserves each page's embedded text, alphanumeric character
+count, and number of tables detected. `PdfTransactionCandidate` retains the
+original extracted cells, provisional canonical draft, source and canonical
+fingerprints, page/record identity, extraction method, parser version, and
+structured issues. Its source identity and provenance must both identify the
+same digital-PDF page. A candidate without a canonical fingerprint must explain
+the failure through at least one issue, and all candidates remain in
+`needs_review` state.
+
+The extraction layout is either `table` or `generic_text`. The latter is a
+review warning, not evidence that the layout was interpreted perfectly.
+
 ## Duplicate and statement-overlap results
 
 `DuplicateAssessment` has `unique`, `probable`, and `exact` states. Their only
