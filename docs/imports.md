@@ -121,9 +121,9 @@ locations, repeated-file status, and coverage findings.
 
 Any unexpected database error rolls back the complete import. There is still no
 upload interface or row-review screen; those presentation layers will call this
-service later. The PDF confirmation/persistence workflow and OCR adapter remain
-future stages and must reuse the confirmation and preservation safeguards
-rather than bypassing them.
+service later. The PDF confirmation/persistence workflow remains a future stage
+and must reuse the confirmation and preservation safeguards rather than
+bypassing them.
 
 ## Implemented embedded-text PDF extraction
 
@@ -160,4 +160,41 @@ Support is deliberately limited to tested bordered tables and a conservative
 generic text fallback. PDF layouts are not standardised, so this implementation
 does not claim universal bank compatibility. Image-only, scanned,
 camera-captured, and mixed PDFs containing pages without enough embedded text
-are routed to the future OCR adapter rather than partially imported.
+are rejected with their page numbers so the caller can route them to the local
+OCR adapter rather than partially importing them.
+
+## Implemented scanned-PDF OCR extraction
+
+`cashflow_ai.imports.extract_ocr_pdf` accepts in-memory PDF bytes and the same
+filename, MIME type, account identity, size, and page constraints as the digital
+adapter. It requires the open-source Tesseract executable locally and uses
+pytesseract only as the Python integration layer. No statement page or OCR text
+is sent to a third-party service.
+
+For every page, the adapter:
+
+- detects whether the original PDF lacks usable embedded text;
+- renders an RGB image with PyMuPDF using a bounded DPI and pixel count;
+- detects and corrects 0, 90, 180, or 270-degree orientation when Tesseract can
+  determine it;
+- converts the page to grayscale, improves contrast, and applies a binary
+  threshold only to low-contrast pages;
+- runs OCR locally and reconstructs ordered lines from recognised words;
+- retains raw OCR lines plus page-level, line-level, candidate, and provisional
+  field confidence;
+- extracts supported transaction rows through the same source-independent
+  normalisation and fingerprinting boundary as CSV and digital PDF rows; and
+- closes all in-memory page images after processing without creating or
+  retaining application-managed temporary image files.
+
+Invalid recognised values remain visible with structured errors and without a
+fabricated canonical fingerprint. Every candidate remains `needs_review`; this
+stage does not define a confidence acceptance threshold, reconcile statement
+balances, accept corrections, or persist transactions. Those decisions belong
+to the statement review stage.
+
+The OCR adapter can be called for image-only statements and reports when usable
+embedded text was also present. It currently OCRs every page supplied to it,
+rather than silently combining extraction methods. OCR quality varies with
+image resolution, focus, lighting, fonts, and layout, so the implementation
+does not claim universal bank compatibility.

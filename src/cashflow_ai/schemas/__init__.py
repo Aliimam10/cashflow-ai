@@ -52,6 +52,12 @@ from cashflow_ai.schemas.normalisation import (
     SourceFieldValue,
     SourceRecordIdentity,
 )
+from cashflow_ai.schemas.ocr_imports import (
+    OcrLineExtraction,
+    OcrPageExtraction,
+    OcrPdfPreview,
+    OcrTransactionCandidate,
+)
 from cashflow_ai.schemas.pdf_imports import (
     PdfExtractionLayout,
     PdfPageExtraction,
@@ -115,6 +121,10 @@ __all__ = [
     "IssueSeverity",
     "NormalisationErrorCode",
     "NormalisedTransaction",
+    "OcrLineExtraction",
+    "OcrPageExtraction",
+    "OcrPdfPreview",
+    "OcrTransactionCandidate",
     "OriginalTransactionValues",
     "ParserIdentity",
     "PdfExtractionLayout",

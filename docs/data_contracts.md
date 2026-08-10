@@ -201,6 +201,26 @@ the failure through at least one issue, and all candidates remain in
 The extraction layout is either `table` or `generic_text`. The latter is a
 review warning, not evidence that the layout was interpreted perfectly.
 
+## Scanned-PDF OCR previews
+
+`OcrPdfPreview` is the non-persistent result of local scanned-statement OCR. It
+binds the preview to the exact PDF hash, contains every ordered page, contains
+one or more review-only transaction candidates, and states that no temporary
+OCR artefacts were retained.
+
+Each `OcrPageExtraction` records rendered dimensions and DPI, applied rotation,
+optional orientation confidence, whether thresholding was used, aggregate page
+confidence, raw OCR text, and ordered `OcrLineExtraction` records. Raw page text
+must exactly equal those lines joined in order. Line confidence is the mean of
+the recognised word confidences and remains advisory.
+
+`OcrTransactionCandidate` preserves the original recognised values separately
+from its provisional canonical draft. It records PDF page/record identity,
+contributing OCR line numbers, source and canonical fingerprints, field
+confidence, parser identity, structured issues, and OCR provenance. Its page
+and line references must exist in the preview, and every candidate remains
+`needs_review` even when it normalises successfully.
+
 ## Duplicate and statement-overlap results
 
 `DuplicateAssessment` has `unique`, `probable`, and `exact` states. Their only
