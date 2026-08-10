@@ -55,3 +55,11 @@ page text and candidates only to the caller for a later local review and does
 not create temporary files, database records, or normal-log entries. Committed
 tests generate fictional PDFs in memory; the repository contains no real or
 redacted personal statement fixture.
+
+The OCR adapter also processes pages locally. PyMuPDF renders each page into an
+in-memory image; Pillow performs rotation and preprocessing; and pytesseract
+invokes the locally installed Tesseract executable. Page images are closed after
+each recognition attempt, no application-managed image file is retained, and
+raw OCR text is returned only in the review preview. The adapter does not write
+OCR results to the database or normal logs. Automated tests create fictional
+scanned PDFs in memory and use a deterministic fake OCR engine.

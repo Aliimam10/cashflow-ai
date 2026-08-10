@@ -42,8 +42,10 @@ the preserved raw source representation.
   pdfplumber, and uses a conservative text fallback for supported layouts.
   It returns review-only candidates and never writes PDF-derived rows directly
   to persistence.
-- OCR adapters handle scanned or camera-captured PDF pages and retain page,
-  region, and recognition-confidence metadata.
+- The OCR adapter renders scanned or camera-captured PDF pages in memory,
+  corrects detected orientation, preprocesses them with Pillow, and invokes
+  local Tesseract through pytesseract. It retains raw recognised lines and
+  page, line, field, and candidate confidence metadata.
 
 Adapters do not categorise transactions, calculate analytics, or write accepted
 transactions directly to the database. All sources pass through the same
@@ -59,15 +61,21 @@ fall back to OCR only for pages without usable embedded text. Low-confidence,
 ambiguous, or unreconciled rows are highlighted. No PDF-derived transaction is
 accepted until the user explicitly confirms the preview.
 
-At the current stage, a page requiring OCR stops the digital extractor and
-reports its page number. Commit 13 will implement the local OCR fallback; the
-current adapter does not partially accept the remaining pages.
+The digital extractor reports the exact pages that require OCR. The OCR adapter
+can process an image-only document independently and returns the same canonical
+transaction shape with OCR provenance. It currently OCRs every page supplied to
+it; page-by-page combination of digital and OCR results belongs to the shared
+review workflow rather than silently mixing evidence inside either adapter.
+
+Rendered images, grayscale copies, and thresholded copies remain in process
+memory and are closed after each page. The application does not retain page
+image files or OCR artefacts after the preview call.
 
 ## Normalisation and duplicate detection
 
-The normaliser is source-independent: CSV mapping currently creates its input,
-and later digital-PDF and OCR adapters will create the same preserved-value
-contract. It converts supported UK/ISO dates and common bank amount formats,
+The normaliser is source-independent: CSV mapping plus the digital-PDF and OCR
+adapters create the same preserved-value contract. It converts supported UK/ISO
+dates and common bank amount formats,
 cleans Unicode and whitespace, removes conservative bank-description wrappers,
 derives a merchant and calendar fields, and emits a complete provisional draft.
 The exact source values and versioned parser identity remain attached.

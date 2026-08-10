@@ -11,8 +11,8 @@ typed configuration, structured logging, reproducible synthetic demo data,
 canonical transaction and statement contracts, safe CSV preview and mapping,
 transaction normalisation, conservative duplicate/overlap detection, a migrated
 local SQLite persistence layer, atomic confirmed CSV imports, and review-only
-embedded-text PDF extraction**. OCR, PDF persistence, APIs, user interfaces,
-and machine-learning components have not been implemented yet.
+embedded-text and scanned-PDF extraction**. PDF persistence, APIs, user
+interfaces, and machine-learning components have not been implemented yet.
 
 ## Problem
 
@@ -71,8 +71,9 @@ Streamlit will be added in later, separately reviewed stages.
   in memory using embedded text, recognised tables, or a conservative generic
   fallback. Candidates retain their source page and require review; no PDF row
   is persisted yet.
-- Camera-captured or scanned PDFs will use OCR and retain confidence and source
-  location for extracted values.
+- Camera-captured or scanned PDFs can now be rendered and processed with local
+  Tesseract OCR. Raw recognised lines, page and line confidence, rotation, and
+  preprocessing metadata are retained for review.
 - Every PDF produces a reviewable draft. The user must confirm the recognised
   dates, descriptions, amounts, and balances before transactions are imported.
 - All three input paths converge on the same canonical transaction contracts;
@@ -80,8 +81,8 @@ Streamlit will be added in later, separately reviewed stages.
 
 The CSV preview, confirmation, and persistence pipeline currently consists of
 Python services rather than an upload or review screen.
-Text-based PDF preview extraction is also a Python service. OCR and the shared
-PDF confirmation/persistence workflow remain later stages.
+Text-based and scanned-PDF preview extraction are Python services. The shared
+PDF correction, confirmation, and persistence workflow remains a later stage.
 
 ## Development setup
 
@@ -89,6 +90,21 @@ Prerequisites:
 
 - Python 3.12
 - [`uv`](https://docs.astral.sh/uv/)
+- Tesseract OCR on `PATH` for scanned or camera-captured PDF extraction
+
+On macOS, install the local OCR executable with:
+
+```bash
+brew install tesseract
+```
+
+Tesseract is not needed for CSV or embedded-text PDF imports. If it is missing,
+the OCR adapter returns a specific setup error rather than sending the document
+to an external service. Verify the local executable after installation with:
+
+```bash
+make check-ocr
+```
 
 Install the project and development dependencies:
 
@@ -172,9 +188,10 @@ The planned implementation is deliberately incremental. The project foundation,
 quality tooling, typed settings, structured logging, privacy-safe synthetic
 data, canonical data contracts, CSV preview/mapping, transaction cleaning,
 duplicate/statement-overlap detection, and SQLite persistence are configured.
-Confirmed CSV imports and text-PDF extraction are implemented. The next stages
-will add scanned-PDF OCR and statement review, analytics, evaluated ML
-components, APIs, the frontend, deployment, and release documentation.
+Confirmed CSV imports, text-PDF extraction, and local scanned-PDF OCR are
+implemented. The next stages will add statement reconciliation and review,
+analytics, evaluated ML components, APIs, the frontend, deployment, and release
+documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

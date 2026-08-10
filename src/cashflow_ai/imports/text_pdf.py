@@ -73,6 +73,10 @@ class PdfImportErrorCode(StrEnum):
     TOO_MANY_PAGES = "too_many_pages"
     PAGE_TEXT_TOO_LARGE = "page_text_too_large"
     OCR_REQUIRED = "ocr_required"
+    OCR_ENGINE_UNAVAILABLE = "ocr_engine_unavailable"
+    OCR_FAILED = "ocr_failed"
+    OCR_NO_TEXT = "ocr_no_text"
+    OCR_PAGE_TOO_LARGE = "ocr_page_too_large"
     NO_TRANSACTIONS = "no_transactions"
 
 
