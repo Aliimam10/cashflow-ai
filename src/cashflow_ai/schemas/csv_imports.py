@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 from enum import StrEnum
-from typing import Annotated
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, PositiveInt, model_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    PositiveInt,
+    model_validator,
+)
 
-from cashflow_ai.schemas.statements import ImportContext
+from cashflow_ai.schemas.normalisation import Sha256Digest
+from cashflow_ai.schemas.statements import DateRange, ImportContext
 from cashflow_ai.schemas.transactions import Currency, Identifier
 
 ColumnName = Annotated[str, Field(min_length=1, max_length=255)]
@@ -63,12 +71,26 @@ class CsvPreview(_CsvContract):
 
     source_filename: str = Field(min_length=1, max_length=255)
     byte_size: PositiveInt
+    file_hash: Sha256Digest
     encoding: CsvEncoding
     delimiter: str = Field(min_length=1, max_length=1)
     columns: tuple[ColumnName, ...] = Field(min_length=1)
     rows: tuple[CsvPreviewRow, ...] = Field(min_length=1)
     total_data_rows: PositiveInt
     truncated: bool
+    suggestions: CsvColumnSuggestions
+
+
+class CsvDocument(_CsvContract):
+    """Fully validated CSV structure retained in memory for confirmation."""
+
+    source_filename: str = Field(min_length=1, max_length=255)
+    byte_size: PositiveInt
+    file_hash: Sha256Digest
+    encoding: CsvEncoding
+    delimiter: str = Field(min_length=1, max_length=1)
+    columns: tuple[ColumnName, ...] = Field(min_length=1)
+    rows: tuple[CsvPreviewRow, ...] = Field(min_length=1)
     suggestions: CsvColumnSuggestions
 
 
@@ -152,5 +174,63 @@ class CsvImportPlan(_CsvContract):
         """Prevent a statement from being imported into a different account."""
         if self.account_id != self.statement_context.account_id:
             msg = "selected account must match the statement-context account"
+            raise ValueError(msg)
+        return self
+
+
+class CsvImportConfirmation(_CsvContract):
+    """Explicit user approval tied to the exact bytes previously previewed."""
+
+    preview_file_hash: Sha256Digest
+    user_confirmed: Literal[True]
+    confirmed_at: AwareDatetime
+
+
+class CsvCoverageAnalysis(_CsvContract):
+    """How a confirmed statement changes known coverage for its account."""
+
+    previous_statement_count: int = Field(ge=0)
+    previous_missing_periods: tuple[DateRange, ...] = ()
+    new_missing_periods: tuple[DateRange, ...] = ()
+    overlap_periods: tuple[DateRange, ...] = ()
+    disconnected_range: bool = False
+
+
+class CsvImportSummary(_CsvContract):
+    """Stable result counts and review locations for one confirmed import."""
+
+    import_batch_id: Identifier
+    file_hash: Sha256Digest
+    rows_read: PositiveInt
+    new_transactions: int = Field(ge=0)
+    exact_duplicates_skipped: int = Field(ge=0)
+    probable_duplicates: int = Field(ge=0)
+    rejected_rows: int = Field(ge=0)
+    repeated_file: bool = False
+    exact_duplicate_rows: tuple[PositiveInt, ...] = ()
+    probable_duplicate_rows: tuple[PositiveInt, ...] = ()
+    rejected_row_numbers: tuple[PositiveInt, ...] = ()
+    coverage: CsvCoverageAnalysis
+
+    @model_validator(mode="after")
+    def validate_row_accounting(self) -> CsvImportSummary:
+        """Require every source row to appear in exactly one result count."""
+        accounted = (
+            self.new_transactions
+            + self.exact_duplicates_skipped
+            + self.probable_duplicates
+            + self.rejected_rows
+        )
+        if accounted != self.rows_read:
+            msg = "CSV import result counts must account for every source row"
+            raise ValueError(msg)
+        if self.exact_duplicates_skipped != len(self.exact_duplicate_rows):
+            msg = "exact duplicate count must match its source row numbers"
+            raise ValueError(msg)
+        if self.probable_duplicates != len(self.probable_duplicate_rows):
+            msg = "probable duplicate count must match its source row numbers"
+            raise ValueError(msg)
+        if self.rejected_rows != len(self.rejected_row_numbers):
+            msg = "rejected count must match its source row numbers"
             raise ValueError(msg)
         return self

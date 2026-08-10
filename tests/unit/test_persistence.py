@@ -193,6 +193,8 @@ def test_raw_and_verified_transactions_remain_separate_and_decimal_safe(
 
         assert repository.get_raw_by_source_fingerprint(SOURCE_FINGERPRINT) is raw
         assert repository.get_raw_by_source_fingerprint("d" * 64) is None
+        assert repository.list_raw_for_batch("batch-1") == (raw,)
+        assert repository.list_raw_for_batch("missing") == ()
         assert repository.list_verified_for_account("missing") == ()
         assert repository.list_verified_for_account("account-1") == (verified,)
 

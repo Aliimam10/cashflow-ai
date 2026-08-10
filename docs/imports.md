@@ -62,6 +62,11 @@ filename. It performs no filesystem writes. The adapter:
 Failures use stable `CsvImportErrorCode` values so a later API or interface can
 show useful messages without parsing exception text.
 
+The preview includes a SHA-256 identity of the exact bytes. Confirmation must
+refer to that identity; changing the file after preview invalidates approval.
+`parse_csv_document` revalidates the same constraints and retains all rows in
+memory for the confirmed import. Uploaded bytes are not written to disk.
+
 ## Implemented normalisation boundary
 
 `cashflow_ai.imports.normalise_csv_row` maps one preserved CSV row into the
@@ -88,7 +93,33 @@ conflicting debit/credit values, unsupported currency, and invalid rows.
 - `assess_statement_overlap` reports inclusive same-account coverage overlap
   without claiming that all transactions in the overlap are duplicates.
 
-The SQLite schema can now store these records, but this stage still does not
-create an upload interface, orchestrate a complete import, or accept/reject
-review decisions. Complete CSV import, summaries, and quarantine behavior belong
-to Commit 11.
+## Implemented confirmed CSV import
+
+`cashflow_ai.imports.persist_confirmed_csv` joins parsing, mapping,
+normalisation, duplicate assessment, statement metadata, and local persistence
+in one database transaction. It requires:
+
+- an existing destination account whose currency matches the import plan;
+- a supported CSV MIME type;
+- a valid mapping for the re-parsed full document; and
+- explicit, timezone-stamped confirmation of the exact preview hash.
+
+Every source row is accounted for. Valid unique rows retain a raw record and
+create a separate verified transaction. Exact duplicate rows are preserved but
+skipped. Probable duplicates are preserved with their score and reasons and
+remain outside verified calculations pending review. Invalid rows are preserved
+with stable validation issues and no fabricated canonical fingerprint. A
+byte-identical file returns its existing batch without adding a second copy.
+
+The same unit of work records the import batch, structured statement flags,
+inert note, statement coverage, explicit missing periods, and any reported
+opening or closing balance snapshots. Coverage analysis distinguishes gaps that
+already existed from gaps newly exposed by the incoming statement, reports date
+overlap, and flags disconnected ranges. The returned `CsvImportSummary` reports
+rows read, new transactions, exact and probable duplicates, rejected row
+locations, repeated-file status, and coverage findings.
+
+Any unexpected database error rolls back the complete import. There is still no
+upload interface or row-review screen; those presentation layers will call this
+service later. Digital-PDF and OCR adapters remain future stages and must reuse
+the confirmation and preservation safeguards rather than bypassing them.

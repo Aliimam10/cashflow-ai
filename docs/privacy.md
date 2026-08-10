@@ -22,6 +22,10 @@ Repository rules:
   in normal logs.
 - Keep original source values beside cleaned values locally so a user can audit
   or correct the import; never overwrite the original evidence during cleaning.
+- Bind confirmation to the exact preview hash. Re-parse the confirmed bytes and
+  reject the operation if that identity changed.
+- Preserve rejected and probable-duplicate rows locally for audit, but exclude
+  them from verified calculations until an explicit later review decision.
 
 ## Local database
 

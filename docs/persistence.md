@@ -44,6 +44,11 @@ The initial migration creates 19 application tables covering:
 The migration seeds the repository's Version 1 categories and financial roles.
 No personal or synthetic transaction rows are seeded.
 
+Migration `0002` makes canonical fingerprints optional only for quarantined raw
+rows, adds structured issue storage to those rows, and distinguishes opening
+from closing statement balance snapshots. It does not add tables or seed
+financial data.
+
 ## Repository transactions
 
 Repositories stage and flush records but do not commit independently. Callers
@@ -54,3 +59,8 @@ stored imports.
 SQLite foreign keys are enabled for every application connection. Exact file
 hashes, source fingerprints, account names, transaction IDs, and other
 domain-specific identities have database uniqueness constraints where required.
+
+The confirmed CSV import is one such unit of work. It records document,
+statement context, coverage, balances, preserved rows, and accepted transactions
+together; any exception rolls all of them back. Invalid and probable-duplicate
+rows remain auditable raw evidence but do not receive a verified transaction.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import hashlib
 import re
 from codecs import BOM_UTF8, BOM_UTF16_BE, BOM_UTF16_LE
 from collections.abc import Iterable
@@ -12,6 +13,7 @@ from typing import Final
 
 from cashflow_ai.schemas.csv_imports import (
     CsvColumnSuggestions,
+    CsvDocument,
     CsvEncoding,
     CsvImportPlan,
     CsvPreview,
@@ -38,6 +40,11 @@ class CsvImportErrorCode(StrEnum):
     MALFORMED_CSV = "malformed_csv"
     INVALID_HEADER = "invalid_header"
     MISSING_MAPPED_COLUMN = "missing_mapped_column"
+    CONFIRMATION_REQUIRED = "confirmation_required"
+    PREVIEW_CHANGED = "preview_changed"
+    UNSUPPORTED_MIME_TYPE = "unsupported_mime_type"
+    ACCOUNT_NOT_FOUND = "account_not_found"
+    ACCOUNT_CURRENCY_MISMATCH = "account_currency_mismatch"
 
 
 class CsvImportError(ValueError):
@@ -203,6 +210,34 @@ def preview_csv(
             CsvImportErrorCode.INVALID_LIMIT,
             "file-size and preview-row limits must be positive",
         )
+    document = parse_csv_document(content, filename, max_bytes=max_bytes)
+    preview = document.rows[:preview_rows]
+    return CsvPreview(
+        source_filename=document.source_filename,
+        byte_size=document.byte_size,
+        file_hash=document.file_hash,
+        encoding=document.encoding,
+        delimiter=document.delimiter,
+        columns=document.columns,
+        rows=preview,
+        total_data_rows=len(document.rows),
+        truncated=len(document.rows) > len(preview),
+        suggestions=document.suggestions,
+    )
+
+
+def parse_csv_document(
+    content: bytes,
+    filename: str,
+    *,
+    max_bytes: int = DEFAULT_MAX_CSV_BYTES,
+) -> CsvDocument:
+    """Validate and retain every source row for a confirmed CSV import."""
+    if max_bytes < 1:
+        raise CsvImportError(
+            CsvImportErrorCode.INVALID_LIMIT,
+            "file-size limit must be positive",
+        )
     safe_filename = _safe_filename(filename)
     if not content:
         raise CsvImportError(CsvImportErrorCode.EMPTY_FILE, "CSV file is empty")
@@ -218,7 +253,7 @@ def preview_csv(
     reader = csv.reader(StringIO(text, newline=""), delimiter=delimiter, strict=True)
     try:
         headers = _validate_headers(next(reader))
-        preview: list[CsvPreviewRow] = []
+        rows: list[CsvPreviewRow] = []
         total_data_rows = 0
         for raw_row in reader:
             total_data_rows += 1
@@ -232,13 +267,12 @@ def preview_csv(
                     CsvImportErrorCode.MALFORMED_CSV,
                     f"CSV row {total_data_rows + 1} contains an oversized value",
                 )
-            if total_data_rows <= preview_rows:
-                preview.append(
-                    CsvPreviewRow(
-                        source_row_number=total_data_rows + 1,
-                        values=tuple(raw_row),
-                    )
+            rows.append(
+                CsvPreviewRow(
+                    source_row_number=total_data_rows + 1,
+                    values=tuple(raw_row),
                 )
+            )
     except csv.Error as exc:
         raise CsvImportError(
             CsvImportErrorCode.MALFORMED_CSV,
@@ -250,21 +284,20 @@ def preview_csv(
             CsvImportErrorCode.EMPTY_FILE,
             "CSV contains headings but no data rows",
         )
-    return CsvPreview(
+    return CsvDocument(
         source_filename=safe_filename,
         byte_size=len(content),
+        file_hash=hashlib.sha256(content).hexdigest(),
         encoding=encoding,
         delimiter=delimiter,
         columns=headers,
-        rows=tuple(preview),
-        total_data_rows=total_data_rows,
-        truncated=total_data_rows > len(preview),
+        rows=tuple(rows),
         suggestions=_suggest_columns(headers),
     )
 
 
 def validate_csv_import_plan(
-    preview: CsvPreview,
+    preview: CsvPreview | CsvDocument,
     plan: CsvImportPlan,
 ) -> CsvImportPlan:
     """Require every selected mapping column to exist in the preview."""

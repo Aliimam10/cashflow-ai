@@ -2,13 +2,19 @@
 
 from __future__ import annotations
 
-from sqlalchemy import select
+from datetime import date, timedelta
+
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
+from sqlalchemy.sql.elements import ColumnElement
 
 from cashflow_ai.persistence.models import (
     AccountRecord,
+    BalanceSnapshotRecord,
     ImportBatchRecord,
+    ImportContextRecord,
     RawTransactionRecord,
+    StatementCoverageRecord,
     UserProfileRecord,
     VerifiedTransactionRecord,
 )
@@ -135,3 +141,123 @@ class TransactionRepository:
             )
         )
         return tuple(self._session.scalars(statement))
+
+    def list_raw_for_batch(
+        self,
+        import_batch_id: str,
+    ) -> tuple[RawTransactionRecord, ...]:
+        """Return all preserved rows for one document in source order."""
+        statement = (
+            select(RawTransactionRecord)
+            .where(RawTransactionRecord.import_batch_id == import_batch_id)
+            .order_by(RawTransactionRecord.source_row_number, RawTransactionRecord.id)
+        )
+        return tuple(self._session.scalars(statement))
+
+    def list_duplicate_candidates(
+        self,
+        *,
+        account_id: str,
+        transaction_date: date,
+        external_id: str | None,
+    ) -> tuple[tuple[VerifiedTransactionRecord, RawTransactionRecord], ...]:
+        """Find nearby or same-ID verified rows suitable for duplicate scoring."""
+        nearby = VerifiedTransactionRecord.transaction_date.between(
+            transaction_date - timedelta(days=2),
+            transaction_date + timedelta(days=2),
+        )
+        candidate_filter: ColumnElement[bool] = nearby
+        if external_id is not None:
+            candidate_filter = or_(
+                nearby,
+                func.lower(VerifiedTransactionRecord.external_id)
+                == external_id.casefold(),
+            )
+        statement = (
+            select(VerifiedTransactionRecord, RawTransactionRecord)
+            .join(
+                RawTransactionRecord,
+                RawTransactionRecord.id == VerifiedTransactionRecord.raw_transaction_id,
+            )
+            .where(
+                VerifiedTransactionRecord.account_id == account_id,
+                candidate_filter,
+            )
+            .order_by(
+                VerifiedTransactionRecord.transaction_date,
+                VerifiedTransactionRecord.id,
+            )
+        )
+        return tuple(self._session.execute(statement).tuples())
+
+
+class StatementRepository:
+    """Persist inert statement context, coverage, and balance evidence."""
+
+    def __init__(self, session: Session) -> None:
+        """Bind repository operations to one transaction-scoped session."""
+        self._session = session
+
+    def add_context(self, context: ImportContextRecord) -> ImportContextRecord:
+        """Stage and flush one statement context."""
+        self._session.add(context)
+        self._session.flush()
+        return context
+
+    def add_coverage(
+        self,
+        coverage: StatementCoverageRecord,
+    ) -> StatementCoverageRecord:
+        """Stage and flush one statement coverage record."""
+        self._session.add(coverage)
+        self._session.flush()
+        return coverage
+
+    def add_balance(self, balance: BalanceSnapshotRecord) -> BalanceSnapshotRecord:
+        """Stage and flush one statement balance snapshot."""
+        self._session.add(balance)
+        self._session.flush()
+        return balance
+
+    def list_coverages_for_account(
+        self,
+        account_id: str,
+        *,
+        exclude_batch_id: str | None = None,
+    ) -> tuple[StatementCoverageRecord, ...]:
+        """Return prior coverage for an account in chronological order."""
+        statement = (
+            select(StatementCoverageRecord)
+            .join(
+                ImportContextRecord,
+                ImportContextRecord.id == StatementCoverageRecord.import_context_id,
+            )
+            .join(
+                ImportBatchRecord,
+                ImportBatchRecord.id == ImportContextRecord.import_batch_id,
+            )
+            .where(ImportBatchRecord.account_id == account_id)
+        )
+        if exclude_batch_id is not None:
+            statement = statement.where(ImportBatchRecord.id != exclude_batch_id)
+        statement = statement.order_by(
+            StatementCoverageRecord.statement_start_date,
+            StatementCoverageRecord.statement_end_date,
+            StatementCoverageRecord.id,
+        )
+        return tuple(self._session.scalars(statement))
+
+    def get_coverage_for_batch(
+        self,
+        import_batch_id: str,
+    ) -> StatementCoverageRecord | None:
+        """Return the statement coverage belonging to one import batch."""
+        statement = (
+            select(StatementCoverageRecord)
+            .join(
+                ImportContextRecord,
+                ImportContextRecord.id == StatementCoverageRecord.import_context_id,
+            )
+            .where(ImportContextRecord.import_batch_id == import_batch_id)
+        )
+        return self._session.scalar(statement)

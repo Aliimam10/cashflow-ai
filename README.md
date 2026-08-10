@@ -9,8 +9,8 @@ balance forecasts with uncertainty.
 The repository currently contains the **project foundation, quality tooling,
 typed configuration, structured logging, reproducible synthetic demo data,
 canonical transaction and statement contracts, safe CSV preview and mapping,
-transaction normalisation, conservative duplicate/overlap detection, and a
-migrated local SQLite persistence layer**. Complete import orchestration, PDF
+transaction normalisation, conservative duplicate/overlap detection, a migrated
+local SQLite persistence layer, and atomic confirmed CSV imports**. PDF
 parsing, APIs, user interfaces, and machine-learning components have not been
 implemented yet.
 
@@ -62,6 +62,11 @@ Streamlit will be added in later, separately reviewed stages.
 - Mapped rows can be normalised into provisional drafts while retaining exact
   source text, parser identity, source fingerprint, and matching fingerprint.
   Exact duplicates can be distinguished from probable matches requiring review.
+- A confirmed CSV can now be stored atomically. Every row is preserved; unique
+  valid rows become verified transactions, exact duplicates are skipped,
+  probable duplicates await review, and invalid rows retain structured issues.
+  Statement context, gaps, overlaps, notes, flags, and reported balances are
+  stored with the import, and an unexpected failure rolls everything back.
 - Digital PDFs downloaded from online banking will use embedded text and table
   extraction where possible.
 - Camera-captured or scanned PDFs will use OCR and retain confidence and source
@@ -71,10 +76,8 @@ Streamlit will be added in later, separately reviewed stages.
 - All three input paths converge on the same canonical transaction contracts;
   PDFs are not trusted merely because they can be converted to tabular text.
 
-The CSV preview and normalisation pipeline currently consists of Python services
-rather than an upload screen. SQLite repositories and migrations are available,
-but the workflow connecting confirmed rows to persistence belongs to the next
-stage.
+The CSV preview, confirmation, and persistence pipeline currently consists of
+Python services rather than an upload or review screen.
 PDF ingestion is planned Version 1 functionality but is not implemented in the
 current repository stage.
 
@@ -167,9 +170,9 @@ The planned implementation is deliberately incremental. The project foundation,
 quality tooling, typed settings, structured logging, privacy-safe synthetic
 data, canonical data contracts, CSV preview/mapping, transaction cleaning,
 duplicate/statement-overlap detection, and SQLite persistence are configured.
-The next stages will add complete imports, PDF source adapters, analytics,
-evaluated ML components, APIs, the frontend, deployment, and release
-documentation.
+Confirmed CSV imports are implemented. The next stages will add PDF source
+adapters, analytics, evaluated ML components, APIs, the frontend, deployment,
+and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

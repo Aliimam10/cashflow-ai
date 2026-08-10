@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from datetime import date
 from enum import StrEnum
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from cashflow_ai.schemas.money import Money
 from cashflow_ai.schemas.normalisation import Sha256Digest
 from cashflow_ai.schemas.statements import DateRange, StatementCoverage
 from cashflow_ai.schemas.transactions import Identifier
@@ -39,6 +41,21 @@ class DuplicateReason(StrEnum):
     DIFFERENT_EXTERNAL_ID = "different_external_id"
     DIFFERENT_ACCOUNT = "different_account"
     INSUFFICIENT_MATCH = "insufficient_match"
+
+
+class DuplicateFacts(BaseModel):
+    """Minimal persisted or in-memory fields used for duplicate matching."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    source_fingerprint: Sha256Digest
+    canonical_fingerprint: Sha256Digest
+    account_id: Identifier
+    transaction_date: date
+    amount: Money
+    description: str = Field(min_length=1, max_length=500)
+    merchant: str | None = Field(default=None, min_length=1, max_length=500)
+    external_id: Identifier | None = None
 
 
 class DuplicateAssessment(BaseModel):

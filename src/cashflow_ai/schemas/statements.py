@@ -104,6 +104,7 @@ class StatementBalances(_StatementModel):
 class BalanceSnapshotSource(StrEnum):
     """Origin of a balance observation."""
 
+    STATEMENT_OPENING = "statement_opening"
     STATEMENT_CLOSING = "statement_closing"
     RUNNING_BALANCE = "running_balance"
     MANUAL = "manual"

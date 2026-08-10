@@ -8,7 +8,9 @@ from pydantic import ValidationError
 from cashflow_ai.schemas import (
     CoverageStatus,
     CsvColumnMapping,
+    CsvCoverageAnalysis,
     CsvImportPlan,
+    CsvImportSummary,
     ImportContext,
     StatementCoverage,
 )
@@ -114,3 +116,35 @@ def test_import_plan_rejects_context_for_a_different_account() -> None:
             statement_context=statement_context("account-2"),
             mapping=mapping,
         )
+
+
+@pytest.mark.parametrize(
+    ("updates", "message"),
+    [
+        ({"new_transactions": 0}, "account for every"),
+        ({"exact_duplicate_rows": ()}, "exact duplicate count"),
+        ({"probable_duplicate_rows": ()}, "probable duplicate count"),
+        ({"rejected_row_numbers": ()}, "rejected count"),
+    ],
+)
+def test_import_summary_requires_consistent_counts_and_row_locations(
+    updates: dict[str, object],
+    message: str,
+) -> None:
+    values: dict[str, object] = {
+        "import_batch_id": "batch-1",
+        "file_hash": "a" * 64,
+        "rows_read": 4,
+        "new_transactions": 1,
+        "exact_duplicates_skipped": 1,
+        "probable_duplicates": 1,
+        "rejected_rows": 1,
+        "exact_duplicate_rows": (2,),
+        "probable_duplicate_rows": (3,),
+        "rejected_row_numbers": (4,),
+        "coverage": CsvCoverageAnalysis(previous_statement_count=0),
+    }
+    values.update(updates)
+
+    with pytest.raises(ValidationError, match=message):
+        CsvImportSummary.model_validate(values)
