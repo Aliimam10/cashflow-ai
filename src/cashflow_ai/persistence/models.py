@@ -170,7 +170,8 @@ class BalanceSnapshotRecord(Base):
     __table_args__ = (
         CheckConstraint("currency = 'GBP'", name="ck_balance_snapshots_currency"),
         CheckConstraint(
-            "source IN ('statement_closing', 'running_balance', 'manual')",
+            "source IN "
+            "('statement_opening', 'statement_closing', 'running_balance', 'manual')",
             name="ck_balance_snapshots_source",
         ),
         CheckConstraint(
@@ -236,7 +237,10 @@ class RawTransactionRecord(Base):
     parser_name: Mapped[str] = mapped_column(String(100))
     parser_version: Mapped[str] = mapped_column(String(50))
     source_fingerprint: Mapped[str] = mapped_column(String(HASH_LENGTH), unique=True)
-    canonical_fingerprint: Mapped[str] = mapped_column(String(HASH_LENGTH), index=True)
+    canonical_fingerprint: Mapped[str | None] = mapped_column(
+        String(HASH_LENGTH), index=True
+    )
+    issues_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     review_status: Mapped[str] = mapped_column(String(20), default="pending")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
 

@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import date
 from difflib import SequenceMatcher
-from typing import cast
 
 from cashflow_ai.schemas.duplicates import (
     DuplicateAction,
     DuplicateAssessment,
+    DuplicateFacts,
     DuplicateReason,
     DuplicateStatus,
     RepeatedFileAssessment,
@@ -34,15 +33,35 @@ def assess_repeated_file(
     )
 
 
-def _matching_description(transaction: NormalisedTransaction) -> str:
+def duplicate_facts_from_normalised(
+    transaction: NormalisedTransaction,
+) -> DuplicateFacts:
+    """Project a normalised transaction onto the duplicate-matching contract."""
     draft = transaction.draft
-    value = draft.merchant or draft.description or ""
+    assert draft.account_id is not None
+    assert draft.transaction_date is not None
+    assert draft.amount is not None
+    assert draft.description is not None
+    return DuplicateFacts(
+        source_fingerprint=transaction.source_fingerprint,
+        canonical_fingerprint=transaction.canonical_fingerprint,
+        account_id=draft.account_id,
+        transaction_date=draft.transaction_date,
+        amount=draft.amount,
+        description=draft.description,
+        merchant=draft.merchant,
+        external_id=draft.external_id,
+    )
+
+
+def _matching_description(transaction: DuplicateFacts) -> str:
+    value = transaction.merchant or transaction.description
     return " ".join(value.casefold().split())
 
 
 def _unique_assessment(
-    incoming: NormalisedTransaction,
-    existing: NormalisedTransaction,
+    incoming: DuplicateFacts,
+    existing: DuplicateFacts,
     reason: DuplicateReason,
 ) -> DuplicateAssessment:
     return DuplicateAssessment(
@@ -55,13 +74,11 @@ def _unique_assessment(
     )
 
 
-def assess_transaction_duplicate(
-    incoming: NormalisedTransaction,
-    existing: NormalisedTransaction,
+def assess_duplicate_facts(
+    incoming: DuplicateFacts,
+    existing: DuplicateFacts,
 ) -> DuplicateAssessment:
-    """Compare two transactions without auto-skipping ambiguous matches."""
-    incoming_draft = incoming.draft
-    existing_draft = existing.draft
+    """Compare stored matching facts without auto-skipping ambiguous matches."""
     if incoming.source_fingerprint == existing.source_fingerprint:
         return DuplicateAssessment(
             incoming_source_fingerprint=incoming.source_fingerprint,
@@ -71,15 +88,15 @@ def assess_transaction_duplicate(
             score=1,
             reasons=(DuplicateReason.SAME_SOURCE_RECORD,),
         )
-    if incoming_draft.account_id != existing_draft.account_id:
+    if incoming.account_id != existing.account_id:
         return _unique_assessment(
             incoming,
             existing,
             DuplicateReason.DIFFERENT_ACCOUNT,
         )
 
-    incoming_external_id = incoming_draft.external_id
-    existing_external_id = existing_draft.external_id
+    incoming_external_id = incoming.external_id
+    existing_external_id = existing.external_id
     if (
         incoming_external_id is not None
         and existing_external_id is not None
@@ -96,13 +113,11 @@ def assess_transaction_duplicate(
 
     score = 0.0
     reasons: list[DuplicateReason] = []
-    if incoming_draft.amount == existing_draft.amount:
+    if incoming.amount == existing.amount:
         score += 0.4
         reasons.append(DuplicateReason.SAME_AMOUNT)
 
-    incoming_date = cast(date, incoming_draft.transaction_date)
-    existing_date = cast(date, existing_draft.transaction_date)
-    date_distance = abs((incoming_date - existing_date).days)
+    date_distance = abs((incoming.transaction_date - existing.transaction_date).days)
     date_scores = {0: 0.25, 1: 0.2, 2: 0.1}
     if date_distance in date_scores:
         score += date_scores[date_distance]
@@ -148,6 +163,17 @@ def assess_transaction_duplicate(
         action=action,
         score=score,
         reasons=tuple(reasons),
+    )
+
+
+def assess_transaction_duplicate(
+    incoming: NormalisedTransaction,
+    existing: NormalisedTransaction,
+) -> DuplicateAssessment:
+    """Compare two normalised transactions through their stable match facts."""
+    return assess_duplicate_facts(
+        duplicate_facts_from_normalised(incoming),
+        duplicate_facts_from_normalised(existing),
     )
 
 

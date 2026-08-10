@@ -8,6 +8,8 @@ from pydantic import ValidationError
 from cashflow_ai.imports import (
     CsvImportError,
     CsvImportErrorCode,
+    calculate_file_hash,
+    parse_csv_document,
     preview_csv,
     validate_csv_import_plan,
 )
@@ -66,6 +68,7 @@ def test_utf8_signed_amount_preview_is_limited_but_counts_every_row() -> None:
     preview = preview_csv(content, "../../July statement.csv", preview_rows=1)
 
     assert preview.source_filename == "July statement.csv"
+    assert preview.file_hash == calculate_file_hash(content)
     assert preview.encoding is CsvEncoding.UTF_8
     assert preview.delimiter == ","
     assert preview.total_data_rows == 2
@@ -141,6 +144,21 @@ def test_limits_must_be_positive(max_bytes: int, preview_rows: int) -> None:
         max_bytes=max_bytes,
         preview_rows=preview_rows,
     )
+
+
+def test_full_document_parser_keeps_all_rows_and_validates_its_limit() -> None:
+    content = (
+        b"Date,Description,Amount\n2026-01-01,First,-1.00\n2026-01-02,Second,-2.00\n"
+    )
+
+    document = parse_csv_document(content, "statement.csv")
+
+    assert len(document.rows) == 2
+    assert document.rows[-1].source_row_number == 3
+    assert document.file_hash == calculate_file_hash(content)
+    with pytest.raises(CsvImportError) as error:
+        parse_csv_document(content, "statement.csv", max_bytes=0)
+    assert error.value.code is CsvImportErrorCode.INVALID_LIMIT
 
 
 @pytest.mark.parametrize("filename", ["", ".", "x" * 252 + ".csv"])

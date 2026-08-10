@@ -134,7 +134,7 @@ financial role and cannot directly change analytics, anomalies, or forecasts.
 ## CSV preview and mapping
 
 `CsvPreview` is a non-persistent structural view of one uploaded CSV. It records
-the safe basename, byte size, detected encoding and delimiter, unique source
+the safe basename, byte size, SHA-256 byte hash, detected encoding and delimiter, unique source
 headings, total data-row count, truncation state, and up to the configured
 number of preview rows. Preview rows retain their logical source-row number and
 unmodified string values; dates and money are deliberately not cleaned yet.
@@ -151,6 +151,14 @@ Optional selections cover posting date, running balance, currency, external ID,
 and transaction type. A source column cannot be assigned two meanings, and
 selected columns must exist in the preview. `CsvImportPlan` links the mapping to
 an account and the Commit 6 statement context; both must name the same account.
+
+`CsvImportConfirmation` records explicit approval, an aware confirmation time,
+and the exact preview hash. `CsvDocument` contains every structurally validated
+row for the subsequent in-memory import. `CsvImportSummary` requires its new,
+exact-duplicate, probable-duplicate, and rejected counts to account for every
+source row; the corresponding review row locations must match those counts.
+Its coverage result separates prior gaps from newly exposed gaps and reports
+overlap and disconnected date ranges.
 
 ## Normalised transactions and fingerprints
 
@@ -207,3 +215,9 @@ ordering, exact file/source-fingerprint uniqueness, foreign-key integrity, and
 one verified record per raw transaction. Deleting the local profile cascades to
 its private financial records; stable lookup rows use restrictive or nulling
 foreign keys where silent deletion would damage meaning.
+
+Rejected raw rows may omit a canonical fingerprint because invalid values must
+not be converted into a fabricated canonical identity. Their exact source
+fingerprint, source location, raw payload, original mapped text, parser version,
+review state, and structured issues remain mandatory. Both opening and closing
+statement balances are persisted as balance snapshots, never as transactions.

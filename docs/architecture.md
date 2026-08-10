@@ -46,6 +46,11 @@ Adapters do not categorise transactions, calculate analytics, or write accepted
 transactions directly to the database. All sources pass through the same
 canonical validation rules after the user reviews the extraction preview.
 
+The CSV adapter now passes a fully validated in-memory document to the confirmed
+import service. Confirmation is bound to the previewed byte hash. The service,
+not the adapter, owns normalisation, duplicate decisions, coverage analysis, and
+database orchestration.
+
 PDF extraction is a two-stage decision: attempt digital extraction first, then
 fall back to OCR only for pages without usable embedded text. Low-confidence,
 ambiguous, or unreconciled rows are highlighted. No PDF-derived transaction is
@@ -90,8 +95,13 @@ Persistence keeps these boundaries explicit:
 
 Repositories accept a transaction-scoped SQLAlchemy session and flush changes
 without committing. `session_scope` owns the unit of work: it commits once on
-success and rolls back every staged change on failure. Import orchestration will
-compose these repositories in Commit 11.
+success and rolls back every staged change on failure. The confirmed CSV import
+composes these repositories as one unit, so a failed row write cannot leave a
+batch, context, balance, or partial transaction set behind.
+
+Rejected and probable-duplicate CSV rows remain in `raw_transactions` with
+structured issues for audit. Only confirmed unique rows receive a linked
+`verified_transactions` record and become eligible for later calculations.
 
 ## Configuration
 

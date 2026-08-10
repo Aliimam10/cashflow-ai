@@ -265,10 +265,11 @@ def _matching_text(value: str) -> str:
     return " ".join(re.sub(r"[^\w]+", " ", value.casefold()).split())
 
 
-def _source_fingerprint(
+def calculate_source_fingerprint(
     identity: SourceRecordIdentity,
     original: OriginalTransactionValues,
 ) -> str:
+    """Return a stable identity for one exact source row and its location."""
     return _stable_hash(
         {
             "source_identity": identity.model_dump(mode="json"),
@@ -340,20 +341,19 @@ def normalise_transaction(
         calendar=_calendar_features(transaction_date),
         parser=parser,
         source_identity=source_identity,
-        source_fingerprint=_source_fingerprint(source_identity, original),
+        source_fingerprint=calculate_source_fingerprint(source_identity, original),
         canonical_fingerprint=_canonical_fingerprint(draft),
     )
 
 
-def normalise_csv_row(
+def map_csv_row(
     columns: tuple[str, ...],
     row: CsvPreviewRow,
     plan: CsvImportPlan,
     *,
     source_document_hash: str,
-    parser: ParserIdentity = NORMALISER_IDENTITY,
-) -> NormalisedTransaction:
-    """Map and clean one CSV row while retaining every original field value."""
+) -> tuple[OriginalTransactionValues, SourceRecordIdentity]:
+    """Map one CSV row without discarding values that may later be rejected."""
     if len(columns) != len(row.values):
         raise TransactionNormalisationError(
             NormalisationErrorCode.INVALID_ROW,
@@ -397,6 +397,24 @@ def normalise_csv_row(
         source_type=SourceType.CSV,
         source_document_hash=source_document_hash,
         source_row_number=row.source_row_number,
+    )
+    return original, identity
+
+
+def normalise_csv_row(
+    columns: tuple[str, ...],
+    row: CsvPreviewRow,
+    plan: CsvImportPlan,
+    *,
+    source_document_hash: str,
+    parser: ParserIdentity = NORMALISER_IDENTITY,
+) -> NormalisedTransaction:
+    """Map and clean one CSV row while retaining every original field value."""
+    original, identity = map_csv_row(
+        columns,
+        row,
+        plan,
+        source_document_hash=source_document_hash,
     )
     return normalise_transaction(
         original,
