@@ -20,6 +20,7 @@ from cashflow_ai.schemas.normalisation import (
     Sha256Digest,
     SourceRecordIdentity,
 )
+from cashflow_ai.schemas.statements import StatementBalances, StatementCoverage
 from cashflow_ai.schemas.transactions import TransactionDraft
 
 
@@ -127,6 +128,8 @@ class OcrPdfPreview(_OcrContract):
     file_hash: Sha256Digest
     page_count: PositiveInt
     pages: tuple[OcrPageExtraction, ...] = Field(min_length=1)
+    statement_coverage: StatementCoverage | None = None
+    statement_balances: StatementBalances | None = None
     candidates: tuple[OcrTransactionCandidate, ...] = Field(min_length=1)
     document_issues: tuple[ImportIssue, ...] = ()
     requires_user_confirmation: Literal[True] = True

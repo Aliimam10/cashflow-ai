@@ -63,3 +63,21 @@ each recognition attempt, no application-managed image file is retained, and
 raw OCR text is returned only in the review preview. The adapter does not write
 OCR results to the database or normal logs. Automated tests create fictional
 scanned PDFs in memory and use a deterministic fake OCR engine.
+
+The reconciliation and review service is also in-memory. It records confidence,
+issues, decisions, and corrections without logging source descriptions. User
+corrections create a separate working/canonical value and never mutate the
+original extracted evidence. Transaction corrections cannot change the extracted
+account, currency, category, or financial role. Choosing a date interpretation
+reparses ambiguous transaction and posting dates while leaving their raw text
+untouched.
+
+Raw balance evidence keeps its exact document and source-adapter identity, page,
+line, provenance, and local OCR confidence. Confirmed or corrected balance values
+remain paired with that evidence even when arithmetic reconciliation is
+unavailable. Approved rows retain their full raw lineage beside canonical values,
+and rejected rows retain their complete unchanged review evidence rather than
+being silently discarded. Only a statement-level approval bound to the exact
+document hash can produce trusted in-memory rows; this stage has no PDF database
+write or review UI, and unverified OCR candidates remain ineligible for every
+downstream calculation or model input.

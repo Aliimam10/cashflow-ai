@@ -11,7 +11,8 @@ typed configuration, structured logging, reproducible synthetic demo data,
 canonical transaction and statement contracts, safe CSV preview and mapping,
 transaction normalisation, conservative duplicate/overlap detection, a migrated
 local SQLite persistence layer, atomic confirmed CSV imports, and review-only
-embedded-text and scanned-PDF extraction**. PDF persistence, APIs, user
+embedded-text and scanned-PDF extraction, plus statement reconciliation and
+explicit PDF review contracts**. PDF persistence, APIs, user
 interfaces, and machine-learning components have not been implemented yet.
 
 ## Problem
@@ -76,13 +77,30 @@ Streamlit will be added in later, separately reviewed stages.
   preprocessing metadata are retained for review.
 - Every PDF produces a reviewable draft. The user must confirm the recognised
   dates, descriptions, amounts, and balances before transactions are imported.
+  The shared review service calculates opening balance plus signed transactions
+  against the closing balance, targets extraction errors and low-confidence OCR
+  fields, and requires explicit date/sign confirmations where the source is
+  ambiguous. A confirmed date format reparses ambiguous transaction and posting
+  dates unless the user supplied a corrected date. Corrections cannot move a row
+  to another account or currency or assign its category or financial role, and
+  both approved and rejected rows keep their complete original extraction
+  lineage.
+- Opening and closing balance evidence retains the raw amount text, exact PDF
+  hash and source adapter, page and line, extraction provenance, and OCR
+  confidence where applicable. Confirmed or corrected balances remain in the
+  approved result even when a missing balance endpoint makes reconciliation
+  unavailable. The statement period is also confirmed or corrected and retained,
+  so a later balance snapshot can use the actual statement boundary instead of a
+  guessed last-transaction date.
 - All three input paths converge on the same canonical transaction contracts;
   PDFs are not trusted merely because they can be converted to tabular text.
 
 The CSV preview, confirmation, and persistence pipeline currently consists of
 Python services rather than an upload or review screen.
 Text-based and scanned-PDF preview extraction are Python services. The shared
-PDF correction, confirmation, and persistence workflow remains a later stage.
+PDF correction and confirmation boundary is also a Python service; a later
+stage will connect its approved output to persistence and a user interface. It
+does not currently write an approved or rejected PDF row to the database.
 
 ## Development setup
 
@@ -189,9 +207,10 @@ quality tooling, typed settings, structured logging, privacy-safe synthetic
 data, canonical data contracts, CSV preview/mapping, transaction cleaning,
 duplicate/statement-overlap detection, and SQLite persistence are configured.
 Confirmed CSV imports, text-PDF extraction, and local scanned-PDF OCR are
-implemented. The next stages will add statement reconciliation and review,
-analytics, evaluated ML components, APIs, the frontend, deployment, and release
-documentation.
+implemented. Statement balance reconciliation and targeted PDF review are also
+implemented. The next stages will add balance freshness, financial-role
+classification, analytics, evaluated ML components, APIs, the frontend,
+deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

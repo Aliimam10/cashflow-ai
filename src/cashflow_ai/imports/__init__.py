@@ -43,6 +43,15 @@ from cashflow_ai.imports.ocr_pdf import (
     PytesseractOcrEngine,
     extract_ocr_pdf,
 )
+from cashflow_ai.imports.reconciliation import (
+    DEFAULT_OCR_CONFIDENCE_THRESHOLD,
+    DEFAULT_RECONCILIATION_TOLERANCE,
+    StatementReviewError,
+    StatementReviewErrorCode,
+    approve_statement_review,
+    prepare_statement_review,
+    reconcile_statement,
+)
 from cashflow_ai.imports.text_pdf import (
     DEFAULT_MAX_PDF_BYTES,
     DEFAULT_MAX_PDF_PAGES,
@@ -60,8 +69,10 @@ __all__ = [
     "DEFAULT_MAX_PDF_PAGES",
     "DEFAULT_MAX_RENDER_PIXELS",
     "DEFAULT_MIN_EMBEDDED_CHARACTERS",
+    "DEFAULT_OCR_CONFIDENCE_THRESHOLD",
     "DEFAULT_OCR_RENDER_DPI",
     "DEFAULT_PREVIEW_ROWS",
+    "DEFAULT_RECONCILIATION_TOLERANCE",
     "NORMALISER_IDENTITY",
     "OCR_EXTRACTOR_IDENTITY",
     "PDF_EXTRACTOR_IDENTITY",
@@ -73,8 +84,11 @@ __all__ = [
     "PdfImportError",
     "PdfImportErrorCode",
     "PytesseractOcrEngine",
+    "StatementReviewError",
+    "StatementReviewErrorCode",
     "TransactionNormalisationError",
     "analyse_statement_coverage",
+    "approve_statement_review",
     "assess_duplicate_facts",
     "assess_repeated_file",
     "assess_statement_overlap",
@@ -92,6 +106,8 @@ __all__ = [
     "parse_csv_document",
     "parse_date_value",
     "persist_confirmed_csv",
+    "prepare_statement_review",
     "preview_csv",
+    "reconcile_statement",
     "validate_csv_import_plan",
 ]

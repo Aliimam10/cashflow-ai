@@ -71,6 +71,43 @@ Rendered images, grayscale copies, and thresholded copies remain in process
 memory and are closed after each page. The application does not retain page
 image files or OCR artefacts after the preview call.
 
+## Statement reconciliation and review
+
+The shared PDF review service consumes either a digital-PDF or OCR preview. It
+does not persist rows. It binds the review to the exact SHA-256 document hash,
+source adapter, and source identities. It preserves every original extracted
+value and keeps an editable working draft separate from that evidence. Raw
+opening and closing balance evidence separately retains the amount text, page,
+line, extraction method and parser provenance, and OCR confidence when present.
+
+The service calculates `opening balance + signed transaction total` and compares
+the result with the reported closing balance using a one-penny default tolerance.
+If either balance or any transaction amount is unavailable, reconciliation is
+reported as unavailable rather than inferred from partial data. A difference
+outside tolerance is explicit and must be acknowledged before approval.
+Explicitly confirmed or corrected balance values and their raw evidence remain
+in the approved result even when reconciliation is unavailable. The review also
+retains an extracted statement period and requires a confirmed or corrected
+period whenever balance evidence exists. Approved transactions must fall inside
+that confirmed coverage and outside its explicit gaps, leaving Commit 15 an
+authoritative start/end date for statement balance snapshots.
+
+Only extraction errors and OCR fields below the configured confidence threshold
+enter the targeted row queue. Ambiguous slash dates and separate debit/credit
+columns require statement-level confirmation. The selected date format reparses
+ambiguous raw transaction and posting dates unless a user correction already
+replaced that field. Corrections may change editable transaction values, but may
+not change account, currency, category, or financial role.
+
+Statement approval is bound to the preview hash; all uncertain rows must be
+confirmed with complete canonical values or rejected. Approved rows retain their
+source identity, fingerprint, original values, extracted draft, provenance,
+issues, confidence, and OCR line references. Rejected rows retain the complete
+unchanged review row, not only a fingerprint. The boundary currently returns
+these in-memory contracts and provides no persistence or UI. Unapproved OCR rows
+have no route to trusted analytics, model training, recurrence, anomaly
+detection, or forecasting.
+
 ## Normalisation and duplicate detection
 
 The normaliser is source-independent: CSV mapping plus the digital-PDF and OCR

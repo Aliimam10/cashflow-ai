@@ -113,8 +113,9 @@ zero-valued spending or income.
 ## Statement balances and snapshots
 
 `StatementBalances` holds optional opening and closing statement balances and
-requires at least one value. It does not claim reconciliation; arithmetic
-reconciliation is implemented in a later commit.
+requires at least one value. It represents reported or explicitly confirmed
+values rather than a transaction. `StatementReconciliation` separately records
+whether those values reconcile with the extracted signed transaction total.
 
 `BalanceSnapshot` records an account balance at a date and time, its source, and
 verification status. Statement and running-balance snapshots retain their source
@@ -220,6 +221,52 @@ contributing OCR line numbers, source and canonical fingerprints, field
 confidence, parser identity, structured issues, and OCR provenance. Its page
 and line references must exist in the preview, and every candidate remains
 `needs_review` even when it normalises successfully.
+
+## Statement reconciliation and review
+
+`StatementReview` is a non-persistent approval boundary for an exact digital or
+OCR PDF hash and source adapter. Every transaction and balance source identity
+must carry that same hash and source type. Each `StatementReviewRow` holds
+immutable original extraction values, the extracted draft, a separate editable
+working draft, provenance, confidence, issues, and stable targeted-review
+reasons. Editing never overwrites the original evidence.
+
+Each `StatementBalanceEvidence` retains whether the raw value was an opening or
+closing balance, its unmodified amount text, parsed amount or structured issue,
+exact document identity, page and line, extraction method and parser provenance,
+and OCR confidence where applicable. Parsed statement balances cannot enter a
+review without matching raw PDF evidence.
+
+`StatementReconciliation` records the opening balance, signed transaction total,
+expected closing balance, reported closing balance, unexplained difference,
+tolerance, and number of unusable amounts. Its status is `reconciled`, `mismatch`,
+or `unavailable`; unavailable results cannot claim partial balance arithmetic.
+
+`StatementApproval` must match the exact preview hash and contain an aware audit
+timestamp. Ambiguous dates and debit/credit layouts require explicit format and
+sign confirmations. The confirmed date format reparses ambiguous raw transaction
+and posting dates unless the user supplied a corrected value for that field.
+Every uncertain row needs a confirm-or-reject decision, and confirmed corrections
+must satisfy the canonical transaction contract. A correction cannot change the
+extracted account, currency, category, or financial role. Extracted balance
+fields must each be explicitly confirmed or corrected. Extracted statement
+coverage must also be confirmed or corrected; when balance evidence exists, an
+approved period is mandatory even if extraction did not find one. Confirmed
+transactions cannot sit outside that period or inside an explicit coverage gap.
+A balance mismatch requires explicit acknowledgement.
+
+`ApprovedStatement` is the only review output eligible for later trusted use.
+Its approved rows retain the source identity and fingerprint, original values,
+extracted draft, provenance, OCR lines and field confidence, issues and review
+reasons beside the final canonical transaction. Its rejected rows retain their
+complete unchanged `StatementReviewRow` evidence as well as a fingerprint index.
+It also retains raw balance evidence, explicitly confirmed or corrected balances,
+whether those balances changed, confirmed statement coverage and whether it
+changed, final reconciliation, and approval time. The balances and period remain
+available when reconciliation is `unavailable`, so later persistence can date a
+closing snapshot from the statement end rather than the last transaction. This
+contract is an in-memory service result; it neither persists transactions nor
+defines a UI.
 
 ## Duplicate and statement-overlap results
 

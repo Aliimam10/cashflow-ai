@@ -25,6 +25,8 @@ from cashflow_ai.imports.text_pdf import (
     MAX_PAGE_TEXT_CHARACTERS,
     PdfImportError,
     PdfImportErrorCode,
+    _extract_statement_balances,
+    _extract_statement_coverage,
     _ExtractedRow,
     _mapped_original,
     _rows_from_text,
@@ -563,12 +565,21 @@ def extract_ocr_pdf(
         )
         for row, lines in page_rows
     )
+    document_text = "\n".join(page.raw_text for page in pages)
+    statement_coverage, coverage_issue = _extract_statement_coverage(document_text)
+    statement_balances, balance_issues = _extract_statement_balances(document_text)
     return OcrPdfPreview(
         source_filename=safe_filename,
         byte_size=len(content),
         file_hash=file_hash,
         page_count=len(pages),
         pages=tuple(pages),
+        statement_coverage=statement_coverage,
+        statement_balances=statement_balances,
         candidates=candidates,
-        document_issues=document_issues,
+        document_issues=(
+            *document_issues,
+            *((coverage_issue,) if coverage_issue is not None else ()),
+            *balance_issues,
+        ),
     )
