@@ -165,7 +165,9 @@ def test_scanned_pdf_is_rendered_preprocessed_and_converted_to_candidates() -> N
     assert candidate.review_status is ReviewStatus.NEEDS_REVIEW
     assert candidate.canonical_fingerprint is not None
     assert {issue.code for issue in preview.document_issues} == {
-        "image_only_pdf_detected"
+        "image_only_pdf_detected",
+        "statement_period_not_found",
+        "statement_balances_not_found",
     }
     assert preview.requires_user_confirmation is True
     assert preview.temporary_artifacts_retained is False
@@ -216,6 +218,35 @@ def test_invalid_ocr_candidate_retains_source_values_and_issue() -> None:
     assert candidate.issues[0].code == "invalid_date"
 
 
+def test_ocr_extracts_statement_opening_and_closing_balances_for_review() -> None:
+    words = ocr_words(
+        (
+            "Statement period: 01/07/2026 to 31/07/2026",
+            "Opening balance: 100.00",
+            "Date | Description | Amount | Balance",
+            "01/07/2026 | SYNTHETIC ITEM | -2.00 | 98.00",
+            "Closing balance: 98.00",
+        )
+    )
+    preview = extract_ocr_pdf(
+        scanned_pdf(),
+        "balances.pdf",
+        mime_type="application/pdf",
+        account_id="account-1",
+        engine=cast(Any, FakeOcrEngine((words,))),
+        render_dpi=72,
+    )
+
+    assert preview.statement_balances is not None
+    assert preview.statement_coverage is not None
+    assert preview.statement_coverage.statement_end_date.isoformat() == "2026-07-31"
+    assert str(preview.statement_balances.opening_balance) == "100.00"
+    assert str(preview.statement_balances.closing_balance) == "98.00"
+    assert "statement_balances_not_found" not in {
+        issue.code for issue in preview.document_issues
+    }
+
+
 def test_multi_page_ocr_and_embedded_text_warning() -> None:
     page_words = ocr_words(
         (
@@ -235,7 +266,9 @@ def test_multi_page_ocr_and_embedded_text_warning() -> None:
     assert len(preview.candidates) == 1
     assert preview.candidates[0].line_numbers == (2,)
     assert {issue.code for issue in preview.document_issues} == {
-        "ocr_used_with_embedded_text"
+        "ocr_used_with_embedded_text",
+        "statement_period_not_found",
+        "statement_balances_not_found",
     }
 
 

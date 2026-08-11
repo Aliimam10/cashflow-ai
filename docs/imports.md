@@ -182,19 +182,60 @@ For every page, the adapter:
 - runs OCR locally and reconstructs ordered lines from recognised words;
 - retains raw OCR lines plus page-level, line-level, candidate, and provisional
   field confidence;
+- extracts a recognised statement period using the same coverage contract as a
+  digital PDF;
+- extracts recognised opening and closing balance labels for arithmetic review;
 - extracts supported transaction rows through the same source-independent
   normalisation and fingerprinting boundary as CSV and digital PDF rows; and
 - closes all in-memory page images after processing without creating or
   retaining application-managed temporary image files.
 
 Invalid recognised values remain visible with structured errors and without a
-fabricated canonical fingerprint. Every candidate remains `needs_review`; this
-stage does not define a confidence acceptance threshold, reconcile statement
-balances, accept corrections, or persist transactions. Those decisions belong
-to the statement review stage.
+fabricated canonical fingerprint. Every candidate remains `needs_review` at the
+adapter boundary and no OCR transaction is persisted there.
 
 The OCR adapter can be called for image-only statements and reports when usable
 embedded text was also present. It currently OCRs every page supplied to it,
 rather than silently combining extraction methods. OCR quality varies with
 image resolution, focus, lighting, fonts, and layout, so the implementation
 does not claim universal bank compatibility.
+
+## Implemented statement reconciliation and review boundary
+
+`cashflow_ai.imports.prepare_statement_review` accepts either PDF preview and
+creates a targeted, in-memory review. The default OCR field-confidence threshold
+is 0.85 and can be explicitly configured. Extraction errors and lower-confidence
+OCR rows require a transaction-level decision; higher-confidence rows remain
+visible but do not create unnecessary targeted prompts.
+
+The service detects ambiguous slash dates and debit/credit layouts so the user
+must confirm their interpretation. It calculates:
+
+```text
+expected closing balance = opening balance + signed transaction total
+unexplained difference = reported closing balance - expected closing balance
+```
+
+Reconciliation is unavailable when either endpoint or any amount is missing.
+Balance extraction retains the untouched amount text with its exact file/source
+binding, page, line, parser and extraction provenance, and OCR confidence where
+applicable. Every detected opening or closing field must be explicitly confirmed
+or corrected. Those confirmed balances and their evidence remain in the approved
+result even if a missing balance endpoint leaves reconciliation unavailable. A
+statement period must be confirmed or corrected whenever balance evidence is
+present; it is retained so later snapshots use the statement start/end date, not
+an inferred transaction date. Approved transactions must fall within that period
+and outside any explicit coverage gap.
+
+Approval must match the exact file hash, resolve every uncertain row, produce
+complete canonical values, and acknowledge any balance mismatch. Selecting a
+date format reparses ambiguous raw transaction and posting dates; a date the user
+explicitly corrected is not overwritten. Corrections cannot change the extracted
+account, currency, category, or financial role.
+
+Approved rows retain original OCR/PDF values, extracted drafts, source identities
+and fingerprints, provenance, issues, confidence, and OCR line references beside
+their canonical values. Rejected rows retain their full unchanged review-row
+evidence rather than disappearing into a count. `approve_statement_review`
+returns this trusted in-memory contract but intentionally performs no database
+write; PDF persistence and the visual review UI remain later stages.
