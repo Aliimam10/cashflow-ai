@@ -339,6 +339,105 @@ class UserFlagRecord(Base):
     )
 
 
+class FinancialRoleSuggestionRecord(Base):
+    """Reviewable system suggestion that never changes a role by itself."""
+
+    __tablename__ = "financial_role_suggestions"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True, default=new_id)
+    suggestion_key: Mapped[str] = mapped_column(String(HASH_LENGTH), unique=True)
+    verified_transaction_id: Mapped[str] = mapped_column(
+        ForeignKey("verified_transactions.id", ondelete="CASCADE"), index=True
+    )
+    counterpart_transaction_id: Mapped[str | None] = mapped_column(
+        ForeignKey("verified_transactions.id", ondelete="CASCADE"), index=True
+    )
+    kind: Mapped[str] = mapped_column(String(30))
+    suggested_role_id: Mapped[str] = mapped_column(
+        ForeignKey("financial_roles.id", ondelete="RESTRICT")
+    )
+    counterpart_role_id: Mapped[str | None] = mapped_column(
+        ForeignKey("financial_roles.id", ondelete="RESTRICT")
+    )
+    confidence: Mapped[Decimal] = mapped_column(Numeric(5, 4))
+    reason_codes_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    algorithm_version: Mapped[str] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(20), default="pending", index=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+    reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('transfer', 'refund', 'reimbursement')",
+            name="ck_financial_role_suggestions_kind",
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'confirmed', 'rejected')",
+            name="ck_financial_role_suggestions_status",
+        ),
+        CheckConstraint(
+            "confidence >= 0 AND confidence <= 1",
+            name="ck_financial_role_suggestions_confidence",
+        ),
+        CheckConstraint(
+            "counterpart_transaction_id IS NULL OR "
+            "counterpart_transaction_id != verified_transaction_id",
+            name="ck_financial_role_suggestions_counterpart",
+        ),
+        CheckConstraint(
+            "(status = 'pending' AND reviewed_at IS NULL) OR "
+            "(status != 'pending' AND reviewed_at IS NOT NULL)",
+            name="ck_financial_role_suggestions_reviewed_at",
+        ),
+        CheckConstraint(
+            "(kind = 'transfer' AND suggested_role_id IN "
+            "('transfer_in', 'transfer_out') AND "
+            "((counterpart_transaction_id IS NULL AND counterpart_role_id IS NULL) "
+            "OR (counterpart_transaction_id IS NOT NULL AND "
+            "counterpart_role_id IN ('transfer_in', 'transfer_out') AND "
+            "counterpart_role_id != suggested_role_id))) OR "
+            "(kind = 'refund' AND suggested_role_id = 'refund' AND "
+            "counterpart_transaction_id IS NULL AND counterpart_role_id IS NULL) OR "
+            "(kind = 'reimbursement' AND suggested_role_id = 'reimbursement' AND "
+            "counterpart_transaction_id IS NULL AND counterpart_role_id IS NULL)",
+            name="ck_financial_role_suggestions_roles",
+        ),
+    )
+
+
+class FinancialRoleAuditRecord(Base):
+    """Immutable audit entry for a user-confirmed financial-role change."""
+
+    __tablename__ = "financial_role_audits"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True, default=new_id)
+    verified_transaction_id: Mapped[str] = mapped_column(
+        ForeignKey("verified_transactions.id", ondelete="CASCADE"), index=True
+    )
+    previous_role_id: Mapped[str] = mapped_column(
+        ForeignKey("financial_roles.id", ondelete="RESTRICT")
+    )
+    new_role_id: Mapped[str] = mapped_column(
+        ForeignKey("financial_roles.id", ondelete="RESTRICT")
+    )
+    suggestion_id: Mapped[str | None] = mapped_column(
+        ForeignKey("financial_role_suggestions.id", ondelete="SET NULL")
+    )
+    source: Mapped[str] = mapped_column(String(30))
+    changed_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('user_confirmation', 'user_override')",
+            name="ck_financial_role_audits_source",
+        ),
+        CheckConstraint(
+            "previous_role_id != new_role_id",
+            name="ck_financial_role_audits_changed",
+        ),
+    )
+
+
 class CategoryCorrectionRecord(Base):
     """Auditable user correction to a transaction category."""
 

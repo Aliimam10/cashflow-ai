@@ -23,6 +23,8 @@ EXPECTED_TABLES = {
     "categories",
     "category_corrections",
     "financial_roles",
+    "financial_role_audits",
+    "financial_role_suggestions",
     "forecast_runs",
     "import_batches",
     "import_contexts",

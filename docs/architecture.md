@@ -201,6 +201,32 @@ snapshot in isolation from its approved rows, rejected-row evidence, import
 batch, and confirmed coverage. That complete atomic persistence workflow belongs
 to a later stage.
 
+## Financial-role interpretation and review
+
+Financial role is the calculation meaning of a verified transaction and remains
+separate from category. The role service reads only verified transactions whose
+current role is `unknown`. It can persist advisory transfer, refund, and
+reimbursement suggestions, but it cannot silently change a transaction.
+
+Transfer matching is restricted to distinct accounts owned by the same local
+profile, the same currency, exact opposite `Decimal` amounts, and dates no more
+than three days apart. Description similarity, explicit transfer language, and
+mentions of the other account strengthen confidence. A transfer-looking row
+without a counterpart remains a one-sided review suggestion. Refund and
+reimbursement suggestions require a positive amount and explicit controlled
+language; a generic positive payment remains `unknown`.
+
+Only an explicit user confirmation or override changes a role. A paired transfer
+updates both legs and writes both audit entries inside one database transaction.
+Any failure rolls back the entire decision. Role signs are checked, competing
+pending suggestions are rejected, categories and raw evidence are untouched,
+and repeated suggestion generation is idempotent.
+
+Statement flags and notes are joined into the local review projection for
+reference only. They are not inputs to suggestion rules and cannot change roles,
+categories, analytics, or forecasts. This module adds no financial totals,
+categorisation, API, or interface; Commit 17 consumes only confirmed roles.
+
 ## Configuration
 
 Application configuration is loaded explicitly through

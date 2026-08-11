@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from sqlalchemy import case, desc, func, or_, select
 from sqlalchemy.orm import Session
@@ -11,10 +11,13 @@ from sqlalchemy.sql.elements import ColumnElement
 from cashflow_ai.persistence.models import (
     AccountRecord,
     BalanceSnapshotRecord,
+    FinancialRoleAuditRecord,
+    FinancialRoleSuggestionRecord,
     ImportBatchRecord,
     ImportContextRecord,
     RawTransactionRecord,
     StatementCoverageRecord,
+    UserFlagRecord,
     UserProfileRecord,
     VerifiedTransactionRecord,
 )
@@ -347,3 +350,192 @@ class BalanceSnapshotRepository:
             .limit(1)
         )
         return self._session.scalar(statement)
+
+
+class FinancialRoleRepository:
+    """Persist advisory suggestions and explicit user role decisions."""
+
+    def __init__(self, session: Session) -> None:
+        """Bind repository operations to one transaction-scoped session."""
+        self._session = session
+
+    def list_unknown_candidates_for_user(
+        self,
+        user_profile_id: str,
+    ) -> tuple[tuple[VerifiedTransactionRecord, AccountRecord], ...]:
+        """Return unknown-role transactions owned by one local profile."""
+        statement = (
+            select(VerifiedTransactionRecord, AccountRecord)
+            .join(
+                AccountRecord,
+                AccountRecord.id == VerifiedTransactionRecord.account_id,
+            )
+            .where(
+                AccountRecord.user_profile_id == user_profile_id,
+                VerifiedTransactionRecord.financial_role_id == "unknown",
+            )
+            .order_by(
+                VerifiedTransactionRecord.transaction_date,
+                VerifiedTransactionRecord.id,
+            )
+        )
+        return tuple(self._session.execute(statement).tuples())
+
+    def get_transaction(
+        self,
+        transaction_id: str,
+    ) -> VerifiedTransactionRecord | None:
+        """Return a verified transaction by ID."""
+        return self._session.get(VerifiedTransactionRecord, transaction_id)
+
+    def add_suggestion(
+        self,
+        suggestion: FinancialRoleSuggestionRecord,
+    ) -> FinancialRoleSuggestionRecord:
+        """Stage and flush one idempotently keyed system suggestion."""
+        self._session.add(suggestion)
+        self._session.flush()
+        return suggestion
+
+    def get_suggestion(
+        self,
+        suggestion_id: str,
+    ) -> FinancialRoleSuggestionRecord | None:
+        """Return a suggestion by ID."""
+        return self._session.get(FinancialRoleSuggestionRecord, suggestion_id)
+
+    def get_suggestion_by_key(
+        self,
+        suggestion_key: str,
+    ) -> FinancialRoleSuggestionRecord | None:
+        """Find an existing deterministic suggestion."""
+        statement = select(FinancialRoleSuggestionRecord).where(
+            FinancialRoleSuggestionRecord.suggestion_key == suggestion_key
+        )
+        return self._session.scalar(statement)
+
+    def list_pending_for_user(
+        self,
+        user_profile_id: str,
+    ) -> tuple[
+        tuple[
+            FinancialRoleSuggestionRecord,
+            VerifiedTransactionRecord,
+            ImportContextRecord | None,
+        ],
+        ...,
+    ]:
+        """Return pending suggestions with inert statement context for display."""
+        statement = (
+            select(
+                FinancialRoleSuggestionRecord,
+                VerifiedTransactionRecord,
+                ImportContextRecord,
+            )
+            .join(
+                VerifiedTransactionRecord,
+                VerifiedTransactionRecord.id
+                == FinancialRoleSuggestionRecord.verified_transaction_id,
+            )
+            .join(
+                AccountRecord,
+                AccountRecord.id == VerifiedTransactionRecord.account_id,
+            )
+            .join(
+                RawTransactionRecord,
+                RawTransactionRecord.id == VerifiedTransactionRecord.raw_transaction_id,
+            )
+            .join(
+                ImportBatchRecord,
+                ImportBatchRecord.id == RawTransactionRecord.import_batch_id,
+            )
+            .outerjoin(
+                ImportContextRecord,
+                ImportContextRecord.import_batch_id == ImportBatchRecord.id,
+            )
+            .where(
+                AccountRecord.user_profile_id == user_profile_id,
+                FinancialRoleSuggestionRecord.status == "pending",
+            )
+            .order_by(
+                VerifiedTransactionRecord.transaction_date,
+                FinancialRoleSuggestionRecord.id,
+            )
+        )
+        return tuple(self._session.execute(statement).tuples())
+
+    def reject_pending_for_transactions(
+        self,
+        transaction_ids: tuple[str, ...],
+        *,
+        reviewed_at: datetime,
+        except_suggestion_id: str | None = None,
+    ) -> None:
+        """Reject competing pending suggestions after an explicit decision."""
+        statement = select(FinancialRoleSuggestionRecord).where(
+            FinancialRoleSuggestionRecord.status == "pending",
+            or_(
+                FinancialRoleSuggestionRecord.verified_transaction_id.in_(
+                    transaction_ids
+                ),
+                FinancialRoleSuggestionRecord.counterpart_transaction_id.in_(
+                    transaction_ids
+                ),
+            ),
+        )
+        if except_suggestion_id is not None:
+            statement = statement.where(
+                FinancialRoleSuggestionRecord.id != except_suggestion_id
+            )
+        for suggestion in self._session.scalars(statement):
+            suggestion.status = "rejected"
+            suggestion.reviewed_at = reviewed_at
+
+    def add_audit(
+        self,
+        audit: FinancialRoleAuditRecord,
+    ) -> FinancialRoleAuditRecord:
+        """Stage and flush one immutable role-change audit entry."""
+        self._session.add(audit)
+        self._session.flush()
+        return audit
+
+    def list_audits_for_transaction(
+        self,
+        transaction_id: str,
+    ) -> tuple[FinancialRoleAuditRecord, ...]:
+        """Return a transaction's role history in deterministic order."""
+        statement = (
+            select(FinancialRoleAuditRecord)
+            .where(FinancialRoleAuditRecord.verified_transaction_id == transaction_id)
+            .order_by(
+                FinancialRoleAuditRecord.changed_at,
+                FinancialRoleAuditRecord.id,
+            )
+        )
+        return tuple(self._session.scalars(statement))
+
+    def add_flag_once(
+        self,
+        transaction_id: str,
+        *,
+        flag: str,
+        created_at: datetime,
+    ) -> bool:
+        """Add one structured flag unless the transaction already has it."""
+        statement = select(UserFlagRecord).where(
+            UserFlagRecord.verified_transaction_id == transaction_id,
+            UserFlagRecord.flag == flag,
+        )
+        if self._session.scalar(statement) is not None:
+            return False
+        self._session.add(
+            UserFlagRecord(
+                verified_transaction_id=transaction_id,
+                flag=flag,
+                note=None,
+                created_at=created_at,
+            )
+        )
+        self._session.flush()
+        return True

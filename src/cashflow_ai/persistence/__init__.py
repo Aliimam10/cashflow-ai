@@ -9,6 +9,7 @@ from cashflow_ai.persistence.database import (
 from cashflow_ai.persistence.repositories import (
     AccountRepository,
     BalanceSnapshotRepository,
+    FinancialRoleRepository,
     ImportBatchRepository,
     StatementRepository,
     TransactionRepository,
@@ -19,6 +20,7 @@ __all__ = [
     "AccountRepository",
     "BalanceSnapshotRepository",
     "Base",
+    "FinancialRoleRepository",
     "ImportBatchRepository",
     "StatementRepository",
     "TransactionRepository",

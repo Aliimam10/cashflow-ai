@@ -49,6 +49,13 @@ rows, adds structured issue storage to those rows, and distinguishes opening
 from closing statement balance snapshots. It does not add tables or seed
 financial data.
 
+Migration `0003` additively creates `financial_role_suggestions` and
+`financial_role_audits`. It does not rewrite existing transactions or seed
+financial data. Deterministic suggestion keys prevent repeated rule runs from
+duplicating the same review item. Database checks constrain suggestion kind,
+status, confidence, counterpart shape, role coherence, review timestamps, and
+audit sources.
+
 ## Repository transactions
 
 Repositories stage and flush records but do not commit independently. Callers
@@ -109,3 +116,16 @@ balance observation, with separate ages retained for both evidence types.
 PDF review remains in memory. No balance from an approved PDF is persisted until
 a later service can store its import batch, raw and approved rows, rejected-row
 evidence, confirmed coverage, and balance snapshots as one auditable unit.
+
+## Financial-role decisions
+
+System suggestions and user decisions use the same transaction-scoped session
+pattern as imports. Generating a suggestion leaves `financial_role_id`
+unchanged. Confirmation updates the verified transaction and inserts immutable
+audit history together; paired transfer confirmation changes both legs or
+neither. Rejection changes only suggestion status.
+
+Direct user actions are also audited when they change a role. `needs_review`
+uses the existing structured `user_flags` table and is idempotent. A decision
+rejects other pending suggestions involving the affected transaction, while raw
+transactions, categories, statement notes, and import context remain unchanged.

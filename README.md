@@ -13,9 +13,10 @@ transaction normalisation, conservative duplicate/overlap detection, a migrated
 local SQLite persistence layer, atomic confirmed CSV imports, and review-only
 embedded-text and scanned-PDF extraction, plus statement reconciliation and
 explicit PDF review contracts, verified balance snapshots, and a conservative
-financial-data freshness assessment**. PDF persistence, APIs, user interfaces,
-forecast generation, and machine-learning components have not been implemented
-yet.
+financial-data freshness assessment, plus user-confirmed financial-role
+suggestions for transfers, refunds, and reimbursements**. PDF persistence, APIs,
+user interfaces, financial analytics, forecast generation, and machine-learning
+components have not been implemented yet.
 
 ## Problem
 
@@ -122,6 +123,26 @@ evidence, and future or unverified records cannot. The result is either
 `active_forecasting` or `archive`, with stable warnings explaining the decision.
 This is a data-readiness gate only: it does not run a forecast, expose an API, or
 provide a user interface.
+
+### Implemented financial-role review boundary
+
+Verified transactions retain a financial role independently from their future
+spending category. Deterministic rules can suggest matched transfers between the
+local user's accounts, one-sided possible transfers, explicit refunds, and
+explicit reimbursements. Suggestions are advisory: generating or displaying one
+does not change the transaction.
+
+A user can confirm or reject a suggestion, directly choose income, expense,
+transfer, refund, reimbursement, cash withdrawal or exclusion, or add a
+structured `needs_review` flag. Paired transfer confirmation changes both legs
+atomically and records one immutable audit entry per changed transaction. Role
+signs are enforced, competing suggestions are rejected after a decision, and
+raw source values and categories remain untouched.
+
+Statement flags and free-text notes appear only as reference context in the
+review queue. They are never parsed to assign a role. There is no API or visual
+review screen yet, and this stage does not calculate income, expenses, or any
+other analytics.
 
 The CSV preview, confirmation, and persistence pipeline currently consists of
 Python services rather than an upload or review screen.
@@ -237,9 +258,11 @@ duplicate/statement-overlap detection, and SQLite persistence are configured.
 Confirmed CSV imports, text-PDF extraction, and local scanned-PDF OCR are
 implemented. Statement balance reconciliation and targeted PDF review are also
 implemented. Verified balance tracking and financial-data freshness assessment
-are implemented as Python service boundaries. The next stages will add
-financial-role classification, analytics, evaluated ML components, APIs, the
-frontend, deployment, and release documentation.
+are implemented as Python service boundaries. Conservative financial-role
+suggestions, explicit user decisions, and role-change audit history are also
+implemented. The next stages will add coverage-aware analytics, categorisation,
+evaluated ML components, APIs, the frontend, deployment, and release
+documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

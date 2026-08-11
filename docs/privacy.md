@@ -95,3 +95,10 @@ ages, warnings, and a readiness mode without logging source descriptions or
 balance amounts. A manually entered balance is deliberately not disguised as a
 transaction or import. Missing or unverified coverage remains unknown and cannot
 be converted into an apparent zero-spend period.
+
+Financial-role rules operate locally and do not log descriptions, amounts,
+notes, suggestions, or decisions. Controlled reason codes contain only rule
+facts, never copied statement text. Free-text statement notes remain visible as
+local review context but are not parsed into a role. Confirming or overriding a
+role updates only the verified interpretation and append-only audit history;
+the original raw payload and description remain unchanged.

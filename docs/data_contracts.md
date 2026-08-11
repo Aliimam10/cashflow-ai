@@ -358,3 +358,25 @@ not be converted into a fabricated canonical identity. Their exact source
 fingerprint, source location, raw payload, original mapped text, parser version,
 review state, and structured issues remain mandatory. Both opening and closing
 statement balances are persisted as balance snapshots, never as transactions.
+
+## Financial-role review contracts
+
+`FinancialRoleSuggestion` records a subject transaction, optional transfer
+counterpart, controlled kind and reasons, proposed role or paired roles,
+confidence, algorithm version, status, and review timestamps. Pending
+suggestions have no review time; confirmed or rejected suggestions require one.
+Refund and reimbursement suggestions cannot claim a counterpart, while paired
+transfers require distinct transactions and opposite transfer directions.
+
+`TransactionReviewAction` exposes income, expense, internal transfer, refund,
+reimbursement, cash withdrawal, exclusion from analytics, and `needs_review`.
+Positive amounts accept income, transfer-in, refund, or reimbursement roles;
+negative amounts accept expense, transfer-out, or cash-withdrawal roles.
+`excluded` is valid for either sign. A needs-review action adds a structured flag
+without changing the role.
+
+`FinancialRoleAudit` retains the previous and new roles, transaction, optional
+confirmed suggestion, decision source, and aware change time. `RoleReviewItem`
+shows current transaction data plus statement flags and note as inert local
+reference context. Free text is not a rule input and never appears in controlled
+reason codes.
