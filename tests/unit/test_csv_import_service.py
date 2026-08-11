@@ -20,6 +20,7 @@ from cashflow_ai.imports import (
 from cashflow_ai.imports.csv_import_service import _duplicate_facts_from_records
 from cashflow_ai.persistence import (
     AccountRepository,
+    BalanceSnapshotRepository,
     Base,
     TransactionRepository,
     UserProfileRepository,
@@ -190,7 +191,10 @@ def test_confirmed_import_preserves_and_classifies_every_row(
         coverage = session.scalar(select(StatementCoverageRecord))
         balances = tuple(
             session.scalars(
-                select(BalanceSnapshotRecord).order_by(BalanceSnapshotRecord.source)
+                select(BalanceSnapshotRecord).order_by(
+                    BalanceSnapshotRecord.source,
+                    BalanceSnapshotRecord.as_of_date,
+                )
             )
         )
         raw_rows = tuple(
@@ -210,8 +214,14 @@ def test_confirmed_import_preserves_and_classifies_every_row(
             {"start_date": "2026-07-10", "end_date": "2026-07-12"}
         ]
         assert [(item.source, item.balance) for item in balances] == [
+            ("running_balance", Decimal("995.50")),
+            ("running_balance", Decimal("966.50")),
             ("statement_closing", Decimal("978.50")),
             ("statement_opening", Decimal("1000.00")),
+        ]
+        assert [item.as_of_date for item in balances[:2]] == [
+            date(2026, 7, 1),
+            date(2026, 7, 2),
         ]
         assert [item.review_status for item in raw_rows] == [
             "confirmed",
@@ -261,6 +271,9 @@ def test_repeated_file_returns_existing_batch_without_writing_again(
         assert session.scalar(select(func.count()).select_from(ImportBatchRecord)) == 1
         assert (
             session.scalar(select(func.count()).select_from(RawTransactionRecord)) == 5
+        )
+        assert (
+            session.scalar(select(func.count()).select_from(BalanceSnapshotRecord)) == 4
         )
 
 
@@ -346,6 +359,49 @@ def test_separate_amount_columns_and_optional_balances_are_supported(
         balances = tuple(session.scalars(select(BalanceSnapshotRecord)))
         assert len(balances) == 1
         assert balances[0].source == "statement_closing"
+
+
+def test_running_balance_snapshot_uses_posting_date_when_available(
+    factory: sessionmaker[Session],
+) -> None:
+    seed_account(factory)
+    content = (
+        b"Date,Posting Date,Description,Amount,Balance\n"
+        b"2026-08-01,2026-08-03,Synthetic purchase,-10.00,990.00\n"
+    )
+    plan = CsvImportPlan(
+        account_id="account-1",
+        statement_context=ImportContext(
+            account_id="account-1",
+            coverage=StatementCoverage(
+                statement_start_date=date(2026, 8, 1),
+                statement_end_date=date(2026, 8, 31),
+                status=CoverageStatus.COMPLETE,
+            ),
+        ),
+        mapping=CsvColumnMapping(
+            transaction_date_column="Date",
+            posting_date_column="Posting Date",
+            description_column="Description",
+            signed_amount_column="Amount",
+            running_balance_column="Balance",
+        ),
+    )
+
+    persist_confirmed_csv(
+        factory,
+        content,
+        "posting-date.csv",
+        mime_type="text/csv",
+        plan=plan,
+        confirmation=confirmation(content),
+    )
+
+    with session_scope(factory) as session:
+        snapshot = session.scalar(select(BalanceSnapshotRecord))
+        assert snapshot is not None
+        assert snapshot.source == "running_balance"
+        assert snapshot.as_of_date == date(2026, 8, 3)
 
 
 def test_verified_record_without_canonical_identity_is_rejected() -> None:
@@ -435,6 +491,63 @@ def test_database_failure_rolls_back_the_complete_import(
     monkeypatch.setattr(TransactionRepository, "add_verified", fail_verified_write)
     with pytest.raises(RuntimeError, match="synthetic database failure"):
         import_csv(factory)
+
+    with session_scope(factory) as session:
+        for model in (
+            ImportBatchRecord,
+            ImportContextRecord,
+            StatementCoverageRecord,
+            BalanceSnapshotRecord,
+            RawTransactionRecord,
+            VerifiedTransactionRecord,
+        ):
+            assert session.scalar(select(func.count()).select_from(model)) == 0
+
+
+def test_running_balance_failure_rolls_back_the_complete_import(
+    factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed_account(factory)
+    content = (
+        b"Date,Description,Amount,Balance\n"
+        b"2026-08-01,Synthetic purchase,-10.00,990.00\n"
+    )
+    plan = CsvImportPlan(
+        account_id="account-1",
+        statement_context=ImportContext(
+            account_id="account-1",
+            coverage=StatementCoverage(
+                statement_start_date=date(2026, 8, 1),
+                statement_end_date=date(2026, 8, 31),
+                status=CoverageStatus.COMPLETE,
+            ),
+        ),
+        mapping=CsvColumnMapping(
+            transaction_date_column="Date",
+            description_column="Description",
+            signed_amount_column="Amount",
+            running_balance_column="Balance",
+        ),
+    )
+
+    def fail_balance_write(
+        repository: BalanceSnapshotRepository,
+        balance: BalanceSnapshotRecord,
+    ) -> BalanceSnapshotRecord:
+        del repository, balance
+        raise RuntimeError("synthetic running-balance failure")
+
+    monkeypatch.setattr(BalanceSnapshotRepository, "add", fail_balance_write)
+    with pytest.raises(RuntimeError, match="synthetic running-balance failure"):
+        persist_confirmed_csv(
+            factory,
+            content,
+            "running-balance-failure.csv",
+            mime_type="text/csv",
+            plan=plan,
+            confirmation=confirmation(content),
+        )
 
     with session_scope(factory) as session:
         for model in (

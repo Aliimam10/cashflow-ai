@@ -38,6 +38,7 @@ from cashflow_ai.persistence.models import (
 )
 from cashflow_ai.persistence.repositories import (
     AccountRepository,
+    BalanceSnapshotRepository,
     ImportBatchRepository,
     StatementRepository,
     TransactionRepository,
@@ -359,6 +360,7 @@ def _persist_document(
     )
 
     transaction_repository = TransactionRepository(session)
+    balance_repository = BalanceSnapshotRepository(session)
     exact_rows: list[int] = []
     probable_rows: list[int] = []
     rejected_rows: list[int] = []
@@ -445,13 +447,24 @@ def _persist_document(
                 issues=[],
             )
         )
-        transaction_repository.add_verified(
+        verified = transaction_repository.add_verified(
             _verified_record(
-                transaction,
-                raw.id,
-                confirmed_at=confirmation.confirmed_at,
+                transaction, raw.id, confirmed_at=confirmation.confirmed_at
             )
         )
+        if verified.balance_after is not None:
+            balance_repository.add(
+                BalanceSnapshotRecord(
+                    account_id=verified.account_id,
+                    import_batch_id=batch.id,
+                    balance=verified.balance_after,
+                    currency=verified.currency,
+                    as_of_date=verified.posting_date or verified.transaction_date,
+                    recorded_at=confirmation.confirmed_at,
+                    source=BalanceSnapshotSource.RUNNING_BALANCE.value,
+                    verification_status=VerificationStatus.VERIFIED.value,
+                )
+            )
         accepted_count += 1
 
     batch.verification_status = (

@@ -119,6 +119,19 @@ overlap, and flags disconnected ranges. The returned `CsvImportSummary` reports
 rows read, new transactions, exact and probable duplicates, rejected row
 locations, repeated-file status, and coverage findings.
 
+Opening and closing snapshots are dated from the explicitly confirmed CSV
+coverage start and end. Each accepted unique row that contains a running balance
+also creates a verified running-balance snapshot, using the posting date when it
+is present and the transaction date otherwise. Exact duplicates, probable
+duplicates, rejected rows, and rows without a balance do not create that
+evidence. A repeated-file result adds no second snapshot. All of these writes
+remain inside the same import transaction.
+
+This change does not backfill running-balance snapshots for CSV imports created
+before this boundary. Their original values and verified `balance_after` values
+remain preserved; silently manufacturing new historical records during a read
+would break auditability.
+
 Any unexpected database error rolls back the complete import. There is still no
 upload interface or row-review screen; those presentation layers will call this
 service later. The PDF confirmation/persistence workflow remains a future stage
@@ -239,3 +252,9 @@ their canonical values. Rejected rows retain their full unchanged review-row
 evidence rather than disappearing into a count. `approve_statement_review`
 returns this trusted in-memory contract but intentionally performs no database
 write; PDF persistence and the visual review UI remain later stages.
+
+Confirmed PDF balance evidence is therefore not written on its own. A later PDF
+persistence service must atomically retain the approved rows, rejected-row
+evidence, import batch, confirmed coverage, and balance snapshots together. A
+partial shortcut that stores only the approved opening or closing balance would
+lose source lineage and is not permitted.

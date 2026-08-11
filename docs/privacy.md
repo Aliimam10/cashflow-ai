@@ -26,6 +26,9 @@ Repository rules:
   reject the operation if that identity changed.
 - Preserve rejected and probable-duplicate rows locally for audit, but exclude
   them from verified calculations until an explicit later review decision.
+- Treat manual, statement, and running-balance snapshots as private financial
+  data. Do not expose their amounts, dates, source document links, or freshness
+  results in normal logs.
 
 ## Local database
 
@@ -81,3 +84,14 @@ being silently discarded. Only a statement-level approval bound to the exact
 document hash can produce trusted in-memory rows; this stage has no PDF database
 write or review UI, and unverified OCR candidates remain ineligible for every
 downstream calculation or model input.
+
+The persistence boundary must not store an approved PDF balance in isolation.
+Until the complete PDF unit of work exists, balances remain inside the approved
+in-memory result so the source rows, rejected evidence, confirmed coverage, and
+document lineage cannot be separated from them.
+
+Freshness assessment reads only verified, non-future evidence and returns dates,
+ages, warnings, and a readiness mode without logging source descriptions or
+balance amounts. A manually entered balance is deliberately not disguised as a
+transaction or import. Missing or unverified coverage remains unknown and cannot
+be converted into an apparent zero-spend period.

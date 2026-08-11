@@ -155,6 +155,52 @@ Rejected and probable-duplicate CSV rows remain in `raw_transactions` with
 structured issues for audit. Only confirmed unique rows receive a linked
 `verified_transactions` record and become eligible for later calculations.
 
+## Balance evidence and financial-data readiness
+
+Balances are observations, not cash-flow events. They remain in the dedicated
+balance-snapshot table and never create a verified transaction. The current
+writers are deliberately narrow:
+
+- explicitly confirmed CSV statement context creates opening and closing
+  snapshots at the confirmed coverage start and end;
+- each accepted unique CSV row with a running balance creates a snapshot dated
+  by its posting date when present, otherwise by its transaction date; and
+- manual current-balance entry creates one verified snapshot without fabricating
+  an import batch, statement coverage, or transaction.
+
+Exact duplicates, probable duplicates, rejected rows, and rows without a balance
+do not create running-balance evidence. Older imports are not retroactively
+backfilled; their retained transaction `balance_after` values remain available
+for a future explicit migration or re-import decision.
+
+Balance selection is deterministic. A newer `as_of_date` always wins. For
+observations on the same date, source priority is manual, statement closing,
+running balance, then statement opening; recording time and database identity
+break any remaining tie. Money remains fixed-precision `Decimal`, and future or
+unverified observations are ineligible. A zero or negative account balance is
+valid evidence rather than a missing value.
+
+The freshness service reads verified transactions, verified balances, and
+verified statement coverage for one account at an explicit assessment date. The
+caller supplies maximum transaction, balance, and coverage ages plus a minimum
+consecutive-coverage length. Only `complete` and `overlapping` coverage, plus the
+known segments left after removing every explicit gap from `gapped` coverage,
+can prove continuity. `partial` and `unknown` periods cannot. Missing dates stay
+unknown and never become zero activity.
+
+The result reports each evidence date and age, the latest qualifying consecutive
+coverage, stable warnings, and `data_freshness_days`: the age of the most recent
+trusted transaction-or-balance observation. It selects either
+`active_forecasting` or `archive`. This mode is a conservative readiness gate
+for a later forecasting service, not a forecast, model, API endpoint, or UI
+state transition.
+
+Approved PDF balances remain in the in-memory review contract. There is no PDF
+database persistence yet, so the system must not write an opening or closing PDF
+snapshot in isolation from its approved rows, rejected-row evidence, import
+batch, and confirmed coverage. That complete atomic persistence workflow belongs
+to a later stage.
+
 ## Configuration
 
 Application configuration is loaded explicitly through
