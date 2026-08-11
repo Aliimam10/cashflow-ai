@@ -12,8 +12,10 @@ canonical transaction and statement contracts, safe CSV preview and mapping,
 transaction normalisation, conservative duplicate/overlap detection, a migrated
 local SQLite persistence layer, atomic confirmed CSV imports, and review-only
 embedded-text and scanned-PDF extraction, plus statement reconciliation and
-explicit PDF review contracts**. PDF persistence, APIs, user
-interfaces, and machine-learning components have not been implemented yet.
+explicit PDF review contracts, verified balance snapshots, and a conservative
+financial-data freshness assessment**. PDF persistence, APIs, user interfaces,
+forecast generation, and machine-learning components have not been implemented
+yet.
 
 ## Problem
 
@@ -67,7 +69,9 @@ Streamlit will be added in later, separately reviewed stages.
   valid rows become verified transactions, exact duplicates are skipped,
   probable duplicates await review, and invalid rows retain structured issues.
   Statement context, gaps, overlaps, notes, flags, and reported balances are
-  stored with the import, and an unexpected failure rolls everything back.
+  stored with the import. Accepted unique rows with a running balance also
+  create dated balance snapshots, and an unexpected failure rolls everything
+  back.
 - Digital PDFs downloaded from online banking can now be validated and parsed
   in memory using embedded text, recognised tables, or a conservative generic
   fallback. Candidates retain their source page and require review; no PDF row
@@ -94,6 +98,30 @@ Streamlit will be added in later, separately reviewed stages.
   guessed last-transaction date.
 - All three input paths converge on the same canonical transaction contracts;
   PDFs are not trusted merely because they can be converted to tabular text.
+
+### Implemented balance and freshness boundary
+
+Balance evidence remains separate from cash-flow activity. Explicitly confirmed
+CSV statement context creates opening and closing snapshots at the coverage
+boundaries, accepted unique CSV rows can create running-balance snapshots, and a
+manually entered current balance creates a verified snapshot without creating a
+transaction, import, or statement coverage.
+
+For a requested assessment date, the service selects the newest verified,
+non-future balance. If multiple observations share that date, the preference is
+manual, statement closing, running balance, then statement opening, followed by
+recording time and database identity. It calculates separate transaction,
+balance, and coverage ages, plus `data_freshness_days`, the age of the most
+recent trusted transaction-or-balance evidence. The caller must explicitly set
+the maximum permitted age for each evidence type and the minimum required
+consecutive coverage; there are no hidden product thresholds.
+
+Only verified `complete`/`overlapping` coverage and known portions of verified
+`gapped` coverage can prove continuity. `partial` or `unknown` coverage, missing
+evidence, and future or unverified records cannot. The result is either
+`active_forecasting` or `archive`, with stable warnings explaining the decision.
+This is a data-readiness gate only: it does not run a forecast, expose an API, or
+provide a user interface.
 
 The CSV preview, confirmation, and persistence pipeline currently consists of
 Python services rather than an upload or review screen.
@@ -208,9 +236,10 @@ data, canonical data contracts, CSV preview/mapping, transaction cleaning,
 duplicate/statement-overlap detection, and SQLite persistence are configured.
 Confirmed CSV imports, text-PDF extraction, and local scanned-PDF OCR are
 implemented. Statement balance reconciliation and targeted PDF review are also
-implemented. The next stages will add balance freshness, financial-role
-classification, analytics, evaluated ML components, APIs, the frontend,
-deployment, and release documentation.
+implemented. Verified balance tracking and financial-data freshness assessment
+are implemented as Python service boundaries. The next stages will add
+financial-role classification, analytics, evaluated ML components, APIs, the
+frontend, deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

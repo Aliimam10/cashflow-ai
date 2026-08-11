@@ -29,6 +29,13 @@ from cashflow_ai.schemas.duplicates import (
     StatementOverlapStatus,
     StatementRecord,
 )
+from cashflow_ai.schemas.freshness import (
+    FinancialDataFreshness,
+    FinancialDataMode,
+    FreshnessPolicy,
+    FreshnessWarningCode,
+    VerifiedBalanceEvidence,
+)
 from cashflow_ai.schemas.imports import (
     ExtractionMethod,
     ExtractionProvenance,
@@ -133,7 +140,11 @@ __all__ = [
     "ExtractionMethod",
     "ExtractionProvenance",
     "FieldConfidence",
+    "FinancialDataFreshness",
+    "FinancialDataMode",
     "FinancialRole",
+    "FreshnessPolicy",
+    "FreshnessWarningCode",
     "ImportCandidate",
     "ImportContext",
     "ImportDocument",
@@ -176,5 +187,6 @@ __all__ = [
     "TransactionDraft",
     "TransactionField",
     "VerificationStatus",
+    "VerifiedBalanceEvidence",
     "load_taxonomy",
 ]

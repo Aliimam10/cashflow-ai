@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import date, timedelta
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import case, desc, func, or_, select
 from sqlalchemy.orm import Session
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -142,6 +142,19 @@ class TransactionRepository:
         )
         return tuple(self._session.scalars(statement))
 
+    def latest_verified_date(
+        self,
+        account_id: str,
+        *,
+        as_of_date: date,
+    ) -> date | None:
+        """Return the latest trusted transaction date up to an inclusive cutoff."""
+        statement = select(func.max(VerifiedTransactionRecord.transaction_date)).where(
+            VerifiedTransactionRecord.account_id == account_id,
+            VerifiedTransactionRecord.transaction_date <= as_of_date,
+        )
+        return self._session.scalar(statement)
+
     def list_raw_for_batch(
         self,
         import_batch_id: str,
@@ -215,9 +228,7 @@ class StatementRepository:
 
     def add_balance(self, balance: BalanceSnapshotRecord) -> BalanceSnapshotRecord:
         """Stage and flush one statement balance snapshot."""
-        self._session.add(balance)
-        self._session.flush()
-        return balance
+        return BalanceSnapshotRepository(self._session).add(balance)
 
     def list_coverages_for_account(
         self,
@@ -259,5 +270,80 @@ class StatementRepository:
                 ImportContextRecord.id == StatementCoverageRecord.import_context_id,
             )
             .where(ImportContextRecord.import_batch_id == import_batch_id)
+        )
+        return self._session.scalar(statement)
+
+    def list_verified_coverages_for_account(
+        self,
+        account_id: str,
+        *,
+        as_of_date: date,
+    ) -> tuple[StatementCoverageRecord, ...]:
+        """Return fully elapsed coverage belonging to verified import batches."""
+        statement = (
+            select(StatementCoverageRecord)
+            .join(
+                ImportContextRecord,
+                ImportContextRecord.id == StatementCoverageRecord.import_context_id,
+            )
+            .join(
+                ImportBatchRecord,
+                ImportBatchRecord.id == ImportContextRecord.import_batch_id,
+            )
+            .where(
+                ImportBatchRecord.account_id == account_id,
+                ImportBatchRecord.verification_status == "verified",
+                StatementCoverageRecord.statement_end_date <= as_of_date,
+            )
+            .order_by(
+                StatementCoverageRecord.statement_start_date,
+                StatementCoverageRecord.statement_end_date,
+                StatementCoverageRecord.id,
+            )
+        )
+        return tuple(self._session.scalars(statement))
+
+
+class BalanceSnapshotRepository:
+    """Store and select balance evidence without creating transactions."""
+
+    def __init__(self, session: Session) -> None:
+        """Bind repository operations to one transaction-scoped session."""
+        self._session = session
+
+    def add(self, balance: BalanceSnapshotRecord) -> BalanceSnapshotRecord:
+        """Stage and flush one balance observation."""
+        self._session.add(balance)
+        self._session.flush()
+        return balance
+
+    def latest_verified_for_account(
+        self,
+        account_id: str,
+        *,
+        as_of_date: date,
+    ) -> BalanceSnapshotRecord | None:
+        """Select the latest eligible balance using a deterministic source policy."""
+        source_priority = case(
+            (BalanceSnapshotRecord.source == "manual", 4),
+            (BalanceSnapshotRecord.source == "statement_closing", 3),
+            (BalanceSnapshotRecord.source == "running_balance", 2),
+            (BalanceSnapshotRecord.source == "statement_opening", 1),
+            else_=0,
+        )
+        statement = (
+            select(BalanceSnapshotRecord)
+            .where(
+                BalanceSnapshotRecord.account_id == account_id,
+                BalanceSnapshotRecord.verification_status == "verified",
+                BalanceSnapshotRecord.as_of_date <= as_of_date,
+            )
+            .order_by(
+                desc(BalanceSnapshotRecord.as_of_date),
+                desc(source_priority),
+                desc(BalanceSnapshotRecord.recorded_at),
+                desc(BalanceSnapshotRecord.id),
+            )
+            .limit(1)
         )
         return self._session.scalar(statement)

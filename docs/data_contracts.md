@@ -122,6 +122,56 @@ verification status. Statement and running-balance snapshots retain their source
 document ID; manually entered snapshots must not claim a source document. A
 snapshot is not a transaction and never appears in transaction totals.
 
+The persisted source values are statement opening, statement closing, running
+balance, and manual. Imported opening and closing balances use the explicitly
+confirmed statement coverage boundaries. A running balance from an accepted
+unique CSV row uses its posting date when present and its transaction date
+otherwise. A manual entry is its own verified observation and supplies neither
+statement coverage nor transaction history.
+
+When selecting current balance evidence, the greatest non-future `as_of_date`
+wins. Same-date ties use manual, statement closing, running balance, then
+statement opening priority before recording time and database identity. Only
+verified records are eligible. Amounts stay as fixed-precision `Decimal`; zero
+and negative balances are valid.
+
+## Financial-data freshness
+
+A freshness request identifies one account, an assessment date, and an explicit
+policy. The policy supplies maximum permitted transaction age, balance age, and
+coverage age in days, plus the minimum consecutive verified coverage in days.
+These thresholds are caller decisions rather than hidden defaults.
+
+The result exposes the latest eligible verified-transaction date and its age,
+the selected balance amount, source, date, recording time and age, and the latest
+qualifying consecutive coverage range, length and age. It also exposes
+`data_freshness_days`, defined as the age of the more recent of the latest
+trusted transaction and selected balance. The separate ages remain available so
+a recent manual balance cannot conceal stale transaction history.
+
+Coverage can prove continuity only when it belongs to a verified import and is:
+
+- `complete` or `overlapping`, contributing its inclusive whole period; or
+- `gapped`, contributing only the known segments outside every explicit missing
+  period.
+
+`partial` and `unknown` coverage contribute no known interval. Adjacent or
+overlapping eligible intervals can form one consecutive range. Future
+transactions, balances, or coverage do not satisfy freshness, and absence is
+reported as unknown rather than zero.
+
+The assessment returns stable warnings and either `active_forecasting` or
+`archive`. `active_forecasting` means only that every explicit evidence-age and
+continuity rule passed. The contract does not produce a forecast, change stored
+records, or define an API or interface.
+
+Warning codes are `account_inactive`, `no_verified_transactions`,
+`transactions_stale`, `no_verified_balance`, `balance_stale`,
+`no_verified_coverage`, `coverage_stale`,
+`insufficient_contiguous_coverage`, and
+`latest_transaction_outside_contiguous_coverage`. Their order is deterministic:
+account state, transaction evidence, balance evidence, then coverage evidence.
+
 ## Statement context
 
 `ImportContext` links an account, coverage, optional balances, structured flags,
