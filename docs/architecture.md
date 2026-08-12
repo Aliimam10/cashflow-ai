@@ -225,7 +225,39 @@ and repeated suggestion generation is idempotent.
 Statement flags and notes are joined into the local review projection for
 reference only. They are not inputs to suggestion rules and cannot change roles,
 categories, analytics, or forecasts. This module adds no financial totals,
-categorisation, API, or interface; Commit 17 consumes only confirmed roles.
+categorisation, API, or interface; the analytics module consumes only current
+confirmed roles.
+
+## Coverage-aware analytics
+
+`cashflow_ai.analytics` is a read-only application/domain boundary over narrow
+repository queries. It receives an owned account set, an inclusive date range,
+and either an account or consolidated view. The repository reads accepted
+verified transactions, verified-import coverage, verified balance snapshots,
+optional category names, and currently valid confirmed transfer links. It never
+loads raw payloads, statement notes, flags, or pending suggestions.
+
+The service performs `Decimal` aggregation in memory and returns typed immutable
+contracts. Financial role, rather than category metadata, decides whether a row
+is income, expense, refund, reimbursement, cash withdrawal, transfer, excluded,
+or unresolved. This keeps Commit 18 category rules from changing headline cash
+flow semantics.
+
+Coverage is an independent input to every period result. Complete and overlapping
+statement ranges prove their full dates; gapped ranges prove only dates outside
+their explicit gaps; partial, unknown, and unverified ranges prove nothing. For
+multiple accounts, complete dates are the intersection, partially covered dates
+are the union minus that intersection, and dates outside the union remain
+missing. No transaction absence is used to infer coverage.
+
+Balance history uses only verified snapshots and collapses same-day evidence with
+the existing manual, closing, running, opening priority. Points inside one known
+coverage interval may share a chart segment. Every explicit gap starts a new
+segment, and a point outside known coverage is standalone, so a later chart
+cannot silently bridge missing months.
+
+No analytics output is persisted. The module adds no migration, category rule,
+recurrence detector, forecast, anomaly model, route, or visual component.
 
 ## Configuration
 

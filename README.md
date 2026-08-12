@@ -14,9 +14,10 @@ local SQLite persistence layer, atomic confirmed CSV imports, and review-only
 embedded-text and scanned-PDF extraction, plus statement reconciliation and
 explicit PDF review contracts, verified balance snapshots, and a conservative
 financial-data freshness assessment, plus user-confirmed financial-role
-suggestions for transfers, refunds, and reimbursements**. PDF persistence, APIs,
-user interfaces, financial analytics, forecast generation, and machine-learning
-components have not been implemented yet.
+suggestions for transfers, refunds, and reimbursements, and deterministic
+coverage-aware cash-flow analytics**. PDF persistence, APIs, user interfaces,
+categorisation rules, forecast generation, and machine-learning components have
+not been implemented yet.
 
 ## Problem
 
@@ -141,8 +142,26 @@ raw source values and categories remain untouched.
 
 Statement flags and free-text notes appear only as reference context in the
 review queue. They are never parsed to assign a role. There is no API or visual
-review screen yet, and this stage does not calculate income, expenses, or any
-other analytics.
+review screen yet, and the role-review stage itself does not calculate totals.
+
+### Implemented coverage-aware analytics boundary
+
+The read-only analytics service calculates role-aware income, expenses, refunds,
+reimbursements, cash withdrawals, external net cash flow, transfer movement,
+savings rate, expense-category totals, largest transactions, monthly summaries,
+and gap-preserving balance history. All money remains fixed-precision `Decimal`.
+
+Results are tied to explicit verified statement coverage. A fully covered empty
+month is genuinely zero; a month with no trusted coverage is unavailable rather
+than zero. Incomplete periods are labelled `observed_only`, and savings rate is
+withheld when coverage is incomplete, a financial role remains unknown, or
+income is zero. Account views show transfer movement; consolidated views suppress
+both legs of a currently valid confirmed internal-transfer pair.
+
+Expense spending is currently `unclassified` for recurrence because recurrence
+detection belongs to a later stage. Null categories remain an explicit
+uncategorised bucket until rule-based categorisation is added. The service writes
+nothing, stores no derived report, and exposes no API or UI yet.
 
 The CSV preview, confirmation, and persistence pipeline currently consists of
 Python services rather than an upload or review screen.
@@ -245,6 +264,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 - [`docs/data_contracts.md`](docs/data_contracts.md)
 - [`docs/imports.md`](docs/imports.md)
 - [`docs/persistence.md`](docs/persistence.md)
+- [`docs/analytics.md`](docs/analytics.md)
 - [`docs/modelling.md`](docs/modelling.md)
 - [`docs/evaluation.md`](docs/evaluation.md)
 - [`docs/privacy.md`](docs/privacy.md)
@@ -260,9 +280,10 @@ implemented. Statement balance reconciliation and targeted PDF review are also
 implemented. Verified balance tracking and financial-data freshness assessment
 are implemented as Python service boundaries. Conservative financial-role
 suggestions, explicit user decisions, and role-change audit history are also
-implemented. The next stages will add coverage-aware analytics, categorisation,
-evaluated ML components, APIs, the frontend, deployment, and release
-documentation.
+implemented. Coverage-aware cash-flow analytics and gap-preserving balance
+history are implemented as read-only Python services. The next stages will add
+deterministic categorisation, evaluated ML components, APIs, the frontend,
+deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

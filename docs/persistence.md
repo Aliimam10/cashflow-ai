@@ -129,3 +129,27 @@ Direct user actions are also audited when they change a role. `needs_review`
 uses the existing structured `user_flags` table and is idempotent. A decision
 rejects other pending suggestions involving the affected transaction, while raw
 transactions, categories, statement notes, and import context remain unchanged.
+
+## Read-only financial analytics
+
+The analytics repository reads a bounded date range and never stages or commits a
+record. Accepted rows come directly from `verified_transactions`; a whole import
+batch may still need review because a different source row was rejected or marked
+as a probable duplicate. Only a linked verified transaction is eligible for
+totals. Raw-only, rejected, and probable-duplicate records remain excluded.
+
+Coverage has a stricter trust rule: it contributes only when its import batch is
+verified. Queries select every coverage interval that overlaps the requested
+range, and the service clips and combines those intervals without treating absent
+transactions as evidence of zero activity. Balance queries select only verified
+snapshots and apply deterministic same-day source priority before chart segments
+are built.
+
+Confirmed paired-transfer suggestions are read only to decide whether movement is
+internal to a consolidated account set. Their stored status is not sufficient:
+both current transaction roles, opposite amounts, distinct accounts, and currency
+must still agree. A later user override therefore makes a stale pair link inert.
+Pending suggestions and role-audit history never change current calculations.
+
+Analytics reports are calculated in memory with `Decimal` and are not database
+tables. Commit 17 adds no migration, stored aggregate, cache, or new dependency.

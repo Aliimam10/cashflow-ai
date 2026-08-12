@@ -380,3 +380,41 @@ confirmed suggestion, decision source, and aware change time. `RoleReviewItem`
 shows current transaction data plus statement flags and note as inert local
 reference context. Free text is not a rule input and never appears in controlled
 reason codes.
+
+## Coverage-aware analytics contracts
+
+`AnalyticsScope` identifies the local profile, a non-empty unique account set,
+an inclusive `DateRange`, the account or consolidated view, and a bounded largest
+transaction count. Account view requires exactly one account. The service rejects
+missing or foreign-owned accounts and account sets that do not share one currency.
+
+`DataCoverageIndicator` keeps the requested range beside fully covered,
+partially covered, and missing ranges with inclusive day counts. It also includes
+one `AccountCoverageIndicator` per account so consolidated gaps remain
+explainable. Its status is `complete`, `partial`, or `missing`.
+
+`CashFlowTotals` contains income, expenses, refunds, reimbursements, cash
+withdrawals, external net cash flow, visible transfer inflow/outflow/net movement,
+unknown inflow/outflow, excluded inflow/outflow, and controlled counts. Its value
+basis is `complete_period` or `observed_only`. The totals contract is absent when
+the requested period has no trusted coverage; observed transaction count remains
+available to show that rows were not silently discarded.
+
+`SavingsRateResult` contains either a two-decimal percentage or exactly one
+stable reason: incomplete coverage, unresolved financial roles, or no income.
+`CategorySpending` groups expense-role rows only and preserves `None` as the
+uncategorised bucket. `SpendingCadenceBreakdown` exposes recurring,
+discretionary, and unclassified values; until the later recurrence stage creates
+an explicit transaction classification, all expense-role spending is
+unclassified.
+
+`LargestTransaction` retains the current role and signed amount so transfers and
+unknowns are explainable; explicitly excluded rows are omitted. Balance contracts
+return per-account `BalanceHistorySegment` values. A segment has either a proven
+coverage interval or one standalone point, and callers must not connect separate
+segments.
+
+`MonthlyCashFlow` distinguishes a complete empty month from an uncovered month by
+using a present zero-valued total only for the former. `MonthlyComparison` returns
+changes only for adjacent full calendar months with complete coverage and no
+unknown roles; otherwise it carries a stable unavailability reason.

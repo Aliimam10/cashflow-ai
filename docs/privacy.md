@@ -102,3 +102,11 @@ facts, never copied statement text. Free-text statement notes remain visible as
 local review context but are not parsed into a role. Confirming or overriding a
 role updates only the verified interpretation and append-only audit history;
 the original raw payload and description remain unchanged.
+
+Coverage-aware analytics also runs locally and read-only. Repository queries do
+not load raw payloads, statement notes, flags, pending suggestions, or rejected
+rows. Returned descriptions, amounts, balances, categories, coverage ranges, and
+derived totals are private financial data intended for the local caller; they
+must not be placed in normal logs, telemetry, committed snapshots, or test
+fixtures based on a real person. Automated analytics tests use fictional values
+only. No derived analytics report is persisted by this stage.

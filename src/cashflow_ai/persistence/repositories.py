@@ -5,12 +5,13 @@ from __future__ import annotations
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import case, desc, func, or_, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.elements import ColumnElement
 
 from cashflow_ai.persistence.models import (
     AccountRecord,
     BalanceSnapshotRecord,
+    CategoryRecord,
     FinancialRoleAuditRecord,
     FinancialRoleSuggestionRecord,
     ImportBatchRecord,
@@ -21,6 +22,17 @@ from cashflow_ai.persistence.models import (
     UserProfileRecord,
     VerifiedTransactionRecord,
 )
+
+type AnalyticsTransactionRow = tuple[
+    VerifiedTransactionRecord,
+    CategoryRecord | None,
+]
+type AnalyticsCoverageRow = tuple[str, StatementCoverageRecord]
+type ConfirmedTransferRow = tuple[
+    FinancialRoleSuggestionRecord,
+    VerifiedTransactionRecord,
+    VerifiedTransactionRecord,
+]
 
 
 class UserProfileRepository:
@@ -350,6 +362,173 @@ class BalanceSnapshotRepository:
             .limit(1)
         )
         return self._session.scalar(statement)
+
+
+class AnalyticsRepository:
+    """Read trusted persisted evidence for coverage-aware analytics."""
+
+    def __init__(self, session: Session) -> None:
+        """Bind repository reads to one transaction-scoped session."""
+        self._session = session
+
+    def list_owned_accounts(
+        self,
+        user_profile_id: str,
+        account_ids: tuple[str, ...],
+    ) -> tuple[AccountRecord, ...]:
+        """Return selected accounts owned by the local profile in stable order."""
+        statement = (
+            select(AccountRecord)
+            .where(
+                AccountRecord.user_profile_id == user_profile_id,
+                AccountRecord.id.in_(account_ids),
+            )
+            .order_by(AccountRecord.id)
+        )
+        return tuple(self._session.scalars(statement))
+
+    def list_transactions(
+        self,
+        *,
+        user_profile_id: str,
+        account_ids: tuple[str, ...],
+        start_date: date,
+        end_date: date,
+    ) -> tuple[AnalyticsTransactionRow, ...]:
+        """Return accepted transactions and optional categories in the range."""
+        statement = (
+            select(VerifiedTransactionRecord, CategoryRecord)
+            .join(
+                AccountRecord,
+                AccountRecord.id == VerifiedTransactionRecord.account_id,
+            )
+            .outerjoin(
+                CategoryRecord,
+                CategoryRecord.id == VerifiedTransactionRecord.category_id,
+            )
+            .where(
+                AccountRecord.user_profile_id == user_profile_id,
+                VerifiedTransactionRecord.account_id.in_(account_ids),
+                VerifiedTransactionRecord.transaction_date.between(
+                    start_date,
+                    end_date,
+                ),
+            )
+            .order_by(
+                VerifiedTransactionRecord.transaction_date,
+                VerifiedTransactionRecord.account_id,
+                VerifiedTransactionRecord.id,
+            )
+        )
+        return tuple(self._session.execute(statement).tuples())
+
+    def list_verified_coverages(
+        self,
+        *,
+        user_profile_id: str,
+        account_ids: tuple[str, ...],
+        start_date: date,
+        end_date: date,
+    ) -> tuple[AnalyticsCoverageRow, ...]:
+        """Return verified statement coverage intersecting the requested range."""
+        statement = (
+            select(ImportBatchRecord.account_id, StatementCoverageRecord)
+            .join(
+                ImportContextRecord,
+                ImportContextRecord.id == StatementCoverageRecord.import_context_id,
+            )
+            .join(
+                ImportBatchRecord,
+                ImportBatchRecord.id == ImportContextRecord.import_batch_id,
+            )
+            .join(AccountRecord, AccountRecord.id == ImportBatchRecord.account_id)
+            .where(
+                AccountRecord.user_profile_id == user_profile_id,
+                ImportBatchRecord.account_id.in_(account_ids),
+                ImportBatchRecord.verification_status == "verified",
+                StatementCoverageRecord.statement_end_date >= start_date,
+                StatementCoverageRecord.statement_start_date <= end_date,
+            )
+            .order_by(
+                ImportBatchRecord.account_id,
+                StatementCoverageRecord.statement_start_date,
+                StatementCoverageRecord.statement_end_date,
+                StatementCoverageRecord.id,
+            )
+        )
+        return tuple(self._session.execute(statement).tuples())
+
+    def list_verified_balances(
+        self,
+        *,
+        user_profile_id: str,
+        account_ids: tuple[str, ...],
+        start_date: date,
+        end_date: date,
+    ) -> tuple[BalanceSnapshotRecord, ...]:
+        """Return verified balance evidence using deterministic same-day priority."""
+        source_priority = case(
+            (BalanceSnapshotRecord.source == "manual", 4),
+            (BalanceSnapshotRecord.source == "statement_closing", 3),
+            (BalanceSnapshotRecord.source == "running_balance", 2),
+            (BalanceSnapshotRecord.source == "statement_opening", 1),
+            else_=0,
+        )
+        statement = (
+            select(BalanceSnapshotRecord)
+            .join(AccountRecord, AccountRecord.id == BalanceSnapshotRecord.account_id)
+            .where(
+                AccountRecord.user_profile_id == user_profile_id,
+                BalanceSnapshotRecord.account_id.in_(account_ids),
+                BalanceSnapshotRecord.verification_status == "verified",
+                BalanceSnapshotRecord.as_of_date.between(start_date, end_date),
+            )
+            .order_by(
+                BalanceSnapshotRecord.account_id,
+                BalanceSnapshotRecord.as_of_date,
+                desc(source_priority),
+                desc(BalanceSnapshotRecord.recorded_at),
+                desc(BalanceSnapshotRecord.id),
+            )
+        )
+        return tuple(self._session.scalars(statement))
+
+    def list_confirmed_transfer_pairs(
+        self,
+        transaction_ids: tuple[str, ...],
+    ) -> tuple[ConfirmedTransferRow, ...]:
+        """Return confirmed paired suggestions touching the observed rows."""
+        if not transaction_ids:
+            return ()
+        subject = aliased(VerifiedTransactionRecord, name="transfer_subject")
+        counterpart = aliased(VerifiedTransactionRecord, name="transfer_counterpart")
+        statement = (
+            select(FinancialRoleSuggestionRecord, subject, counterpart)
+            .join(
+                subject,
+                subject.id == FinancialRoleSuggestionRecord.verified_transaction_id,
+            )
+            .join(
+                counterpart,
+                counterpart.id
+                == FinancialRoleSuggestionRecord.counterpart_transaction_id,
+            )
+            .where(
+                FinancialRoleSuggestionRecord.kind == "transfer",
+                FinancialRoleSuggestionRecord.status == "confirmed",
+                FinancialRoleSuggestionRecord.counterpart_transaction_id.is_not(None),
+                or_(
+                    FinancialRoleSuggestionRecord.verified_transaction_id.in_(
+                        transaction_ids
+                    ),
+                    FinancialRoleSuggestionRecord.counterpart_transaction_id.in_(
+                        transaction_ids
+                    ),
+                ),
+            )
+            .order_by(FinancialRoleSuggestionRecord.id)
+        )
+        return tuple(self._session.execute(statement).tuples())
 
 
 class FinancialRoleRepository:
