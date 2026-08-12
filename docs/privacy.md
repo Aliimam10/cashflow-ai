@@ -110,3 +110,19 @@ derived totals are private financial data intended for the local caller; they
 must not be placed in normal logs, telemetry, committed snapshots, or test
 fixtures based on a real person. Automated analytics tests use fictional values
 only. No derived analytics report is persisted by this stage.
+
+Deterministic categorisation also runs locally. Its repository does not load raw
+payloads, import notes, or flags, and no categorisation path may use those values
+as hidden rules. Matching uses temporary normalised copies of the verified
+merchant and description; it never rewrites source text. A category assignment
+changes only the verified interpretation and cannot change financial role,
+amount, date, account, currency, source lineage, or extraction evidence.
+
+Category explanations expose controlled reason codes, rule identities, and field
+names only. They do not echo matched merchant text, description phrases, amounts,
+account identifiers, or free-text statement notes into logs or telemetry.
+Repository merchant and keyword configuration contains generic public rules,
+never a real person's transaction history. Personal rules remain private local
+inputs and are not persisted by Commit 18; future storage and deletion controls
+belong to the Commit 20 correction workflow. Committed categorisation tests use
+fictional values only.

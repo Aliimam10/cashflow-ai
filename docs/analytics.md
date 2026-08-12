@@ -97,6 +97,14 @@ explicit uncategorised bucket, not the `other` category. Refunds, transfers, and
 cash withdrawals do not become category expenses merely because of category
 metadata.
 
+The deterministic categorisation service can now populate those expense
+categories from an explicit transaction decision, scoped personal rule, exact
+merchant mapping, whole-phrase keyword rule, or `needs_review` fallback. A later
+analytics call will then include the assigned category in its breakdown. Category
+assignment still cannot change headline totals because those depend exclusively
+on the independently confirmed financial role. Transactions that have not run
+through categorisation can still retain a null category.
+
 Commit 21 owns recurrence detection and confirmation. The current database has no
 reliable transaction-to-recurring-series link, so all expense-role spending is
 reported as `unclassified`; the service does not infer recurrence from merchant,
@@ -122,7 +130,8 @@ missing balances by summing transactions.
 
 - Version 1 analytics supports one shared account currency and currently validates
   GBP.
-- Category assignment rules arrive in Commit 18.
+- Commit 18 categorisation is deterministic only; evaluated ML categorisation and
+  the persistent correction/personal-rule workflow arrive in Commits 19 and 20.
 - Recurrence detection and confirmation arrive in Commit 21.
 - Forecasting, anomaly detection, budgets, APIs, and visual dashboards are later
   stages.

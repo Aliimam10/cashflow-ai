@@ -11,6 +11,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from cashflow_ai.persistence.models import (
     AccountRecord,
     BalanceSnapshotRecord,
+    CategoryCorrectionRecord,
     CategoryRecord,
     FinancialRoleAuditRecord,
     FinancialRoleSuggestionRecord,
@@ -529,6 +530,83 @@ class AnalyticsRepository:
             .order_by(FinancialRoleSuggestionRecord.id)
         )
         return tuple(self._session.execute(statement).tuples())
+
+
+class CategorisationRepository:
+    """Read categorisation inputs and stage category-only transaction updates."""
+
+    def __init__(self, session: Session) -> None:
+        """Bind repository operations to one transaction-scoped session."""
+        self._session = session
+
+    def list_transactions_for_profile(
+        self,
+        user_profile_id: str,
+        *,
+        transaction_ids: tuple[str, ...] | None = None,
+    ) -> tuple[VerifiedTransactionRecord, ...]:
+        """Return owned verified transactions in deterministic order."""
+        statement = (
+            select(VerifiedTransactionRecord)
+            .join(
+                AccountRecord, AccountRecord.id == VerifiedTransactionRecord.account_id
+            )
+            .where(AccountRecord.user_profile_id == user_profile_id)
+        )
+        if transaction_ids is not None:
+            statement = statement.where(
+                VerifiedTransactionRecord.id.in_(transaction_ids)
+            )
+        statement = statement.order_by(
+            VerifiedTransactionRecord.transaction_date,
+            VerifiedTransactionRecord.account_id,
+            VerifiedTransactionRecord.id,
+        )
+        return tuple(self._session.scalars(statement))
+
+    def latest_category_corrections(
+        self,
+        transaction_ids: tuple[str, ...],
+    ) -> dict[str, CategoryCorrectionRecord]:
+        """Return the latest explicit category decision for each transaction."""
+        if not transaction_ids:
+            return {}
+        statement = (
+            select(CategoryCorrectionRecord)
+            .where(
+                CategoryCorrectionRecord.verified_transaction_id.in_(transaction_ids)
+            )
+            .order_by(
+                CategoryCorrectionRecord.corrected_at,
+                CategoryCorrectionRecord.id,
+            )
+        )
+        latest: dict[str, CategoryCorrectionRecord] = {}
+        for correction in self._session.scalars(statement):
+            latest[correction.verified_transaction_id] = correction
+        return latest
+
+    def list_categories(
+        self,
+        category_ids: tuple[str, ...],
+    ) -> tuple[CategoryRecord, ...]:
+        """Return category targets in stable ID order."""
+        if not category_ids:
+            return ()
+        statement = (
+            select(CategoryRecord)
+            .where(CategoryRecord.id.in_(category_ids))
+            .order_by(CategoryRecord.id)
+        )
+        return tuple(self._session.scalars(statement))
+
+    def assign_category(
+        self,
+        transaction: VerifiedTransactionRecord,
+        category_id: str,
+    ) -> None:
+        """Stage only the selected category on one verified transaction."""
+        transaction.category_id = category_id
 
 
 class FinancialRoleRepository:

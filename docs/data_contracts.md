@@ -79,6 +79,43 @@ The demo-data schema remains a generator-specific labelled format. Source
 adapters convert generated or uploaded rows into the same canonical contracts;
 the demo schema is not a second application ingestion boundary.
 
+## Deterministic categorisation
+
+`configs/category_rules.yaml` is a separately versioned deterministic rule set
+and declares the taxonomy version it targets. `CategoryRuleSet` validates unique
+rule identities, exact merchant aliases, and keyword phrases; the taxonomy-aware
+loader also validates that configured category targets exist and are active.
+Merchant aliases and keyword phrases must remain unique after Unicode, case,
+punctuation, and whitespace normalisation, so configuration order cannot silently
+select a different category.
+
+`ScopedCategoryRule` represents one caller-supplied personal rule owned by the
+selected profile. It always requires an exact normalised merchant and can also
+require direction, account, a whole description phrase, and an inclusive
+absolute-amount range. Optional restrictions are combined with AND semantics.
+Amounts remain `Decimal`, range bounds must be non-negative, and the maximum
+cannot be below the minimum. An inactive personal rule cannot match.
+
+`CategorisationPlan` limits one run to an owned profile and either every verified
+transaction in that profile or a non-empty unique transaction selection. Its
+personal-rule identities must be unique and every rule must name the same
+profile. Personal rules are inputs to the run; this contract does not persist or
+create them.
+
+`CategoryDecision` records the transaction, previous and selected category,
+taxonomy and rule-set versions, whether the stored category changed, and a
+`CategoryExplanation`. Explanations use controlled sources and reason codes,
+optionally identify the selected rule, and identify only the fields that matched.
+They never copy merchant text, descriptions, amounts, or account values.
+
+The current precedence sources are transaction decision, personal rule, merchant
+mapping, keyword rule, and `needs_review`. A transaction decision is the latest
+existing explicit category correction. If no deterministic rule matches, or
+equally ranked rules disagree, the selected category is `needs_review`. Commit 19
+adds the evaluated ML model; Commit 20 adds hybrid inference, persistent
+personal-rule creation, and the correction workflow. This stage defines neither
+an API nor a UI contract.
+
 ## Accounts and financial roles
 
 Version 1 supports current, checking, and savings accounts. Credit-card

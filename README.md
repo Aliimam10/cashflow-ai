@@ -15,9 +15,9 @@ embedded-text and scanned-PDF extraction, plus statement reconciliation and
 explicit PDF review contracts, verified balance snapshots, and a conservative
 financial-data freshness assessment, plus user-confirmed financial-role
 suggestions for transfers, refunds, and reimbursements, and deterministic
-coverage-aware cash-flow analytics**. PDF persistence, APIs, user interfaces,
-categorisation rules, forecast generation, and machine-learning components have
-not been implemented yet.
+coverage-aware cash-flow analytics, and explainable deterministic transaction
+categorisation**. PDF persistence, APIs, user interfaces, forecast generation,
+and machine-learning components have not been implemented yet.
 
 ## Problem
 
@@ -160,8 +160,33 @@ both legs of a currently valid confirmed internal-transfer pair.
 
 Expense spending is currently `unclassified` for recurrence because recurrence
 detection belongs to a later stage. Null categories remain an explicit
-uncategorised bucket until rule-based categorisation is added. The service writes
-nothing, stores no derived report, and exposes no API or UI yet.
+uncategorised bucket for transactions that have not run through categorisation.
+The service writes nothing, stores no derived report, and exposes no API or UI
+yet.
+
+### Implemented deterministic categorisation boundary
+
+Verified transactions can now be assigned Version 1 categories such as housing,
+groceries, utilities, transport, subscriptions, health, education, and travel.
+The service follows a visible precedence: the latest transaction-specific user
+decision, then an active scoped personal rule, an exact known-merchant mapping,
+a whole-phrase keyword rule, and finally `needs_review`. Commit 19 will develop
+and evaluate the ML categoriser; Commit 20 will insert its predictions between
+keyword rules and the fallback. This stage does not make probabilistic
+predictions.
+
+Personal rules can be restricted by merchant, direction, account, description
+phrase, and an inclusive absolute-amount range. All supplied restrictions must
+match. Rule text is normalised for case and punctuation without changing the
+stored merchant or description, and ambiguous equally ranked rules are sent to
+`needs_review` instead of choosing by input order.
+
+Each run returns a privacy-safe explanation containing a controlled reason,
+precedence source, rule identity where applicable, and which fields matched. It
+updates only the verified transaction's category; financial role, raw import
+evidence, source text, amounts, dates, statement notes, and flags remain
+unchanged. Personal-rule storage, a correction workflow, APIs, and review screens
+belong to Commit 20 and later interface stages.
 
 The CSV preview, confirmation, and persistence pipeline currently consists of
 Python services rather than an upload or review screen.
@@ -265,6 +290,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 - [`docs/imports.md`](docs/imports.md)
 - [`docs/persistence.md`](docs/persistence.md)
 - [`docs/analytics.md`](docs/analytics.md)
+- [`docs/categorisation.md`](docs/categorisation.md)
 - [`docs/modelling.md`](docs/modelling.md)
 - [`docs/evaluation.md`](docs/evaluation.md)
 - [`docs/privacy.md`](docs/privacy.md)
@@ -281,9 +307,11 @@ implemented. Verified balance tracking and financial-data freshness assessment
 are implemented as Python service boundaries. Conservative financial-role
 suggestions, explicit user decisions, and role-change audit history are also
 implemented. Coverage-aware cash-flow analytics and gap-preserving balance
-history are implemented as read-only Python services. The next stages will add
-deterministic categorisation, evaluated ML components, APIs, the frontend,
-deployment, and release documentation.
+history are implemented as read-only Python services. Deterministic merchant,
+keyword, and caller-supplied scoped personal categorisation rules are implemented
+with an explicit `needs_review` fallback. The next stages will add evaluated ML
+categorisation, the hybrid correction workflow, APIs, the frontend, deployment,
+and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

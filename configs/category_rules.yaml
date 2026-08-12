@@ -1,0 +1,161 @@
+version: "rules-1.0"
+taxonomy_version: "1.0"
+
+merchant_mappings:
+  - rule_id: merchant_tesco_groceries
+    aliases:
+      - Tesco
+      - Tesco Stores
+      - Tesco Groceries
+    category_id: groceries
+  - rule_id: merchant_sainsburys_groceries
+    aliases:
+      - Sainsburys
+      - Sainsburys Supermarkets
+    category_id: groceries
+  - rule_id: merchant_aldi_groceries
+    aliases:
+      - Aldi
+      - Aldi Stores
+    category_id: groceries
+  - rule_id: merchant_lidl_groceries
+    aliases:
+      - Lidl
+      - Lidl GB
+    category_id: groceries
+  - rule_id: merchant_waitrose_groceries
+    aliases:
+      - Waitrose
+      - Waitrose and Partners
+    category_id: groceries
+  - rule_id: merchant_netflix_subscriptions
+    aliases:
+      - Netflix
+      - Netflix.com
+    category_id: subscriptions
+  - rule_id: merchant_spotify_subscriptions
+    aliases:
+      - Spotify
+      - Spotify UK
+    category_id: subscriptions
+  - rule_id: merchant_transport_for_london
+    aliases:
+      - Transport for London
+      - TFL
+    category_id: transport
+
+keyword_rules:
+  - rule_id: keyword_housing_rent
+    phrase: rent
+    category_id: housing
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_housing_mortgage
+    phrase: mortgage
+    category_id: housing
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_utilities_electricity
+    phrase: electricity
+    category_id: utilities
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_utilities_gas_bill
+    phrase: gas bill
+    category_id: utilities
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_utilities_water_bill
+    phrase: water bill
+    category_id: utilities
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_utilities_broadband
+    phrase: broadband
+    category_id: utilities
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_groceries_supermarket
+    phrase: supermarket
+    category_id: groceries
+    direction: outflow
+    priority: 90
+  - rule_id: keyword_eating_out_restaurant
+    phrase: restaurant
+    category_id: eating_out
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_eating_out_cafe
+    phrase: cafe
+    category_id: eating_out
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_transport_train_ticket
+    phrase: train ticket
+    category_id: transport
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_transport_bus_fare
+    phrase: bus fare
+    category_id: transport
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_subscriptions_subscription
+    phrase: subscription
+    category_id: subscriptions
+    direction: outflow
+    priority: 90
+  - rule_id: keyword_health_pharmacy
+    phrase: pharmacy
+    category_id: health
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_education_tuition
+    phrase: tuition
+    category_id: education
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_entertainment_cinema
+    phrase: cinema
+    category_id: entertainment
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_travel_flight
+    phrase: flight
+    category_id: travel
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_travel_hotel
+    phrase: hotel
+    category_id: travel
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_fees_bank_fee
+    phrase: bank fee
+    category_id: fees_and_charges
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_cash_withdrawal
+    phrase: cash withdrawal
+    category_id: cash_withdrawal
+    direction: outflow
+    priority: 100
+  - rule_id: keyword_savings_transfer
+    phrase: savings transfer
+    category_id: savings
+    priority: 100
+  - rule_id: keyword_refund
+    phrase: refund
+    category_id: refund
+    direction: inflow
+    priority: 100
+  - rule_id: keyword_income_payroll
+    phrase: payroll
+    category_id: income
+    direction: inflow
+    priority: 100
+  - rule_id: keyword_income_salary
+    phrase: salary
+    category_id: income
+    direction: inflow
+    priority: 100

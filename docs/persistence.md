@@ -130,6 +130,29 @@ uses the existing structured `user_flags` table and is idempotent. A decision
 rejects other pending suggestions involving the affected transaction, while raw
 transactions, categories, statement notes, and import context remain unchanged.
 
+## Deterministic category assignment
+
+Categorisation reuses the seeded `categories`, `verified_transactions`, and
+`category_corrections` tables, so Commit 18 adds no migration or stored rule
+table. The latest correction for a transaction is authoritative and prevents a
+later automatic run from overwriting that explicit user decision.
+
+The categorisation repository reads verified transactions only through the
+selected local profile and optional transaction IDs. Before staging any change,
+the service validates that the complete selection is owned, every target exists
+in the declared taxonomy version, and every automatic target is active. It then
+changes only `verified_transactions.category_id`; raw rows, descriptions,
+merchants, amounts, dates, accounts, financial roles, statement notes, and flags
+are untouched. All assignments share one session and therefore commit together
+or roll back together.
+
+Merchant and keyword definitions are versioned repository configuration rather
+than database rows. Scoped personal rules are validated inputs to the current
+run and are not persisted by this stage. Commit 20 owns personal-rule storage,
+category correction creation, and the corresponding user-review workflow.
+Returned category explanations are also not stored as a new report or audit
+table.
+
 ## Read-only financial analytics
 
 The analytics repository reads a bounded date range and never stages or commits a

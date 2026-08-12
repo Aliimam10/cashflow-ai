@@ -15,7 +15,7 @@ synthetic demo data ------> generated records ------------------+
                                             canonical validation and cleaning
                                                                |
                                                                v
-                                                relational storage -> analytics
+                                relational storage -> categorisation -> analytics
                                                                |
                                                                v
                                                      FastAPI -> Streamlit
@@ -228,6 +228,60 @@ categories, analytics, or forecasts. This module adds no financial totals,
 categorisation, API, or interface; the analytics module consumes only current
 confirmed roles.
 
+## Deterministic transaction categorisation
+
+`cashflow_ai.categorisation` is an application/domain boundary over verified
+transactions and a narrow categorisation repository. It receives an owned
+profile scope, an optional transaction selection, a versioned deterministic rule
+set, and optional caller-supplied personal rules. The service updates only
+`verified_transactions.category_id` inside one transaction and returns typed
+decisions with privacy-safe explanations.
+
+Category is deliberately independent from financial role. Categorisation can
+describe an expense as groceries, housing, utilities, transport, subscriptions,
+or another taxonomy concern, but it cannot make a transaction count as income or
+expense. Commit 17 analytics therefore continues to use the confirmed financial
+role for headline arithmetic and the category only for expense breakdowns.
+
+The deterministic precedence is:
+
+```text
+latest transaction-specific user decision
+-> active scoped personal rule
+-> exact known-merchant mapping
+-> whole-phrase keyword rule
+-> needs_review
+```
+
+Commit 19 will develop and evaluate the ML categoriser, and Commit 20 will add
+its prediction tier between keyword rules and `needs_review`; no model is called
+in this stage. The latest existing category correction represents the
+transaction-specific decision. Personal rules may
+scope one exact merchant by direction, account, description phrase, and inclusive
+absolute-amount bounds. All configured scope fields must match. Personal and
+keyword rules use explicit priority plus deterministic specificity and tie-break
+rules; merchant aliases are unique. Configuration order therefore cannot change
+the result. An equally ranked disagreement is not guessed: it becomes
+`needs_review`.
+
+Text comparison applies Unicode, case, punctuation, and whitespace normalisation
+to temporary copies. Merchant mappings remain exact after normalisation, while
+keywords and description scopes match complete normalised phrases rather than
+arbitrary substrings. Stored merchant names, descriptions, and raw source values
+are never rewritten.
+
+The repository does not load raw payloads, import notes, or flags. Category
+targets must exist in the configured taxonomy version, and every automatic rule
+target must be active before any assignment is staged. Missing profile ownership,
+invalid targets, or any write failure rolls back the whole run. Explanations are
+returned to the caller and do not include matched text, amounts, or account
+values.
+
+Versioned merchant and keyword rules live in `configs/category_rules.yaml`.
+Personal rules are validated in-memory inputs only; Commit 20 owns their
+persistence and the user correction workflow. This module has no API, UI, ML
+prediction, or new database schema.
+
 ## Coverage-aware analytics
 
 `cashflow_ai.analytics` is a read-only application/domain boundary over narrow
@@ -256,8 +310,8 @@ coverage interval may share a chart segment. Every explicit gap starts a new
 segment, and a point outside known coverage is standalone, so a later chart
 cannot silently bridge missing months.
 
-No analytics output is persisted. The module adds no migration, category rule,
-recurrence detector, forecast, anomaly model, route, or visual component.
+No analytics output is persisted. The module adds no recurrence detector,
+forecast, anomaly model, route, or visual component.
 
 ## Configuration
 
