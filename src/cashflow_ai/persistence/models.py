@@ -577,6 +577,69 @@ class RecurringSeriesRecord(Base):
     )
 
 
+class RecurringPaymentCandidateRecord(Base):
+    """Detected recurring pattern awaiting or reflecting explicit user review."""
+
+    __tablename__ = "recurring_payment_candidates"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True, default=new_id)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    recurring_series_id: Mapped[str | None] = mapped_column(
+        ForeignKey("recurring_series.id", ondelete="SET NULL")
+    )
+    merchant_group: Mapped[str] = mapped_column(String(500))
+    expected_amount: Mapped[Decimal] = mapped_column(MONEY)
+    frequency: Mapped[str] = mapped_column(String(20))
+    interval_days: Mapped[int] = mapped_column(Integer)
+    next_expected_date: Mapped[date] = mapped_column(Date)
+    confidence: Mapped[Decimal] = mapped_column(Numeric(7, 6))
+    covered_missed_count: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    detected_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+    reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+    __table_args__ = (
+        CheckConstraint(
+            "frequency IN ('weekly', 'fortnightly', 'monthly', 'quarterly', 'annual')",
+            name="ck_recurring_candidates_frequency",
+        ),
+        CheckConstraint("interval_days > 0", name="ck_recurring_candidates_interval"),
+        CheckConstraint(
+            "confidence >= 0 AND confidence <= 1",
+            name="ck_recurring_candidates_confidence",
+        ),
+        CheckConstraint(
+            "covered_missed_count >= 0", name="ck_recurring_candidates_missed"
+        ),
+        CheckConstraint(
+            "status IN ('pending', 'confirmed', 'cancelled')",
+            name="ck_recurring_candidates_status",
+        ),
+        CheckConstraint(
+            "(status = 'pending' AND reviewed_at IS NULL) OR "
+            "(status != 'pending' AND reviewed_at IS NOT NULL)",
+            name="ck_recurring_candidates_reviewed",
+        ),
+    )
+
+
+class RecurringPaymentMemberRecord(Base):
+    """Verified transaction evidence belonging to one detected candidate."""
+
+    __tablename__ = "recurring_payment_members"
+
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("recurring_payment_candidates.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+    verified_transaction_id: Mapped[str] = mapped_column(
+        ForeignKey("verified_transactions.id", ondelete="CASCADE"),
+        primary_key=True,
+    )
+
+
 class BudgetRecord(Base):
     """Category budget for an inclusive date period."""
 

@@ -33,6 +33,8 @@ EXPECTED_TABLES = {
     "personal_category_rules",
     "raw_transactions",
     "recurring_series",
+    "recurring_payment_candidates",
+    "recurring_payment_members",
     "savings_goals",
     "scenarios",
     "statement_coverages",

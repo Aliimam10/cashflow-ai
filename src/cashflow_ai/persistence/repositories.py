@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
-from sqlalchemy import case, desc, func, or_, select
+from sqlalchemy import case, desc, exists, func, or_, select
 from sqlalchemy.orm import Session, aliased
 from sqlalchemy.sql.elements import ColumnElement
 
@@ -21,6 +21,8 @@ from cashflow_ai.persistence.models import (
     ImportContextRecord,
     PersonalCategoryRuleRecord,
     RawTransactionRecord,
+    RecurringPaymentCandidateRecord,
+    RecurringPaymentMemberRecord,
     StatementCoverageRecord,
     UserFlagRecord,
     UserProfileRecord,
@@ -30,6 +32,7 @@ from cashflow_ai.persistence.models import (
 type AnalyticsTransactionRow = tuple[
     VerifiedTransactionRecord,
     CategoryRecord | None,
+    bool,
 ]
 type AnalyticsCoverageRow = tuple[str, StatementCoverageRecord]
 type ConfirmedTransferRow = tuple[
@@ -418,7 +421,20 @@ class AnalyticsRepository:
     ) -> tuple[AnalyticsTransactionRow, ...]:
         """Return accepted transactions and optional categories in the range."""
         statement = (
-            select(VerifiedTransactionRecord, CategoryRecord)
+            select(
+                VerifiedTransactionRecord,
+                CategoryRecord,
+                exists()
+                .where(
+                    RecurringPaymentMemberRecord.verified_transaction_id
+                    == VerifiedTransactionRecord.id,
+                    RecurringPaymentMemberRecord.candidate_id
+                    == RecurringPaymentCandidateRecord.id,
+                    RecurringPaymentCandidateRecord.status == "confirmed",
+                )
+                .correlate(VerifiedTransactionRecord)
+                .label("is_confirmed_recurring"),
+            )
             .join(
                 AccountRecord,
                 AccountRecord.id == VerifiedTransactionRecord.account_id,

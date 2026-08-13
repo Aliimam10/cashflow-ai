@@ -137,3 +137,10 @@ missing balances by summing transactions.
   stages.
 - Approved PDF rows are still review-only until their complete atomic persistence
   workflow is implemented.
+
+## Confirmed recurring expenses
+
+Confirmed candidate membership moves expense-role transactions from `unclassified`
+to the `recurring` cadence bucket. Pending and cancelled candidates have no effect.
+Discretionary spending is not inferred as merely the inverse of recurring, and all
+headline cash-flow formulas remain unchanged.

@@ -184,3 +184,10 @@ confidence, and model version. `personal_category_rules` stores only explicitly
 requested local rules with merchant and optional direction, account, description,
 amount, and priority scope. Migration `0004` is additive; it does not rebuild or
 rewrite imported transactions.
+
+## Commit 21 recurrence records
+
+Migration `0005` adds `recurring_payment_candidates` and
+`recurring_payment_members`. Membership preserves verified evidence. Pending,
+confirmed, and cancelled states are auditable; confirmation links to the existing
+`recurring_series` table. No source or verified transaction is rewritten.

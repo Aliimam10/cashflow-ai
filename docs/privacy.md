@@ -171,3 +171,9 @@ probability, source, versions, and reason codes—not raw payloads, descriptions
 statement notes, or account names. Text is used transiently by the local model.
 Personal rules remain local private data, and manual retraining retains Commit 19's
 historical-cutoff and ignored-artifact safeguards.
+
+## Recurrence privacy
+
+Detection runs locally and stores normalised merchant grouping plus derived schedule
+evidence. It does not copy raw payloads, notes, account names, or original
+descriptions into recurrence records or logs. Tests use fictional data only.

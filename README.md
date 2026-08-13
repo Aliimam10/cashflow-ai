@@ -372,3 +372,11 @@ review queue. Decision source and ML model version are audited. Corrections are
 transaction-only unless the user explicitly supplies and requests a narrow personal
 rule. Corrected examples can be prepared for manual, cutoff-safe retraining; no
 background retraining occurs.
+
+## Recurring-payment status
+
+Commit 21 detects weekly, fortnightly, monthly, quarterly, and annual patterns from
+verified transactions using merchant, amount, and interval consistency. It predicts
+the next date and confidence. Only expected dates inside verified statement coverage
+count as missed; gaps remain unknown. Users explicitly confirm or cancel candidates,
+and only confirmed expense members enter recurring-spend analytics.

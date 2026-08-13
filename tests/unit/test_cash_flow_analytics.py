@@ -1326,6 +1326,7 @@ def test_transaction_currency_invalid_role_and_sign_errors_are_controlled(
                     financial_role_id=role,
                 ),
                 None,
+                False,
             ),
         )
 

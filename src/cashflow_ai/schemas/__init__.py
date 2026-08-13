@@ -168,6 +168,15 @@ from cashflow_ai.schemas.reconciliation import (
     StatementReview,
     StatementReviewRow,
 )
+from cashflow_ai.schemas.recurrence import (
+    RecurrenceDetectionPolicy,
+    RecurrenceFrequency,
+    RecurrenceReview,
+    RecurrenceReviewAction,
+    RecurrenceReviewResult,
+    RecurrenceStatus,
+    RecurringPaymentCandidate,
+)
 from cashflow_ai.schemas.statements import (
     BalanceSnapshot,
     BalanceSnapshotSource,
@@ -297,6 +306,13 @@ __all__ = [
     "PdfPageExtraction",
     "PdfTransactionCandidate",
     "ReconciliationStatus",
+    "RecurrenceDetectionPolicy",
+    "RecurrenceFrequency",
+    "RecurrenceReview",
+    "RecurrenceReviewAction",
+    "RecurrenceReviewResult",
+    "RecurrenceStatus",
+    "RecurringPaymentCandidate",
     "RepeatedFileAssessment",
     "ReviewReason",
     "ReviewStatus",

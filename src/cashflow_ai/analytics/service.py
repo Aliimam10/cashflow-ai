@@ -359,7 +359,7 @@ def _totals(
     unknown_in = unknown_out = excluded_in = excluded_out = _ZERO
     unknown_count = excluded_count = matched_internal_count = 0
     selected_accounts = set(scope.account_ids)
-    for transaction, _category in rows:
+    for transaction, _category, _is_recurring in rows:
         role = _financial_role(transaction)
         amount = transaction.amount
         if role is FinancialRole.INCOME:
@@ -454,7 +454,7 @@ def _category_spending(
     rows: tuple[AnalyticsTransactionRow, ...],
 ) -> tuple[CategorySpending, ...]:
     grouped: dict[tuple[str | None, str | None], tuple[Decimal, int]] = {}
-    for transaction, category in rows:
+    for transaction, category, _is_recurring in rows:
         if _financial_role(transaction) is not FinancialRole.EXPENSE:
             continue
         key = (
@@ -484,17 +484,19 @@ def _spending_cadence(
     rows: tuple[AnalyticsTransactionRow, ...],
 ) -> SpendingCadenceBreakdown:
     expenses = tuple(
-        transaction
-        for transaction, _category in rows
+        (transaction, is_recurring)
+        for transaction, _category, is_recurring in rows
         if _financial_role(transaction) is FinancialRole.EXPENSE
     )
+    recurring = tuple(item for item, is_recurring in expenses if is_recurring)
+    unclassified = tuple(item for item, is_recurring in expenses if not is_recurring)
     return SpendingCadenceBreakdown(
-        recurring=_ZERO,
+        recurring=sum((-item.amount for item in recurring), start=_ZERO),
         discretionary=_ZERO,
-        unclassified=sum((-item.amount for item in expenses), start=_ZERO),
-        recurring_count=0,
+        unclassified=sum((-item.amount for item in unclassified), start=_ZERO),
+        recurring_count=len(recurring),
         discretionary_count=0,
-        unclassified_count=len(expenses),
+        unclassified_count=len(unclassified),
     )
 
 
@@ -504,7 +506,7 @@ def _largest_transactions(
 ) -> tuple[LargestTransaction, ...]:
     included = tuple(
         (transaction, category)
-        for transaction, category in rows
+        for transaction, category, _is_recurring in rows
         if _financial_role(transaction) is not FinancialRole.EXCLUDED
     )
     ordered = sorted(
@@ -718,7 +720,7 @@ def _validate_currencies(
     rows: Iterable[AnalyticsTransactionRow],
     currency: Currency,
 ) -> None:
-    for transaction, _category in rows:
+    for transaction, _category, _is_recurring in rows:
         if transaction.currency != currency.value:
             raise AnalyticsServiceError(
                 AnalyticsServiceErrorCode.DATA_CURRENCY_MISMATCH,

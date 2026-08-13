@@ -397,3 +397,10 @@ rejected if evaluation did not select it or its taxonomy differs. Low-confidence
 results do not mutate transactions; feedback supersedes them and appends correction
 history atomically. Personal rules require an explicit request. No API or UI is
 added in this commit.
+
+## Recurrence boundary
+
+The recurrence service groups owned verified transactions by account, normalised
+merchant, currency, direction, and financial role. It scores amount/timing
+consistency and stores candidate-to-transaction evidence. Confirmation creates a
+recurring series; cancellation suppresses the candidate. Forecasting remains later.

@@ -533,3 +533,10 @@ exposes controlled source, confidence, model version, and explanation fields.
 `transaction_only` or `create_personal_rule`; the latter requires the complete
 rule rather than inferring one. `ManualRetrainingDataset` preserves its Commit 19
 knowledge cutoff.
+
+## Recurrence contracts
+
+`RecurrenceDetectionPolicy` makes occurrence, amount, interval, and confidence
+thresholds explicit. `RecurringPaymentCandidate` carries controlled grouping,
+frequency, signed amount, evidence dates, next date, confidence, covered misses,
+and review status. `RecurrenceReview` records explicit confirmation or cancellation.
