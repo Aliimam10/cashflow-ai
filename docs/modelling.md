@@ -117,3 +117,10 @@ The generator uses only generic fictional merchants and configurable random
 seeds. It is test data and demonstration data, not evidence of model quality.
 Automated model tests use synthetic examples to verify behaviour, splits, and
 metric calculation; they do not establish real-world classification accuracy.
+
+## Hybrid model use
+
+Commit 20 accepts only a candidate selected by Commit 19's chronological and
+unseen-merchant evaluation and matching the active taxonomy. An explicit threshold
+separates automatic assignment from review; it is not a general accuracy guarantee.
+Feedback may prepare new training examples, but does not fit or replace a model.

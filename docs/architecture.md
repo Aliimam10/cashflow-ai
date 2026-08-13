@@ -388,3 +388,12 @@ Structured records expose only the standard timestamp, severity, logger, and
 message fields plus explicitly supplied `event` and `context` values. Arbitrary
 record attributes are not copied into JSON, reducing the risk of leaking private
 transaction data.
+
+## Hybrid categorisation feedback boundary
+
+Commit 20 orders evidence as explicit transaction decision, persisted personal
+rule, merchant mapping, keyword rule, then selected local ML candidate. A model is
+rejected if evaluation did not select it or its taxonomy differs. Low-confidence
+results do not mutate transactions; feedback supersedes them and appends correction
+history atomically. Personal rules require an explicit request. No API or UI is
+added in this commit.

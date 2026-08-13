@@ -163,3 +163,11 @@ does not make a downloaded model trustworthy. CashFlow AI must load only
 artefacts it created within its local trust boundary and whose expected model,
 feature-schema, and taxonomy versions match. Commit 19 neither uploads a model
 nor registers it in the database.
+
+## Hybrid decision privacy
+
+Decision audits and review items contain controlled identifiers, category,
+probability, source, versions, and reason codes—not raw payloads, descriptions,
+statement notes, or account names. Text is used transiently by the local model.
+Personal rules remain local private data, and manual retraining retains Commit 19's
+historical-cutoff and ignored-artifact safeguards.

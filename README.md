@@ -361,3 +361,14 @@ and evaluation are present in the repository.
 ## Licence
 
 This project is licensed under the [MIT License](LICENSE).
+
+## Hybrid categorisation status
+
+Commit 20 connects deterministic rules and the evaluated local classifier. User
+decisions and personal, merchant, and keyword rules win first. ML handles only
+unmatched rows: predictions meeting an explicit confidence threshold may be
+applied; lower-confidence predictions leave the transaction unchanged and enter a
+review queue. Decision source and ML model version are audited. Corrections are
+transaction-only unless the user explicitly supplies and requests a narrow personal
+rule. Corrected examples can be prepared for manual, cutoff-safe retraining; no
+background retraining occurs.

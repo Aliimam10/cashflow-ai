@@ -456,6 +456,104 @@ class CategoryCorrectionRecord(Base):
     corrected_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
 
 
+class PersonalCategoryRuleRecord(Base):
+    """An explicitly requested, narrowly scoped local categorisation rule."""
+
+    __tablename__ = "personal_category_rules"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True, default=new_id)
+    user_profile_id: Mapped[str] = mapped_column(
+        ForeignKey("user_profiles.id", ondelete="CASCADE"), index=True
+    )
+    category_id: Mapped[str] = mapped_column(
+        ForeignKey("categories.id", ondelete="RESTRICT")
+    )
+    merchant: Mapped[str] = mapped_column(String(500))
+    direction: Mapped[str | None] = mapped_column(String(10))
+    account_id: Mapped[str | None] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE")
+    )
+    description_contains: Mapped[str | None] = mapped_column(String(500))
+    minimum_amount: Mapped[Decimal | None] = mapped_column(MONEY)
+    maximum_amount: Mapped[Decimal | None] = mapped_column(MONEY)
+    priority: Mapped[int] = mapped_column(Integer, default=0)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+    __table_args__ = (
+        CheckConstraint(
+            "direction IS NULL OR direction IN ('inflow', 'outflow')",
+            name="ck_personal_category_rules_direction",
+        ),
+        CheckConstraint("priority >= 0", name="ck_personal_category_rules_priority"),
+        CheckConstraint(
+            "minimum_amount IS NULL OR minimum_amount >= 0",
+            name="ck_personal_category_rules_minimum",
+        ),
+        CheckConstraint(
+            "maximum_amount IS NULL OR maximum_amount >= 0",
+            name="ck_personal_category_rules_maximum",
+        ),
+        CheckConstraint(
+            "minimum_amount IS NULL OR maximum_amount IS NULL "
+            "OR maximum_amount >= minimum_amount",
+            name="ck_personal_category_rules_range",
+        ),
+    )
+
+
+class CategoryDecisionRecord(Base):
+    """Privacy-safe audit of a rule, model, fallback, or user category decision."""
+
+    __tablename__ = "category_decisions"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True, default=new_id)
+    verified_transaction_id: Mapped[str] = mapped_column(
+        ForeignKey("verified_transactions.id", ondelete="CASCADE"), index=True
+    )
+    category_id: Mapped[str] = mapped_column(
+        ForeignKey("categories.id", ondelete="RESTRICT")
+    )
+    source: Mapped[str] = mapped_column(String(30))
+    status: Mapped[str] = mapped_column(String(20))
+    confidence: Mapped[Decimal | None] = mapped_column(Numeric(7, 6))
+    model_version: Mapped[str | None] = mapped_column(String(100))
+    rule_id: Mapped[str | None] = mapped_column(String(100))
+    taxonomy_version: Mapped[str] = mapped_column(String(50))
+    rule_set_version: Mapped[str] = mapped_column(String(50))
+    reason_code: Mapped[str] = mapped_column(String(100))
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+    reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+    __table_args__ = (
+        CheckConstraint(
+            "source IN ('transaction_decision', 'personal_rule', "
+            "'merchant_mapping', 'keyword_rule', 'ml_model', 'needs_review')",
+            name="ck_category_decisions_source",
+        ),
+        CheckConstraint(
+            "status IN ('applied', 'pending_review', 'superseded')",
+            name="ck_category_decisions_status",
+        ),
+        CheckConstraint(
+            "confidence IS NULL OR (confidence >= 0 AND confidence <= 1)",
+            name="ck_category_decisions_confidence",
+        ),
+        CheckConstraint(
+            "(source = 'ml_model' AND confidence IS NOT NULL "
+            "AND model_version IS NOT NULL) OR "
+            "(source != 'ml_model' AND confidence IS NULL "
+            "AND model_version IS NULL)",
+            name="ck_category_decisions_model_evidence",
+        ),
+        CheckConstraint(
+            "(status = 'superseded' AND reviewed_at IS NOT NULL) OR "
+            "(status != 'superseded' AND reviewed_at IS NULL)",
+            name="ck_category_decisions_reviewed",
+        ),
+    )
+
+
 class RecurringSeriesRecord(Base):
     """Persisted recurring-flow series definition."""
 

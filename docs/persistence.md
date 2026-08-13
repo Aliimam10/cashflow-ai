@@ -176,3 +176,11 @@ Pending suggestions and role-audit history never change current calculations.
 
 Analytics reports are calculated in memory with `Decimal` and are not database
 tables. Commit 17 adds no migration, stored aggregate, cache, or new dependency.
+
+## Commit 20 categorisation records
+
+`category_decisions` stores privacy-safe decision provenance, review state,
+confidence, and model version. `personal_category_rules` stores only explicitly
+requested local rules with merchant and optional direction, account, description,
+amount, and priority scope. Migration `0004` is additive; it does not rebuild or
+rewrite imported transactions.

@@ -13,11 +13,13 @@ from cashflow_ai.persistence.models import (
     AccountRecord,
     BalanceSnapshotRecord,
     CategoryCorrectionRecord,
+    CategoryDecisionRecord,
     CategoryRecord,
     FinancialRoleAuditRecord,
     FinancialRoleSuggestionRecord,
     ImportBatchRecord,
     ImportContextRecord,
+    PersonalCategoryRuleRecord,
     RawTransactionRecord,
     StatementCoverageRecord,
     UserFlagRecord,
@@ -625,6 +627,99 @@ class CategorisationRepository:
     ) -> None:
         """Stage only the selected category on one verified transaction."""
         transaction.category_id = category_id
+
+    def list_personal_rules(
+        self, user_profile_id: str
+    ) -> tuple[PersonalCategoryRuleRecord, ...]:
+        """Return active persisted personal rules in stable identity order."""
+        statement = (
+            select(PersonalCategoryRuleRecord)
+            .where(
+                PersonalCategoryRuleRecord.user_profile_id == user_profile_id,
+                PersonalCategoryRuleRecord.is_active.is_(True),
+            )
+            .order_by(PersonalCategoryRuleRecord.id)
+        )
+        return tuple(self._session.scalars(statement))
+
+    def add_personal_rule(
+        self, rule: PersonalCategoryRuleRecord
+    ) -> PersonalCategoryRuleRecord:
+        """Persist an explicitly supplied local rule."""
+        self._session.add(rule)
+        self._session.flush()
+        return rule
+
+    def get_personal_rule(self, rule_id: str) -> PersonalCategoryRuleRecord | None:
+        """Return one personal rule by stable ID."""
+        return self._session.get(PersonalCategoryRuleRecord, rule_id)
+
+    def add_correction(
+        self, correction: CategoryCorrectionRecord
+    ) -> CategoryCorrectionRecord:
+        """Append one explicit user category correction."""
+        self._session.add(correction)
+        self._session.flush()
+        return correction
+
+    def add_decision(self, decision: CategoryDecisionRecord) -> CategoryDecisionRecord:
+        """Append privacy-safe categorisation provenance."""
+        self._session.add(decision)
+        self._session.flush()
+        return decision
+
+    def latest_decision(self, transaction_id: str) -> CategoryDecisionRecord | None:
+        """Return the newest decision for idempotent hybrid runs."""
+        statement = (
+            select(CategoryDecisionRecord)
+            .where(CategoryDecisionRecord.verified_transaction_id == transaction_id)
+            .order_by(
+                CategoryDecisionRecord.created_at.desc(),
+                CategoryDecisionRecord.id.desc(),
+            )
+            .limit(1)
+        )
+        return self._session.scalar(statement)
+
+    def list_pending_decisions(
+        self, user_profile_id: str
+    ) -> tuple[CategoryDecisionRecord, ...]:
+        """Return the owned low-confidence queue without raw bank text."""
+        statement = (
+            select(CategoryDecisionRecord)
+            .join(
+                VerifiedTransactionRecord,
+                VerifiedTransactionRecord.id
+                == CategoryDecisionRecord.verified_transaction_id,
+            )
+            .join(
+                AccountRecord, AccountRecord.id == VerifiedTransactionRecord.account_id
+            )
+            .where(
+                AccountRecord.user_profile_id == user_profile_id,
+                CategoryDecisionRecord.source == "ml_model",
+                CategoryDecisionRecord.status == "pending_review",
+            )
+            .order_by(
+                CategoryDecisionRecord.created_at,
+                CategoryDecisionRecord.id,
+            )
+        )
+        return tuple(self._session.scalars(statement))
+
+    def supersede_pending_decisions(
+        self, transaction_id: str, *, reviewed_at: datetime
+    ) -> int:
+        """Mark pending predictions reviewed after explicit feedback."""
+        statement = select(CategoryDecisionRecord).where(
+            CategoryDecisionRecord.verified_transaction_id == transaction_id,
+            CategoryDecisionRecord.status == "pending_review",
+        )
+        decisions = tuple(self._session.scalars(statement))
+        for decision in decisions:
+            decision.status = "superseded"
+            decision.reviewed_at = reviewed_at
+        return len(decisions)
 
 
 class MLCategorisationRepository:

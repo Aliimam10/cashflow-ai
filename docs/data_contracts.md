@@ -523,3 +523,13 @@ segments.
 using a present zero-valued total only for the former. `MonthlyComparison` returns
 changes only for adjacent full calendar months with complete coverage and no
 unknown roles; otherwise it carries a stable unavailability reason.
+
+## Hybrid categorisation
+
+`HybridCategorisationPlan` requires an owned profile and explicit probability
+threshold. `HybridCategoryDecision` distinguishes applied from pending review and
+exposes controlled source, confidence, model version, and explanation fields.
+`CategoryFeedback` requires a timezone-aware audit time and either
+`transaction_only` or `create_personal_rule`; the latter requires the complete
+rule rather than inferring one. `ManualRetrainingDataset` preserves its Commit 19
+knowledge cutoff.

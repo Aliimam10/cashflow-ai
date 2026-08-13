@@ -44,6 +44,7 @@ class CategoryDecisionSource(StrEnum):
     PERSONAL_RULE = "personal_rule"
     MERCHANT_MAPPING = "merchant_mapping"
     KEYWORD_RULE = "keyword_rule"
+    ML_MODEL = "ml_model"
     NEEDS_REVIEW = "needs_review"
 
 
@@ -67,6 +68,9 @@ class CategoryExplanationCode(StrEnum):
     AMBIGUOUS_PERSONAL_RULES = "ambiguous_personal_rules"
     AMBIGUOUS_KEYWORD_RULES = "ambiguous_keyword_rules"
     NO_DETERMINISTIC_MATCH = "no_deterministic_match"
+    ML_CONFIDENCE_ACCEPTED = "ml_confidence_accepted"
+    ML_CONFIDENCE_REVIEW = "ml_confidence_review"
+    USER_CATEGORY_FEEDBACK = "user_category_feedback"
 
 
 class ScopedCategoryRule(_CategorisationModel):

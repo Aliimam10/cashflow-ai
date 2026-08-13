@@ -170,3 +170,16 @@ registration and active-model selection.
   leakage-safe holdouts; the trainer reports this rather than weakening a split.
 - Categorisation improves category breakdowns only; recurrence, forecasting,
   budgeting, anomaly detection, and personalised guidance remain later stages.
+
+## Hybrid inference and feedback
+
+Precedence is latest user correction, persisted personal rule, merchant mapping,
+keyword rule, ML fallback, then review. The ML maximum class probability is compared
+with the caller's threshold. High-confidence predictions are assigned and audited;
+low-confidence predictions are stored only for review, leaving the current category
+unchanged. Repeating an identical run does not duplicate the latest decision.
+
+All feedback appends correction history. A reusable rule is created only when the
+user chooses that scope and supplies its merchant-anchored constraints. Corrections
+can later feed a manually prepared leakage-safe training dataset; neither feedback
+nor inference automatically retrains the model.

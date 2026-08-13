@@ -65,3 +65,9 @@ workflow.
 No real-data scores are published at this stage. Release documentation must
 clearly distinguish synthetic test outcomes from a reproducible evaluation on an
 appropriately reviewed dataset.
+
+## Commit 20 selection gate
+
+Hybrid inference consumes Commit 19's derived `candidate_selected` result. A model
+that failed either required holdout comparison is rejected. Per-row confidence only
+controls apply-versus-review behavior and does not replace evaluation.
