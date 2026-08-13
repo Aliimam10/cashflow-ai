@@ -46,9 +46,10 @@ latest transaction-specific user decision
 ```
 
 An existing category correction supplies the transaction-specific user decision
-and remains authoritative across repeat runs. Commit 19 will develop and
-evaluate the ML categoriser; Commit 20 will add its prediction between the
-keyword tier and `needs_review`. Commit 18 does not load, train, or call a model.
+and remains authoritative across repeat runs. Commit 19 trains and evaluates a
+separate classifier candidate, but the deterministic service still does not
+load or call it. Commit 20 will add eligible predictions between the keyword tier
+and `needs_review`.
 
 Priority is explicit for personal and keyword rules. More narrowly scoped
 matches and stable rule identities provide deterministic tie-breaking where
@@ -108,17 +109,64 @@ does not alter:
 - balance, coverage, and analytics records.
 
 Commit 18 reuses the existing transaction, category, and correction tables. It
-adds no database migration, third-party dependency, persisted explanation, API,
-or UI. All committed examples and tests use fictional synthetic transactions.
+adds no database migration, persisted explanation, API, or UI. All committed
+examples and tests use fictional synthetic transactions.
+
+## Standalone machine-learning candidate
+
+Commit 19 adds model development beside, not inside, the deterministic service.
+Its supervised dataset includes only explicitly corrected, trusted verified
+transactions owned by the selected profile. Label history is reconstructed at
+an aware knowledge cutoff. A correction made after a historical evaluation
+boundary can be used later as test truth, but never as a training label that
+would have been unavailable at that boundary.
+
+Financial-role eligibility is reconstructed from the latest role-change audit
+available at the same cutoff. Without an audit, the role is treated as `unknown`
+regardless of its current stored value.
+
+Rows awaiting transfer or duplicate review, rows with unknown or excluded
+financial roles, `needs_review` targets, and unverified PDF/OCR documents are
+not eligible. Free-text statement notes, structured context, raw source payloads,
+amounts, balances, and account identities are not features. Stored text remains
+unchanged; a versioned feature builder creates a temporary normalised string from
+the verified merchant and description.
+
+The candidate model is a scikit-learn pipeline with both word and
+character-within-word TF-IDF n-grams followed by Logistic Regression. Every
+evaluation partition fits its own vectorisers and classifier. This prevents a
+future holdout's vocabulary or document frequencies from leaking into training.
+
+Two complementary holdouts are required:
+
+- a chronological split whose test dates follow its training dates and are
+  never shuffled; and
+- an unseen-merchant split with disjoint normalised merchant groups.
+
+A most-frequent-category classifier is evaluated on the identical partitions.
+Both candidate and baseline report macro and weighted F1, precision, recall,
+per-class support, and a labelled confusion matrix. The candidate-selection
+result is recorded transparently; it does not make the model active.
+
+The final candidate can return probabilities in stable category-class order and
+can be saved as an ignored local joblib artefact with a validated JSON sidecar.
+The sidecar keeps separate aggregate exclusion counts for the historical and
+final datasets without storing excluded rows.
+Commit 19 does not interpret those probabilities, choose a confidence threshold,
+call the model from rule categorisation, or write a predicted category. Commit
+20 owns that hybrid decision and feedback workflow. Commit 26 owns database model
+registration and active-model selection.
 
 ## Current limitations
 
 - Merchant and keyword coverage is intentionally conservative rather than
   exhaustive.
-- There is no probabilistic fallback until Commit 19 is implemented and
-  evaluated.
+- The Commit 19 classifier remains a standalone candidate; there is no
+  probabilistic fallback until Commit 20 connects an eligible model.
 - Personal rules are caller-supplied in-memory inputs until Commit 20.
 - Category explanations are returned for the current run but are not yet shown
   in a review screen.
+- A local user may not yet have enough explicitly corrected categories for both
+  leakage-safe holdouts; the trainer reports this rather than weakening a split.
 - Categorisation improves category breakdowns only; recurrence, forecasting,
   budgeting, anomaly detection, and personalised guidance remain later stages.

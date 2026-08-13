@@ -16,8 +16,10 @@ explicit PDF review contracts, verified balance snapshots, and a conservative
 financial-data freshness assessment, plus user-confirmed financial-role
 suggestions for transfers, refunds, and reimbursements, and deterministic
 coverage-aware cash-flow analytics, and explainable deterministic transaction
-categorisation**. PDF persistence, APIs, user interfaces, forecast generation,
-and machine-learning components have not been implemented yet.
+categorisation, plus a leakage-aware TF-IDF and Logistic Regression transaction
+category training and evaluation pipeline**. PDF persistence, APIs, user
+interfaces, forecast generation, hybrid category assignment, and other
+machine-learning components have not been implemented yet.
 
 ## Problem
 
@@ -170,10 +172,10 @@ Verified transactions can now be assigned Version 1 categories such as housing,
 groceries, utilities, transport, subscriptions, health, education, and travel.
 The service follows a visible precedence: the latest transaction-specific user
 decision, then an active scoped personal rule, an exact known-merchant mapping,
-a whole-phrase keyword rule, and finally `needs_review`. Commit 19 will develop
-and evaluate the ML categoriser; Commit 20 will insert its predictions between
-keyword rules and the fallback. This stage does not make probabilistic
-predictions.
+a whole-phrase keyword rule, and finally `needs_review`. The separately trained
+Commit 19 model candidate does not change that sequence. Commit 20 will insert
+eligible predictions between keyword rules and the fallback. The deterministic
+service itself does not make probabilistic predictions.
 
 Personal rules can be restricted by merchant, direction, account, description
 phrase, and an inclusive absolute-amount range. All supplied restrictions must
@@ -187,6 +189,40 @@ updates only the verified transaction's category; financial role, raw import
 evidence, source text, amounts, dates, statement notes, and flags remain
 unchanged. Personal-rule storage, a correction workflow, APIs, and review screens
 belong to Commit 20 and later interface stages.
+
+### Implemented ML categoriser candidate boundary
+
+The standalone category-model pipeline builds a supervised dataset only from
+owned, verified transactions with an explicit category correction available by
+the requested knowledge cutoff. It excludes unresolved or ignored financial
+roles, review-pending transfer candidates, duplicate evidence, `needs_review`
+labels, and PDF/OCR rows whose document has not been fully verified. Current
+category values and corrections created after a historical cutoff are not used
+as training labels. Financial roles are likewise reconstructed from the latest
+role-change audit available at that cutoff; without an audit, a transaction is
+treated as `unknown` regardless of its current stored role.
+
+Each model combines word and character TF-IDF features over temporary normalised
+merchant-and-description text with Logistic Regression. Its preprocessing is fit
+from scratch inside each evaluation split. Evaluation includes an unshuffled
+chronological holdout, a merchant-group holdout whose test merchants are absent
+from training, and a most-frequent-category baseline on the same rows. Both
+holdouts report macro and weighted F1, precision, recall, per-class results, and
+a confusion matrix.
+
+A successful run can save a candidate model and a metadata sidecar under a
+private ignored local model directory. Metadata records the taxonomy and feature
+schema, cutoffs, split policy, parameters, aggregate class counts, baseline and
+model metrics, separate historical and final dataset exclusion counts, selection
+result, software versions, and an artefact checksum; it does not contain training
+descriptions or merchant names. The learned TF-IDF
+vocabulary remains private inside the artefact and only trusted, locally created
+artefacts may be loaded.
+
+This stage neither changes a transaction category nor inserts ML into the
+deterministic precedence. Commit 20 owns hybrid rule-plus-model inference,
+confidence thresholds, low-confidence review, and feedback. Commit 26 owns the
+database model registry and active-model lifecycle.
 
 The CSV preview, confirmation, and persistence pipeline currently consists of
 Python services rather than an upload or review screen.
@@ -309,9 +345,10 @@ suggestions, explicit user decisions, and role-change audit history are also
 implemented. Coverage-aware cash-flow analytics and gap-preserving balance
 history are implemented as read-only Python services. Deterministic merchant,
 keyword, and caller-supplied scoped personal categorisation rules are implemented
-with an explicit `needs_review` fallback. The next stages will add evaluated ML
-categorisation, the hybrid correction workflow, APIs, the frontend, deployment,
-and release documentation.
+with an explicit `needs_review` fallback. A standalone, evaluated ML category
+candidate can now be trained and stored locally without changing transaction
+categories. The next stages will add the hybrid correction workflow, APIs, the
+frontend, deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

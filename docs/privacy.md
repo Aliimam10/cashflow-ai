@@ -126,3 +126,40 @@ never a real person's transaction history. Personal rules remain private local
 inputs and are not persisted by Commit 18; future storage and deletion controls
 belong to the Commit 20 correction workflow. Committed categorisation tests use
 fictional values only.
+
+ML categoriser training remains local and uses a narrow verified-data query.
+The model feature boundary receives only temporary copies of the verified
+merchant and description. It does not query or transform raw payloads, statement
+notes, account names, amounts, balances, extraction text, or OCR confidence into
+features. Eligibility failures are reported as aggregate controlled counts;
+normal logs and metadata must not contain example text, merchant names, or
+transaction, profile, and account identifiers.
+
+Historical label reconstruction reads category-correction timestamps so a future
+decision cannot leak into an earlier training fold. Unverified PDF/OCR documents,
+unconfirmed raw rows, unresolved duplicates or transfers, unknown and excluded
+financial roles, and `needs_review` categories remain outside the supervised
+dataset. Financial roles come only from role-change audits available at the
+cutoff; the current role column is never historical truth, and an absent audit
+means `unknown`. Filtering never deletes or overwrites retained local evidence.
+
+A fitted TF-IDF vocabulary can contain fragments of private descriptions and
+merchant names. The model artefact is therefore private financial data even when
+complete training rows are not serialised. Model files and their metadata
+sidecars belong in ignored local directories and must not appear in Git, support
+bundles, telemetry, screenshots, or test snapshots. Committed model tests use
+fictional synthetic text and temporary directories only.
+
+Sidecar metadata is data-minimised to controlled versions and parameters,
+aggregate class counts, cutoffs and date ranges, evaluation metrics, selection
+status, separate historical and final dataset exclusion counts, software
+versions, creation time, and an artefact checksum. It does not
+contain learned vocabulary or row-level data. These aggregates can still reveal
+information about local activity, so the sidecar remains private and ignored.
+
+Joblib model loading is a trusted-local operation because deserialising an
+untrusted file can execute code. A checksum detects accidental replacement but
+does not make a downloaded model trustworthy. CashFlow AI must load only
+artefacts it created within its local trust boundary and whose expected model,
+feature-schema, and taxonomy versions match. Commit 19 neither uploads a model
+nor registers it in the database.

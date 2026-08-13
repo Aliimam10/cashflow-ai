@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 
 from sqlalchemy import case, desc, func, or_, select
@@ -34,6 +35,23 @@ type ConfirmedTransferRow = tuple[
     VerifiedTransactionRecord,
     VerifiedTransactionRecord,
 ]
+
+
+@dataclass(frozen=True, slots=True)
+class MLTrainingCandidateRow:
+    """Narrow training projection that deliberately omits raw private payloads."""
+
+    transaction_id: str
+    transaction_date: date
+    verified_at: datetime
+    merchant: str | None
+    description: str
+    account_lineage_matches: bool
+    verified_source_type: str
+    raw_review_status: str
+    issue_codes: tuple[str, ...]
+    batch_source_type: str
+    batch_verification_status: str
 
 
 class UserProfileRepository:
@@ -607,6 +625,194 @@ class CategorisationRepository:
     ) -> None:
         """Stage only the selected category on one verified transaction."""
         transaction.category_id = category_id
+
+
+class MLCategorisationRepository:
+    """Read cutoff-safe classifier evidence without loading raw bank payloads."""
+
+    def __init__(self, session: Session) -> None:
+        """Bind repository reads to one transaction-scoped session."""
+        self._session = session
+
+    def list_training_candidates(
+        self,
+        user_profile_id: str,
+    ) -> tuple[MLTrainingCandidateRow, ...]:
+        """Return a narrow, owned projection in deterministic historical order."""
+        statement = (
+            select(
+                VerifiedTransactionRecord.id,
+                VerifiedTransactionRecord.transaction_date,
+                VerifiedTransactionRecord.verified_at,
+                VerifiedTransactionRecord.merchant,
+                VerifiedTransactionRecord.description,
+                VerifiedTransactionRecord.account_id == ImportBatchRecord.account_id,
+                RawTransactionRecord.source_type,
+                RawTransactionRecord.review_status,
+                RawTransactionRecord.issues_json,
+                ImportBatchRecord.source_type,
+                ImportBatchRecord.verification_status,
+            )
+            .join(
+                AccountRecord,
+                AccountRecord.id == VerifiedTransactionRecord.account_id,
+            )
+            .join(
+                RawTransactionRecord,
+                RawTransactionRecord.id == VerifiedTransactionRecord.raw_transaction_id,
+            )
+            .join(
+                ImportBatchRecord,
+                ImportBatchRecord.id == RawTransactionRecord.import_batch_id,
+            )
+            .where(AccountRecord.user_profile_id == user_profile_id)
+            .order_by(
+                VerifiedTransactionRecord.transaction_date,
+                VerifiedTransactionRecord.verified_at,
+                VerifiedTransactionRecord.id,
+            )
+        )
+        candidates: list[MLTrainingCandidateRow] = []
+        for row in self._session.execute(statement):
+            issues = row[8] if isinstance(row[8], list) else []
+            issue_codes = tuple(
+                str(issue["code"])
+                for issue in issues
+                if isinstance(issue, dict) and isinstance(issue.get("code"), str)
+            )
+            candidates.append(
+                MLTrainingCandidateRow(
+                    transaction_id=row[0],
+                    transaction_date=row[1],
+                    verified_at=row[2],
+                    merchant=row[3],
+                    description=row[4],
+                    account_lineage_matches=row[5],
+                    verified_source_type=row[6],
+                    raw_review_status=row[7],
+                    issue_codes=issue_codes,
+                    batch_source_type=row[9],
+                    batch_verification_status=row[10],
+                )
+            )
+        return tuple(candidates)
+
+    def latest_category_corrections_as_of(
+        self,
+        transaction_ids: tuple[str, ...],
+        *,
+        knowledge_cutoff_at: datetime,
+    ) -> dict[str, CategoryCorrectionRecord]:
+        """Return each latest explicit label known at the supplied cutoff."""
+        if not transaction_ids:
+            return {}
+        statement = (
+            select(CategoryCorrectionRecord)
+            .where(
+                CategoryCorrectionRecord.verified_transaction_id.in_(transaction_ids),
+                CategoryCorrectionRecord.corrected_at <= knowledge_cutoff_at,
+            )
+            .order_by(
+                CategoryCorrectionRecord.corrected_at,
+                CategoryCorrectionRecord.id,
+            )
+        )
+        latest: dict[str, CategoryCorrectionRecord] = {}
+        for correction in self._session.scalars(statement):
+            latest[correction.verified_transaction_id] = correction
+        return latest
+
+    def latest_financial_role_audits_as_of(
+        self,
+        transaction_ids: tuple[str, ...],
+        *,
+        knowledge_cutoff_at: datetime,
+    ) -> dict[str, FinancialRoleAuditRecord]:
+        """Reconstruct the latest user-confirmed role known at the cutoff."""
+        if not transaction_ids:
+            return {}
+        statement = (
+            select(FinancialRoleAuditRecord)
+            .where(
+                FinancialRoleAuditRecord.verified_transaction_id.in_(transaction_ids),
+                FinancialRoleAuditRecord.changed_at <= knowledge_cutoff_at,
+            )
+            .order_by(
+                FinancialRoleAuditRecord.changed_at,
+                FinancialRoleAuditRecord.id,
+            )
+        )
+        latest: dict[str, FinancialRoleAuditRecord] = {}
+        for audit in self._session.scalars(statement):
+            latest[audit.verified_transaction_id] = audit
+        return latest
+
+    def list_needs_review_transaction_ids_as_of(
+        self,
+        transaction_ids: tuple[str, ...],
+        *,
+        knowledge_cutoff_at: datetime,
+    ) -> frozenset[str]:
+        """Return rows carrying a structured review flag by the cutoff."""
+        if not transaction_ids:
+            return frozenset()
+        statement = select(UserFlagRecord.verified_transaction_id).where(
+            UserFlagRecord.verified_transaction_id.in_(transaction_ids),
+            UserFlagRecord.flag == "needs_review",
+            UserFlagRecord.created_at <= knowledge_cutoff_at,
+        )
+        return frozenset(self._session.scalars(statement))
+
+    def list_unresolved_transfer_transaction_ids_as_of(
+        self,
+        transaction_ids: tuple[str, ...],
+        *,
+        knowledge_cutoff_at: datetime,
+    ) -> frozenset[str]:
+        """Return both legs of transfer suggestions unresolved at the cutoff."""
+        if not transaction_ids:
+            return frozenset()
+        statement = select(
+            FinancialRoleSuggestionRecord.verified_transaction_id,
+            FinancialRoleSuggestionRecord.counterpart_transaction_id,
+        ).where(
+            FinancialRoleSuggestionRecord.kind == "transfer",
+            FinancialRoleSuggestionRecord.created_at <= knowledge_cutoff_at,
+            or_(
+                FinancialRoleSuggestionRecord.reviewed_at.is_(None),
+                FinancialRoleSuggestionRecord.reviewed_at > knowledge_cutoff_at,
+            ),
+            or_(
+                FinancialRoleSuggestionRecord.verified_transaction_id.in_(
+                    transaction_ids
+                ),
+                FinancialRoleSuggestionRecord.counterpart_transaction_id.in_(
+                    transaction_ids
+                ),
+            ),
+        )
+        unresolved: set[str] = set()
+        selected = set(transaction_ids)
+        for subject_id, counterpart_id in self._session.execute(statement).tuples():
+            if subject_id in selected:
+                unresolved.add(subject_id)
+            if counterpart_id in selected:
+                unresolved.add(counterpart_id)
+        return frozenset(unresolved)
+
+    def list_categories(
+        self,
+        category_ids: tuple[str, ...],
+    ) -> tuple[CategoryRecord, ...]:
+        """Return requested category metadata in stable identifier order."""
+        if not category_ids:
+            return ()
+        statement = (
+            select(CategoryRecord)
+            .where(CategoryRecord.id.in_(category_ids))
+            .order_by(CategoryRecord.id)
+        )
+        return tuple(self._session.scalars(statement))
 
 
 class FinancialRoleRepository:

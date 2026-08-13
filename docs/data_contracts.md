@@ -112,9 +112,77 @@ The current precedence sources are transaction decision, personal rule, merchant
 mapping, keyword rule, and `needs_review`. A transaction decision is the latest
 existing explicit category correction. If no deterministic rule matches, or
 equally ranked rules disagree, the selected category is `needs_review`. Commit 19
-adds the evaluated ML model; Commit 20 adds hybrid inference, persistent
-personal-rule creation, and the correction workflow. This stage defines neither
-an API nor a UI contract.
+adds a separately evaluated model candidate without changing this service;
+Commit 20 adds hybrid inference, persistent personal-rule creation, and the
+correction workflow. This deterministic stage defines neither an API nor a UI
+contract.
+
+## ML categorisation training and evaluation
+
+The ML boundary uses immutable typed requests and results rather than passing an
+unvalidated DataFrame between persistence, evaluation, and artefact storage.
+Its training plan identifies the owned profile, taxonomy and model versions,
+overall aware knowledge cutoff, historical chronological boundary, explicit
+minimum sample policy, deterministic merchant-holdout policy, and random seed.
+Every threshold affecting dataset sufficiency or model selection is visible in
+that plan or its recorded metadata.
+
+A private training example contains only the transaction identity needed for
+stable processing, transaction date, verified merchant and description,
+normalised merchant group, taxonomy category, verification time, and category
+correction history needed for as-of reconstruction. Examples are transient and
+must not be serialised into training metadata. The dataset result instead
+returns aggregate eligible and excluded counts with controlled reason codes.
+
+An eligible supervised label must be an explicit category correction available
+at the relevant knowledge cutoff. The current value of
+`verified_transactions.category_id` is not an as-of label because automatic
+assignment has no historical timestamp. A later correction is permitted as test
+truth at the overall evaluation cutoff, but it cannot enter a chronological
+training fold whose historical cutoff predates that correction. Corrections
+with identical times use their stable database identity as the final tie-break.
+
+Financial-role eligibility is reconstructed from the latest
+`FinancialRoleAuditRecord` available at the same cutoff. An absent audit means
+`unknown`; the current `financial_role_id` is not used as historical truth.
+
+Eligibility also requires:
+
+- an owned verified transaction and confirmed raw-row lineage;
+- a fully verified source document for digital-PDF and OCR-derived rows;
+- no exact or unresolved probable-duplicate evidence;
+- no unresolved transfer review or structured `needs_review` flag;
+- a financial role other than `unknown` or `excluded`; and
+- an active taxonomy category other than `needs_review`.
+
+These filters determine whether a row can teach the classifier; they do not
+delete or rewrite any retained source evidence. In particular, statement notes,
+raw payloads, extraction confidence, amounts, balances, and account identifiers
+are not model features.
+
+The versioned feature schema converts temporary normalised merchant and
+description values into one marked text value. A fitted model combines word
+TF-IDF and character-within-word TF-IDF with Logistic Regression. The model
+input contract rejects text that is empty after normalisation. Standalone batch
+prediction preserves input order and returns the estimator's category classes
+and probabilities; it does not choose a confidence threshold or create a
+`CategoryDecision`.
+
+Each holdout result names the split and records training/test counts and ranges,
+class and merchant-group diagnostics, metrics for both the candidate and a
+most-frequent-category baseline, and a labelled confusion matrix. Metrics include
+macro F1, weighted F1, precision, recall, and per-class support. The evaluation
+result records whether the explicit candidate-selection rule passed, but that
+flag is not model activation.
+
+Artefact metadata contains only controlled configuration and aggregates: model,
+taxonomy and feature-schema versions; training period and cutoffs; class counts;
+split policy; parameters and seed; baseline and candidate metrics; software
+versions; creation time; separate aggregate exclusion counts for the historical
+and final datasets; selection result; and a SHA-256 artefact checksum. It
+must not contain example text, merchant names, or transaction, profile, and
+account identifiers. The model and its JSON sidecar are private local files,
+not API payloads or database records in this stage.
 
 ## Accounts and financial roles
 

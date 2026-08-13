@@ -253,9 +253,9 @@ latest transaction-specific user decision
 -> needs_review
 ```
 
-Commit 19 will develop and evaluate the ML categoriser, and Commit 20 will add
-its prediction tier between keyword rules and `needs_review`; no model is called
-in this stage. The latest existing category correction represents the
+The standalone Commit 19 classifier candidate does not alter this sequence;
+Commit 20 will add an eligible prediction tier between keyword rules and
+`needs_review`. The latest existing category correction represents the
 transaction-specific decision. Personal rules may
 scope one exact merchant by direction, account, description phrase, and inclusive
 absolute-amount bounds. All configured scope fields must match. Personal and
@@ -279,8 +279,60 @@ values.
 
 Versioned merchant and keyword rules live in `configs/category_rules.yaml`.
 Personal rules are validated in-memory inputs only; Commit 20 owns their
-persistence and the user correction workflow. This module has no API, UI, ML
-prediction, or new database schema.
+persistence and the user correction workflow. This deterministic assignment
+service has no API, UI, ML call, or new database schema.
+
+## Standalone ML categoriser candidate
+
+The model-development boundary is deliberately separate from category
+assignment. A narrow training-data repository selects transactions for one
+owned profile, and pure modelling functions build, split, evaluate, train, save,
+and load a candidate classifier. Neither training nor prediction writes a
+transaction, changes its category, or modifies raw source evidence.
+
+Training labels come from explicit category-correction history rather than the
+current category column. Each label is reconstructed as it was known at an
+aware knowledge cutoff. A chronological training partition additionally uses
+only transactions and corrections available before its historical cutoff, so a
+later user correction cannot leak backwards into that fold. Eligible rows must
+have trusted verified lineage and an active non-`needs_review` taxonomy target.
+Financial-role eligibility is reconstructed from the latest role-change audit
+known at the same cutoff; without an audit, the role is `unknown` even when the
+transaction's current role has since changed.
+Unknown or excluded financial roles, unresolved transfer review, duplicate
+evidence, and unapproved PDF/OCR data remain outside training.
+
+The feature boundary creates a temporary, versioned text representation from
+the verified merchant and description. It neither updates those fields nor
+reads amount, account identity, statement context, free-text notes, raw payloads,
+or extraction text. A scikit-learn pipeline combines word TF-IDF n-grams and
+character-within-word TF-IDF n-grams before Logistic Regression. The same text
+builder is used for later standalone predictions to avoid training-serving
+drift.
+
+Evaluation fits a new feature pipeline inside every partition. One holdout is
+strictly chronological and never shuffles transaction dates. The other groups
+by normalised merchant so no test merchant occurs in its training rows. A
+most-frequent-category classifier is fit on each matching training partition as
+the simple baseline. Model and baseline results include macro and weighted F1,
+precision, recall, per-class support, and stable confusion matrices. Inadequate
+history, fewer than two usable classes, or an impossible holdout produces a
+controlled result rather than a misleading score.
+
+The final candidate is fit only after evaluation and may be written with a
+validated JSON metadata sidecar to an ignored local model directory. The
+artefact carries the learned TF-IDF vocabulary and is therefore private even
+though no training rows are deliberately serialised beside it. Loading is a
+trusted-local operation that validates the fitted word and character pipeline,
+Logistic Regression parameters and class order, embedded manifest, checksum,
+feature schema, taxonomy, and scikit-learn version. Downloaded or otherwise
+untrusted joblib files must never be deserialised.
+
+This boundary returns raw class probabilities but defines no automatic category
+or confidence decision. Commit 20 owns hybrid precedence, confidence thresholds,
+review queues, corrections, and model-version audit on decisions. Commit 26 owns
+database registration, active-model selection, and broader model evaluation
+records; Commit 19 adds no registry migration and does not activate a candidate.
 
 ## Coverage-aware analytics
 
