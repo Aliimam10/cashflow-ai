@@ -540,3 +540,11 @@ knowledge cutoff.
 thresholds explicit. `RecurringPaymentCandidate` carries controlled grouping,
 frequency, signed amount, evidence dates, next date, confidence, covered misses,
 and review status. `RecurrenceReview` records explicit confirmation or cancellation.
+
+## Forecast-data contracts
+
+`DailyForecastObservation` uses `0.00` for covered zero-spend days and null for
+unknown days. `WeeklyForecastTarget` requires a complete Monday-to-Sunday week.
+`ForecastFeatureRow` carries lag 1/2/4, rolling 4/8, payday distance, calendar, and
+known recurring-flow inputs. Baseline evaluation records chronological splits,
+predictions, MAE, RMSE, and bias.

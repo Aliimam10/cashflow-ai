@@ -380,3 +380,11 @@ verified transactions using merchant, amount, and interval consistency. It predi
 the next date and confidence. Only expected dates inside verified statement coverage
 count as missed; gaps remain unknown. Users explicitly confirm or cancel candidates,
 and only confirmed expense members enter recurring-spend analytics.
+
+## Forecast-data status
+
+Commit 22 builds a daily coverage calendar, fully covered weekly discretionary
+targets, past-only lag/rolling/payday/month features, confirmed recurring-flow
+inputs, expanding-window folds, and a final chronological test. Unknown dates stay
+null and break lag chains. Five baselines establish what later ML must beat. Run
+`make demo-forecast` for a readable synthetic check.

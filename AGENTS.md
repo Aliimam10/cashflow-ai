@@ -30,6 +30,10 @@ separately versioned model artefacts.
 - Describe the objective, affected files, approach, and important edge cases
   before implementation.
 - Add or update tests and documentation with every behavioural change.
+- Provide a simple manual verification path for every commit, using only synthetic
+  data. Document the exact command, expected output, and safe parameters a person
+  can vary; prefer a small readable demo command where automated tests alone would
+  not make the behaviour understandable.
 - Run the relevant validation commands and inspect the final diff.
 - Do not create commits unless explicitly requested.
 

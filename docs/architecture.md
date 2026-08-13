@@ -404,3 +404,10 @@ The recurrence service groups owned verified transactions by account, normalised
 merchant, currency, direction, and financial role. It scores amount/timing
 consistency and stores candidate-to-transaction evidence. Confirmation creates a
 recurring series; cancellation suppresses the candidate. Forecasting remains later.
+
+## Forecast-data boundary
+
+Commit 22 is read-only. It intersects verified coverage across selected accounts,
+retains every calendar date, aggregates expense rows outside confirmed recurring
+series, and builds features from strictly prior consecutive weeks. Evaluation is
+chronological and does not persist a forecast run.

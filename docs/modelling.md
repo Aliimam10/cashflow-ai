@@ -124,3 +124,12 @@ Commit 20 accepts only a candidate selected by Commit 19's chronological and
 unseen-merchant evaluation and matching the active taxonomy. An explicit threshold
 separates automatic assignment from review; it is not a general accuracy guarantee.
 Feedback may prepare new training examples, but does not fit or replace a model.
+
+## Forecast baselines
+
+The target is weekly non-recurring expense magnitude over fully covered weeks.
+“Discretionary” means expense-role spending not linked to a confirmed recurring
+candidate; it does not claim every purchase was optional. Baselines are historical
+mean, recent four-week mean, 52-week seasonal naive, recurring-only, and zero
+discretionary. For this target the last two intentionally predict zero as the same
+sanity floor; recurring flow remains separate for later cash-flow composition.

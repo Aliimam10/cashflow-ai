@@ -177,3 +177,10 @@ historical-cutoff and ignored-artifact safeguards.
 Detection runs locally and stores normalised merchant grouping plus derived schedule
 evidence. It does not copy raw payloads, notes, account names, or original
 descriptions into recurrence records or logs. Tests use fictional data only.
+
+## Forecast-data privacy
+
+Construction reads canonical amounts, dates, roles, coverage, and confirmed
+recurrence membership locally. It does not read raw payloads, descriptions, merchant
+text, notes, or flags and does not persist feature rows. The manual demo uses fixed
+fictional weekly amounts.

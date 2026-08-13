@@ -71,3 +71,10 @@ appropriately reviewed dataset.
 Hybrid inference consumes Commit 19's derived `candidate_selected` result. A model
 that failed either required holdout comparison is rejected. Per-row confidence only
 controls apply-versus-review behavior and does not replace evaluation.
+
+## Forecast baseline evaluation
+
+Expanding folds grow training history and test only later fully covered weeks. The
+final test is the last requested eligible period and never enters training. Unknown
+actual dates cannot produce targets, so they cannot enter evaluation. Metrics are
+weekly GBP MAE, RMSE, and signed bias.
