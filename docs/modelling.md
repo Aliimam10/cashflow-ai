@@ -177,3 +177,24 @@ A statement first uploaded today cannot be relabelled as though its weeks were k
 at past forecast origins; consequently it cannot by itself produce an honest
 historical backtest. This conservative refusal is preferable to inflated synthetic
 performance and remains until trustworthy point-in-time snapshots exist.
+
+## Uncertainty and recursive horizons
+
+Commit 24 uses a residual bootstrap rather than claiming that the point regressor
+directly provides probability estimates. Expanding-validation residuals are sampled
+with replacement around weekly point forecasts. Quantiles across deterministic
+simulations form the requested likely range. The final chronological test measures
+interval coverage and mean width without calibrating on itself.
+
+The first future week uses Commit 23's canonical inference row. Each later week is a
+recursive forecast: predicted discretionary spending enters the lag and rolling
+features because the actual future outcome is not yet available. Error can therefore
+compound over longer horizons, which is why this path must remain visibly uncertain.
+Confirmed recurring inflows and expenses are composed separately as known signed cash
+events; they are not hidden inside the discretionary prediction.
+
+When the selected implementation is a simple baseline or residual history is sparse,
+the result says so. Configured minimum uncertainty and widening multipliers prevent a
+flat synthetic history or stale evidence from being represented as certainty. The
+bootstrap assumes historical residuals remain informative and does not model regime
+changes, correlated weekly errors, or recurring-payment amount uncertainty yet.

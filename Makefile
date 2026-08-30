@@ -1,4 +1,4 @@
-.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import check-ocr demo-data demo-recurrence demo-forecast demo-forecast-model db-upgrade db-downgrade
+.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import check-ocr demo-data demo-recurrence demo-forecast demo-forecast-model demo-forecast-path db-upgrade db-downgrade
 
 setup:
 	uv sync --dev
@@ -43,6 +43,9 @@ demo-forecast:
 
 demo-forecast-model:
 	uv run cashflow-forecast-model-demo --weeks 36 --test-weeks 4
+
+demo-forecast-path:
+	uv run cashflow-forecast-path-demo --horizon-days 30 --simulations 200
 
 db-upgrade:
 	uv run alembic upgrade head

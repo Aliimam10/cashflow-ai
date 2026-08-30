@@ -446,3 +446,24 @@ predict exactly the next unobserved Monday only. Runtime history retains availab
 timestamps; inference fails closed if any fitted outcome or recurring input was not
 known before that Monday. No model artefact, registry entry, multi-week forecast run,
 API, or UI is created yet.
+
+## Forecast uncertainty and balance-path boundary
+
+Commit 24 remains a local read-only application service. It requires one owned
+account, the aligned Commit 22 dataset, the selected Commit 23 forecaster, a Monday
+origin, and one shared knowledge cutoff. It selects the newest verified balance
+recorded by that cutoff and projects only active recurring candidates whose detection,
+review, series creation, and cutoff evidence all precede it. Unverified or later-known
+balances and recurrence decisions cannot enter the path.
+
+The first week uses Commit 23's canonical target-free inference. Later weeks are
+explicit recursive estimates: prior predictions replace still-unknown outcomes in
+the next lag window. Historical residuals are sampled with a deterministic seed and
+distributed by the observed weekday spending profile to produce daily balance
+intervals. A fallback model, limited calibration evidence, and stale balance,
+transaction, or coverage evidence remain visible; configured multipliers widen the
+range rather than disguising the limitation.
+
+One-off signed scenario events and a discretionary-spending multiplier exist only in
+the returned path. This stage does not write `scenarios`, `forecast_runs`, model
+metadata, alerts, or transactions, and does not expose an API or UI.

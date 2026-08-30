@@ -123,3 +123,43 @@ historical dates, skipped weeks, and multi-week recursive paths are rejected rat
 than silently changing the question being forecast. The result also identifies its
 forecast origin, selected model or baseline, whether the advanced model passed, and
 the training knowledge cutoff so callers can explain how it was produced.
+
+## Forecast intervals and daily balance paths
+
+Commit 24 uses expanding-validation residuals as a local empirical error distribution.
+It samples those errors with a fixed seed around each weekly point forecast, allocates
+weekly discretionary outflow across weekdays using covered historical observations,
+and combines it daily with confirmed signed recurring flows and one verified opening
+balance. The result includes expected, lower, and upper balances for every requested
+date. Interval calibration is evaluated only on Commit 23's final chronological test
+and reports both empirical coverage and mean width.
+
+Only evidence known by the shared forecast cutoff is eligible. A recurring series
+must already be confirmed and active, and the balance must already be verified and
+recorded. Stale transaction, coverage, or balance evidence remains visible in stable
+warnings and widens the interval by an explicit policy multiplier. A baseline model
+and limited residual history are likewise disclosed. Scenario spending multipliers
+and signed one-off events are hypothetical return values only; no database row is
+written.
+
+Run:
+
+```bash
+make demo-forecast-path
+```
+
+Expected output includes `selected model: hist_gradient_boosting`, `forecast days:
+30`, `confirmed recurring events: 2`, `expected balance in 30 days:`, `likely range:`,
+`warnings: none`, and held-out interval coverage. All values are fictional.
+
+To inspect stale-data widening and a one-off hypothetical £50 outflow:
+
+```bash
+uv run cashflow-forecast-path-demo --horizon-days 14 --simulations 100 --stale-balance-days 10 --scenario-outflow 50
+```
+
+Expected output includes `warnings: stale_data`. You may safely vary
+`--horizon-days` from 7 through 90, `--history-weeks` from 8 upward,
+`--simulations` from 100 through 20,000, and non-negative scenario or stale-day
+values. These ranges belong to the demo; the typed service permits horizons up to
+365 days.

@@ -19,8 +19,9 @@ coverage-aware cash-flow analytics, and explainable deterministic transaction
 categorisation, a leakage-aware TF-IDF and Logistic Regression transaction-category
 pipeline, hybrid category decisions, recurring-payment review, point-in-time
 forecast data and baselines, and an evaluated weekly gradient-boosting candidate.
-PDF persistence, APIs, user interfaces, multi-week cash/balance forecast paths, and
-production model lifecycle management have not been implemented yet.
+Residual-bootstrap forecast intervals, confirmed recurring-flow composition, and
+daily balance paths are also implemented. PDF persistence, APIs, user interfaces,
+and production model lifecycle management have not been implemented yet.
 
 ## Problem
 
@@ -358,10 +359,11 @@ with an explicit `needs_review` fallback. A standalone, evaluated ML category
 candidate can be trained and stored locally; hybrid decisions then combine it with
 deterministic rules without background retraining. Coverage-aware recurring-payment
 detection, weekly forecast data, rolling simple baselines, and an in-memory primary
-weekly model candidate are also implemented. These stages expose Python service
-boundaries rather than an end-user application. The next stages will add multi-week
-forecast composition, anomaly/planning services, APIs, the frontend, deployment,
-and release documentation.
+weekly model candidate are also implemented. Residual-bootstrap uncertainty,
+cutoff-safe recurring flows and balance evidence, and hypothetical daily balance
+paths are implemented as a read-only service. These stages expose Python service
+boundaries rather than an end-user application. The next stages will add anomaly and
+planning services, APIs, the frontend, deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.
@@ -427,3 +429,12 @@ projection and predicts exactly the next unobserved week, not an arbitrary histo
 week or a multi-week path. Runtime history keeps its evidence times and fails closed
 if anything was learned too late. Run `make demo-forecast-model` for the synthetic
 model comparison and next-week prediction.
+
+Commit 24 recursively composes that selected one-week predictor across an explicit
+horizon, then combines the result with the latest verified balance and only recurring
+cash events confirmed by the same knowledge cutoff. A deterministic residual
+bootstrap produces daily likely ranges. Held-out interval coverage and mean width
+remain visible; baseline selection, limited residual history, and stale financial
+evidence produce warnings and explicit widening. Optional spending multipliers and
+signed one-off scenario events alter only the returned what-if path and are never
+persisted. Run `make demo-forecast-path` for a fictional 30-day example.

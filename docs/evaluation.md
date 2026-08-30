@@ -109,3 +109,20 @@ Permutation importance is calculated against final held-out MAE. The reported
 `mae_increase` stays signed: a negative value means shuffling happened to improve
 held-out error and is evidence against claiming that feature helped. Importance is a
 diagnostic for this sample, not causal or financial-advice evidence.
+
+## Forecast interval evaluation
+
+Commit 24 calibrates residual-bootstrap intervals from expanding-validation errors,
+not the final chronological test. The final test then reports empirical interval
+coverage—the proportion of actual weekly outcomes inside the configured range—and
+mean interval width. Coverage without width can reward uselessly broad intervals, so
+both remain visible. A low-data fallback with no independent final test reports no
+interval-performance result rather than inventing zero error or perfect coverage.
+
+Future weekly centres are recursive after the first week. Bootstrap residuals model
+observed forecast error around those centres; they are not a guarantee, a causal
+confidence interval, or proof that future behaviour matches history. Explicit
+minimum uncertainty prevents a perfectly flat or tiny calibration sample from
+claiming certainty. Baseline selection and stale evidence multiply interval width by
+caller-visible policy values. The deterministic seed makes synthetic evaluation and
+manual verification reproducible.

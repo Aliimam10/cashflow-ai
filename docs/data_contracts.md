@@ -589,3 +589,20 @@ performance, signed controlled permutation importance, chronological dates, the
 complete model policy, training cutoff, and eligible sample count.
 `ForecastPrediction` is one non-negative weekly discretionary-spending amount plus
 its forecast origin, selected model identity, selection state, and training cutoff.
+
+## Forecast-path contracts
+
+`ForecastPathPlan` binds one owned account, Monday origin, one-to-365-day horizon,
+aware knowledge cutoff, explicit freshness limits, interval probability, simulation
+count, minimum residual scale, widening multipliers, and random seed.
+`RecurringForecastOccurrence` contains only a candidate identity, date, signed amount,
+cash-affecting financial role, and evidence time. `ForecastOpeningBalance` retains the
+verified balance amount, currency, observation date, recording time, and source.
+
+`ForecastScenario` supports a non-negative discretionary multiplier and uniquely
+identified one-off signed inflow/outflow adjustments. `WeeklySpendingPath` and
+`DailyBalancePathPoint` require ordered point estimates inside their lower/upper
+bounds. `BalanceForecastPath` covers every requested date and carries the selected
+model, residual method, widening factor, stable warnings, source freshness warnings,
+confirmed recurring occurrences, held-out interval performance, and a final summary
+that must equal the last daily point.

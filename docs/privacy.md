@@ -218,3 +218,15 @@ metrics, signed feature importance, and predictions are also derived private
 financial data even without transaction text; they must not enter telemetry or
 committed fixtures based on a real person. The model remains in memory and is not
 committed or persisted in this stage.
+
+Commit 24 reads numeric forecast features, verified balance evidence, controlled
+financial roles, recurrence dates/amounts, and cutoff timestamps locally. It does not
+read or return merchant text, transaction descriptions, raw payloads, notes, account
+names, or statement files. Residuals, simulated paths, scenario assumptions, interval
+metrics, and daily balances remain sensitive derived financial data even without
+descriptions and must not be logged or added to real-data fixtures.
+
+The service returns an in-memory result and writes no scenario, forecast-run, model,
+transaction, or balance row. Manual verification uses fixed fictional identities and
+amounts. The CLI's £ symbol and outputs are synthetic demonstration text, not a real
+account export or financial advice.
