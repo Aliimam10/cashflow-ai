@@ -86,6 +86,7 @@ from cashflow_ai.schemas.forecasting import (
     ForecastDatasetPlan,
     ForecastDayStatus,
     ForecastFeatureRow,
+    RecurringOutflowProjection,
     WeeklyForecastTarget,
 )
 from cashflow_ai.schemas.freshness import (
@@ -333,6 +334,7 @@ __all__ = [
     "RecurrenceReviewAction",
     "RecurrenceReviewResult",
     "RecurrenceStatus",
+    "RecurringOutflowProjection",
     "RecurringPaymentCandidate",
     "RepeatedFileAssessment",
     "ReviewReason",

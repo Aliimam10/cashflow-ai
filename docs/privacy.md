@@ -24,6 +24,10 @@ Repository rules:
   or correct the import; never overwrite the original evidence during cleaning.
 - Bind confirmation to the exact preview hash. Re-parse the confirmed bytes and
   reject the operation if that identity changed.
+- Treat client-reported confirmation time as untrusted request metadata. Reject
+  a future value and use one server UTC receipt time for every persisted CSV
+  evidence timestamp, preventing a backdated request from leaking newly uploaded
+  private data into an earlier historical cutoff.
 - Preserve rejected and probable-duplicate rows locally for audit, but exclude
   them from verified calculations until an explicit later review decision.
 - Treat manual, statement, and running-balance snapshots as private financial
@@ -103,6 +107,12 @@ local review context but are not parsed into a role. Confirming or overriding a
 role updates only the verified interpretation and append-only audit history;
 the original raw payload and description remain unchanged.
 
+Financial-role confirmation, rejection, override, and review-flag history uses the
+server's aware UTC receipt time. Caller-reported review times are not stored, so a
+backdated value cannot leak a decision into an earlier training, recurrence,
+analytics, or forecasting cutoff. Receipt time is still private behavioural metadata
+and must not be emitted to telemetry with transaction context.
+
 Coverage-aware analytics also runs locally and read-only. Repository queries do
 not load raw payloads, statement notes, flags, pending suggestions, or rejected
 rows. Returned descriptions, amounts, balances, categories, coverage ranges, and
@@ -123,9 +133,9 @@ names only. They do not echo matched merchant text, description phrases, amounts
 account identifiers, or free-text statement notes into logs or telemetry.
 Repository merchant and keyword configuration contains generic public rules,
 never a real person's transaction history. Personal rules remain private local
-inputs and are not persisted by Commit 18; future storage and deletion controls
-belong to the Commit 20 correction workflow. Committed categorisation tests use
-fictional values only.
+inputs and are not persisted by Commit 18. Commit 20 stores one only after an
+explicit scoped feedback choice; deletion controls remain later interface work.
+Committed categorisation tests use fictional values only.
 
 ML categoriser training remains local and uses a narrow verified-data query.
 The model feature boundary receives only temporary copies of the verified
@@ -169,14 +179,23 @@ nor registers it in the database.
 Decision audits and review items contain controlled identifiers, category,
 probability, source, versions, and reason codes—not raw payloads, descriptions,
 statement notes, or account names. Text is used transiently by the local model.
-Personal rules remain local private data, and manual retraining retains Commit 19's
-historical-cutoff and ignored-artifact safeguards.
+Personal rules remain local private data. Authoritative server receipt time prevents
+current feedback from being backdated into older training truth, and manual
+retraining retains Commit 19's historical-cutoff and ignored-artifact safeguards.
 
 ## Recurrence privacy
 
 Detection runs locally and stores normalised merchant grouping plus derived schedule
 evidence. It does not copy raw payloads, notes, account names, or original
-descriptions into recurrence records or logs. Tests use fictional data only.
+descriptions into recurrence records or logs. Candidate evidence/cutoff timestamps
+and member `identified_at` values are still private behavioural metadata and must not
+appear in normal logs or committed snapshots. As-of reconstruction reads source,
+role-audit, coverage, and membership evidence available by the cutoff; it does not
+rewrite a newer stored candidate merely to answer an older historical request. Tests
+and the recurrence demo use fictional data only. Recurrence review state and a
+confirmed series use one authoritative server UTC receipt time. A caller-reported
+review time is aware-validated but never stored, so backdating cannot expose a current
+confirmation or cancellation to an earlier historical calculation.
 
 ## Forecast-data privacy
 
@@ -184,3 +203,13 @@ Construction reads canonical amounts, dates, roles, coverage, and confirmed
 recurrence membership locally. It does not read raw payloads, descriptions, merchant
 text, notes, or flags and does not persist feature rows. The manual demo uses fixed
 fictional weekly amounts.
+
+`known_at`, `forecast_origin_at`, and `target_known_at` are privacy-relevant metadata
+because they reveal when local financial evidence became available. They must remain
+inside the same local boundary as amounts and coverage. The service preserves these
+times to prevent future statement imports, role changes, or recurrence decisions from
+leaking into a historical fold. It does not backdate a statement uploaded today to
+manufacture past model knowledge.
+
+Commit 23 must preserve this local numeric-feature boundary when it introduces the
+primary model; no model implementation or prediction is part of Commit 22.

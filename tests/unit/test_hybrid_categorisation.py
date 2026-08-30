@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 from typing import Any, cast
@@ -140,6 +140,29 @@ def test_hybrid_applies_high_confidence_and_queues_low_confidence(
             session.scalar(select(func.count()).select_from(CategoryDecisionRecord))
             == 2
         )
+    # Lowering the explicit threshold resolves the old queue item instead of
+    # leaving a stale pending prediction beside the new applied decision.
+    hybrid_categorise_verified_transactions(
+        factory,
+        plan=HybridCategorisationPlan(
+            user_profile_id="profile-1", confidence_threshold=0.5
+        ),
+        rule_set=_rules(),
+        model=_model(),
+    )
+    assert list_low_confidence_reviews(factory, user_profile_id="profile-1") == ()
+    with session_scope(factory) as session:
+        low_decisions = tuple(
+            session.scalars(
+                select(CategoryDecisionRecord)
+                .where(CategoryDecisionRecord.verified_transaction_id == "low")
+                .order_by(CategoryDecisionRecord.created_at)
+            )
+        )
+        assert tuple(item.status for item in low_decisions) == (
+            "superseded",
+            "applied",
+        )
 
 
 def test_rules_precede_ml_and_feedback_creates_only_explicit_narrow_rule(
@@ -228,7 +251,8 @@ def test_transaction_only_feedback_supersedes_queue_without_creating_rule(
         decision = session.get(CategoryDecisionRecord, "pending-1")
         assert decision is not None
         assert decision.status == "superseded"
-        assert decision.reviewed_at == NOW
+        assert decision.reviewed_at is not None
+        assert decision.reviewed_at >= NOW
 
 
 @pytest.mark.parametrize(
@@ -471,12 +495,122 @@ def test_hybrid_and_feedback_controlled_error_paths(
     assert mismatched.personal_rule is not None
     valid = mismatched.model_copy(
         update={
+            "corrected_at": datetime.now(UTC),
             "personal_rule": mismatched.personal_rule.model_copy(
                 update={"merchant": "Synthetic Merchant"}
-            )
+            ),
         }
     )
     apply_category_feedback(factory, feedback=valid)
     with pytest.raises(HybridCategorisationError) as exc_info:
         apply_category_feedback(factory, feedback=valid)
     assert exc_info.value.code is HybridCategorisationErrorCode.PERSONAL_RULE_CONFLICT
+
+
+def test_feedback_timestamp_and_full_personal_scope_fail_closed(
+    factory: sessionmaker[Session],
+) -> None:
+    with session_scope(factory) as session:
+        transaction = _add_transaction(
+            session,
+            "feedback-clock",
+            merchant="Synthetic Merchant",
+            description="Synthetic weekly purchase",
+        )
+        session.add(
+            CategoryDecisionRecord(
+                id="later-decision",
+                verified_transaction_id=transaction.id,
+                category_id="groceries",
+                source="ml_model",
+                status="pending_review",
+                confidence=Decimal("0.55"),
+                model_version="synthetic-model-v1",
+                taxonomy_version="1.0",
+                rule_set_version="test-rules-1",
+                reason_code="ml_confidence_review",
+                created_at=NOW + timedelta(seconds=1),
+            )
+        )
+
+    base = CategoryFeedback(
+        user_profile_id="profile-1",
+        transaction_id="feedback-clock",
+        category_id="groceries",
+        action=CategoryFeedbackAction.TRANSACTION_ONLY,
+        corrected_at=NOW,
+    )
+    for timestamp in (NOW - timedelta(seconds=1), datetime(2099, 1, 1, tzinfo=UTC)):
+        with pytest.raises(HybridCategorisationError) as exc_info:
+            apply_category_feedback(
+                factory, feedback=base.model_copy(update={"corrected_at": timestamp})
+            )
+        assert (
+            exc_info.value.code
+            is HybridCategorisationErrorCode.INVALID_FEEDBACK_TIMESTAMP
+        )
+    with pytest.raises(HybridCategorisationError) as exc_info:
+        apply_category_feedback(factory, feedback=base)
+    assert (
+        exc_info.value.code is HybridCategorisationErrorCode.INVALID_FEEDBACK_TIMESTAMP
+    )
+
+    staged_rule = base.model_copy(
+        update={
+            "action": CategoryFeedbackAction.CREATE_PERSONAL_RULE,
+            "personal_rule": ScopedCategoryRule(
+                rule_id="rolled_back_rule",
+                user_profile_id="profile-1",
+                category_id="groceries",
+                merchant="Synthetic Merchant",
+                direction=Direction.OUTFLOW,
+            ),
+        }
+    )
+    with pytest.raises(HybridCategorisationError):
+        apply_category_feedback(factory, feedback=staged_rule)
+    with session_scope(factory) as session:
+        assert session.get(PersonalCategoryRuleRecord, "rolled_back_rule") is None
+
+    wrong_direction = base.model_copy(
+        update={
+            "action": CategoryFeedbackAction.CREATE_PERSONAL_RULE,
+            "corrected_at": NOW + timedelta(seconds=2),
+            "personal_rule": ScopedCategoryRule(
+                rule_id="wrong_direction",
+                user_profile_id="profile-1",
+                category_id="groceries",
+                merchant="Synthetic Merchant",
+                direction=Direction.INFLOW,
+            ),
+        }
+    )
+    with pytest.raises(HybridCategorisationError) as exc_info:
+        apply_category_feedback(factory, feedback=wrong_direction)
+    assert exc_info.value.code is HybridCategorisationErrorCode.FEEDBACK_RULE_MISMATCH
+
+    with session_scope(factory) as session:
+        later = session.get(CategoryDecisionRecord, "later-decision")
+        assert later is not None
+        later.created_at = NOW
+    accepted = apply_category_feedback(
+        factory,
+        feedback=base.model_copy(update={"corrected_at": NOW + timedelta(seconds=1)}),
+    )
+    with session_scope(factory) as session:
+        stored = session.get(CategoryCorrectionRecord, accepted.correction_id)
+        assert stored is not None
+        # A caller may report an older event time, but training visibility starts
+        # only at the authoritative server receipt time.
+        assert stored.corrected_at > NOW + timedelta(seconds=1)
+    with pytest.raises(HybridCategorisationError) as exc_info:
+        apply_category_feedback(
+            factory,
+            feedback=base.model_copy(
+                update={"corrected_at": NOW + timedelta(seconds=1)}
+            ),
+        )
+    assert accepted.category_id == "groceries"
+    assert (
+        exc_info.value.code is HybridCategorisationErrorCode.INVALID_FEEDBACK_TIMESTAMP
+    )

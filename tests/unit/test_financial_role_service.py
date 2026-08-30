@@ -39,7 +39,10 @@ from cashflow_ai.persistence.models import (
     UserProfileRecord,
     VerifiedTransactionRecord,
 )
-from cashflow_ai.persistence.repositories import FinancialRoleRepository
+from cashflow_ai.persistence.repositories import (
+    FinancialRoleRepository,
+    MLCategorisationRepository,
+)
 from cashflow_ai.schemas import (
     FinancialRole,
     FinancialRoleSuggestion,
@@ -325,6 +328,168 @@ def test_matched_transfer_is_advisory_then_confirmed_atomically(
     assert outgoing_audits[0].source is RoleDecisionSource.USER_CONFIRMATION
     assert outgoing_audits[0].new_role is FinancialRole.TRANSFER_OUT
     assert incoming_audits[0].new_role is FinancialRole.TRANSFER_IN
+
+
+def test_backdated_confirmation_uses_server_receipt_for_historical_cutoff(
+    factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_profiles(factory)
+    with session_scope(factory) as session:
+        _add_transaction(
+            session,
+            "refund",
+            account_id="current-1",
+            amount="25.00",
+            description="Synthetic card refund",
+        )
+    suggestion = _generate(factory)[0]
+    received_at = NOW + timedelta(days=2)
+    monkeypatch.setattr(role_service, "utc_now", lambda: received_at)
+
+    confirm_financial_role_suggestion(
+        factory,
+        suggestion_id=suggestion.suggestion_id,
+        reviewed_at=NOW - timedelta(days=365),
+    )
+
+    with session_scope(factory) as session:
+        repository = MLCategorisationRepository(session)
+        stored = _required(
+            session.get(FinancialRoleSuggestionRecord, suggestion.suggestion_id)
+        )
+        before_receipt = repository.latest_financial_role_audits_as_of(
+            ("refund",), knowledge_cutoff_at=received_at - timedelta(seconds=1)
+        )
+        at_receipt = repository.latest_financial_role_audits_as_of(
+            ("refund",), knowledge_cutoff_at=received_at
+        )
+
+    assert stored.reviewed_at == received_at
+    assert before_receipt == {}
+    assert at_receipt["refund"].changed_at == received_at
+
+
+def test_rejection_and_override_use_authoritative_server_receipt_time(
+    factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_profiles(factory)
+    with session_scope(factory) as session:
+        _add_transaction(
+            session,
+            "outgoing",
+            account_id="current-1",
+            amount="-50.00",
+            description="Transfer to Rainy Day Savings",
+        )
+        _add_transaction(
+            session,
+            "incoming",
+            account_id="savings-1",
+            amount="50.00",
+            description="Transfer from Everyday Current",
+        )
+        _add_transaction(
+            session,
+            "expense",
+            account_id="current-1",
+            amount="-10.00",
+            description="Synthetic expense",
+        )
+    suggestion = _generate(factory)[0]
+    received_at = NOW + timedelta(days=2)
+    monkeypatch.setattr(role_service, "utc_now", lambda: received_at)
+
+    reject_financial_role_suggestion(
+        factory,
+        suggestion_id=suggestion.suggestion_id,
+        reviewed_at=NOW - timedelta(days=365),
+    )
+    apply_transaction_review_action(
+        factory,
+        transaction_id="expense",
+        action=TransactionReviewAction.EXPENSE,
+        changed_at=NOW - timedelta(days=365),
+    )
+
+    with session_scope(factory) as session:
+        stored_suggestion = _required(
+            session.get(FinancialRoleSuggestionRecord, suggestion.suggestion_id)
+        )
+        audit = _required(
+            session.scalar(
+                select(FinancialRoleAuditRecord).where(
+                    FinancialRoleAuditRecord.verified_transaction_id == "expense"
+                )
+            )
+        )
+
+    assert stored_suggestion.reviewed_at == received_at
+    assert audit.changed_at == received_at
+
+
+def test_server_receipt_cannot_precede_verified_or_audited_role_history(
+    factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _seed_profiles(factory)
+    with session_scope(factory) as session:
+        transaction = _add_transaction(
+            session,
+            "expense",
+            account_id="current-1",
+            amount="-10.00",
+            description="Synthetic expense",
+            role=FinancialRole.EXPENSE,
+        )
+        session.add(
+            FinancialRoleAuditRecord(
+                verified_transaction_id=transaction.id,
+                previous_role_id=FinancialRole.UNKNOWN.value,
+                new_role_id=FinancialRole.EXPENSE.value,
+                suggestion_id=None,
+                source=RoleDecisionSource.USER_OVERRIDE.value,
+                changed_at=NOW + timedelta(days=2),
+            )
+        )
+        future_verified = _add_transaction(
+            session,
+            "future-verified",
+            account_id="current-1",
+            amount="-12.00",
+            description="Synthetic later verification",
+        )
+        future_verified.verified_at = NOW + timedelta(days=2)
+    monkeypatch.setattr(role_service, "utc_now", lambda: NOW + timedelta(days=1))
+
+    with pytest.raises(FinancialRoleServiceError) as error:
+        apply_transaction_review_action(
+            factory,
+            transaction_id="expense",
+            action=TransactionReviewAction.INTERNAL_TRANSFER,
+            changed_at=NOW - timedelta(days=365),
+        )
+
+    assert error.value.code is FinancialRoleServiceErrorCode.INVALID_REVIEW_CHRONOLOGY
+    with pytest.raises(FinancialRoleServiceError) as verification_error:
+        apply_transaction_review_action(
+            factory,
+            transaction_id="future-verified",
+            action=TransactionReviewAction.EXPENSE,
+            changed_at=NOW - timedelta(days=365),
+        )
+    assert (
+        verification_error.value.code
+        is FinancialRoleServiceErrorCode.INVALID_REVIEW_CHRONOLOGY
+    )
+    with session_scope(factory) as session:
+        assert (
+            _required(
+                session.get(VerifiedTransactionRecord, "expense")
+            ).financial_role_id
+            == FinancialRole.EXPENSE.value
+        )
 
 
 def test_refund_reimbursement_and_generic_income_remain_distinct(

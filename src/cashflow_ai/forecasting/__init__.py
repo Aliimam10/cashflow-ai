@@ -6,6 +6,7 @@ from cashflow_ai.forecasting.service import (
     build_forecast_dataset,
     build_forecast_feature_rows,
     evaluate_forecast_baselines,
+    validate_forecast_dataset,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "build_forecast_dataset",
     "build_forecast_feature_rows",
     "evaluate_forecast_baselines",
+    "validate_forecast_dataset",
 ]

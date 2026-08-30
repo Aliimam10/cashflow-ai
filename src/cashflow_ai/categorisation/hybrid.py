@@ -15,10 +15,11 @@ from cashflow_ai.categorisation.ml import (
 from cashflow_ai.categorisation.service import (
     CategorisationServiceError,
     CategorisationServiceErrorCode,
+    _personal_match,
     _propose_category,
     _validate_category_targets,
 )
-from cashflow_ai.persistence.base import new_id
+from cashflow_ai.persistence.base import new_id, utc_now
 from cashflow_ai.persistence.database import session_scope
 from cashflow_ai.persistence.models import (
     CategoryCorrectionRecord,
@@ -64,6 +65,7 @@ class HybridCategorisationErrorCode(StrEnum):
     MODEL_TAXONOMY_MISMATCH = "model_taxonomy_mismatch"
     FEEDBACK_RULE_MISMATCH = "feedback_rule_mismatch"
     PERSONAL_RULE_CONFLICT = "personal_rule_conflict"
+    INVALID_FEEDBACK_TIMESTAMP = "invalid_feedback_timestamp"
 
 
 class HybridCategorisationError(ValueError):
@@ -135,6 +137,7 @@ def hybrid_categorise_verified_transactions(
                 HybridCategorisationErrorCode.MODEL_TAXONOMY_MISMATCH,
                 "model and category rule taxonomy versions do not match",
             )
+    decision_time = utc_now()
     with session_scope(factory) as session:
         if UserProfileRepository(session).get(plan.user_profile_id) is None:
             raise CategorisationServiceError(
@@ -247,7 +250,15 @@ def hybrid_categorise_verified_transactions(
                 taxonomy_version=rule_set.taxonomy_version,
                 rule_set_version=rule_set.version,
                 reason_code=proposal.explanation.code.value,
+                created_at=decision_time,
             )
+            if (
+                status is HybridDecisionStatus.APPLIED
+                and source is not HybridDecisionSource.NEEDS_REVIEW
+            ):
+                repository.supersede_pending_decisions(
+                    transaction.id, reviewed_at=decision_time
+                )
             if not _same_decision(
                 repository.latest_decision(transaction.id), decision_record
             ):
@@ -295,6 +306,7 @@ def apply_category_feedback(
     factory: sessionmaker[Session], *, feedback: CategoryFeedback
 ) -> CategoryFeedbackResult:
     """Apply one explicit correction and optionally the exact rule the user chose."""
+    received_at = utc_now()
     with session_scope(factory) as session:
         repository = CategorisationRepository(session)
         transactions = repository.list_transactions_for_profile(
@@ -306,6 +318,11 @@ def apply_category_feedback(
                 "selected transaction is unavailable to this profile",
             )
         transaction = transactions[0]
+        if not transaction.verified_at <= feedback.corrected_at <= received_at:
+            raise HybridCategorisationError(
+                HybridCategorisationErrorCode.INVALID_FEEDBACK_TIMESTAMP,
+                "feedback time must follow verification and cannot be in the future",
+            )
         categories = repository.list_categories((feedback.category_id,))
         if len(categories) != 1 or not categories[0].is_active:
             raise CategorisationServiceError(
@@ -317,18 +334,15 @@ def apply_category_feedback(
             rule = feedback.personal_rule
             assert rule is not None
             if (
-                transaction.merchant is None
-                or normalise_rule_text(transaction.merchant)
-                != normalise_rule_text(rule.merchant)
-                or (
-                    rule.account_id is not None
-                    and rule.account_id != transaction.account_id
+                _personal_match(
+                    transaction, rule.model_copy(update={"is_active": True})
                 )
+                is None
             ):
                 raise HybridCategorisationError(
                     HybridCategorisationErrorCode.FEEDBACK_RULE_MISMATCH,
-                    "personal rule must match the selected transaction's merchant "
-                    "and account scope",
+                    "personal rule must match the selected transaction's supplied "
+                    "merchant, account, direction, description, and amount scopes",
                 )
             existing = repository.get_personal_rule(rule.rule_id)
             if existing is not None:
@@ -355,10 +369,25 @@ def apply_category_feedback(
                     maximum_amount=rule.maximum_amount,
                     priority=rule.priority,
                     is_active=True,
-                    created_at=feedback.corrected_at,
+                    created_at=received_at,
                 )
             )
             created_rule_id = rule.rule_id
+        latest_correction = repository.latest_category_corrections(
+            (transaction.id,)
+        ).get(transaction.id)
+        latest_decision = repository.latest_decision(transaction.id)
+        if (
+            latest_correction is not None
+            and feedback.corrected_at <= latest_correction.corrected_at
+        ) or (
+            latest_decision is not None
+            and feedback.corrected_at < latest_decision.created_at
+        ):
+            raise HybridCategorisationError(
+                HybridCategorisationErrorCode.INVALID_FEEDBACK_TIMESTAMP,
+                "feedback time must follow the transaction's existing decisions",
+            )
         previous = transaction.category_id
         correction = repository.add_correction(
             CategoryCorrectionRecord(
@@ -366,12 +395,14 @@ def apply_category_feedback(
                 verified_transaction_id=transaction.id,
                 previous_category_id=previous,
                 new_category_id=feedback.category_id,
-                corrected_at=feedback.corrected_at,
+                # The caller timestamp is validated for chronology, but the
+                # server receipt time is the authoritative as-of boundary.
+                corrected_at=received_at,
             )
         )
         repository.assign_category(transaction, feedback.category_id)
         superseded = repository.supersede_pending_decisions(
-            transaction.id, reviewed_at=feedback.corrected_at
+            transaction.id, reviewed_at=received_at
         )
         session.flush()
         return CategoryFeedbackResult(

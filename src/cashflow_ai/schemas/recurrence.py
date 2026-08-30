@@ -8,7 +8,12 @@ from enum import StrEnum
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from cashflow_ai.schemas.money import Money
-from cashflow_ai.schemas.transactions import Identifier
+from cashflow_ai.schemas.transactions import (
+    Currency,
+    Direction,
+    FinancialRole,
+    Identifier,
+)
 
 
 class _RecurrenceModel(BaseModel):
@@ -46,6 +51,7 @@ class RecurrenceDetectionPolicy(_RecurrenceModel):
     minimum_occurrences: int = Field(ge=2)
     maximum_amount_variation: Money = Field(ge=0)
     maximum_interval_variation_days: int = Field(ge=0, le=31)
+    maximum_skipped_occurrences: int = Field(ge=0)
     minimum_confidence: float = Field(ge=0, le=1)
 
 
@@ -55,6 +61,9 @@ class RecurringPaymentCandidate(_RecurrenceModel):
     candidate_id: Identifier
     account_id: Identifier
     merchant_group: str = Field(min_length=1, max_length=500)
+    currency: Currency
+    direction: Direction
+    financial_role: FinancialRole
     expected_amount: Money
     frequency: RecurrenceFrequency
     interval_days: int = Field(gt=0)
@@ -63,14 +72,25 @@ class RecurringPaymentCandidate(_RecurrenceModel):
     confidence: float = Field(ge=0, le=1)
     covered_missed_count: int = Field(ge=0)
     status: RecurrenceStatus
+    evidence_as_of_date: date
+    knowledge_cutoff_at: datetime
 
     @model_validator(mode="after")
     def validate_dates(self) -> RecurringPaymentCandidate:
-        """Require unique chronological evidence and a future next date."""
+        """Require chronological evidence, cutoff, and a future next date."""
         if tuple(sorted(set(self.occurrence_dates))) != self.occurrence_dates:
             raise ValueError("occurrence dates must be unique and chronological")
         if self.next_expected_date <= self.occurrence_dates[-1]:
             raise ValueError("next expected date must follow the latest occurrence")
+        if (
+            self.knowledge_cutoff_at.tzinfo is None
+            or self.knowledge_cutoff_at.utcoffset() is None
+        ):
+            raise ValueError("knowledge_cutoff_at must be timezone-aware")
+        if self.next_expected_date <= self.evidence_as_of_date:
+            raise ValueError("next expected date must follow the evidence date")
+        if self.evidence_as_of_date > self.knowledge_cutoff_at.date():
+            raise ValueError("evidence date cannot follow the knowledge cutoff")
         return self
 
 

@@ -74,7 +74,23 @@ controls apply-versus-review behavior and does not replace evaluation.
 
 ## Forecast baseline evaluation
 
-Expanding folds grow training history and test only later fully covered weeks. The
-final test is the last requested eligible period and never enters training. Unknown
-actual dates cannot produce targets, so they cannot enter evaluation. Metrics are
-weekly GBP MAE, RMSE, and signed bias.
+Expanding validation and final testing answer different questions. Expanding folds
+repeatedly grow the training history and predict one later, fully covered week; they
+are the development evidence used to check whether performance is stable through
+time. The final test is the last requested consecutive eligible block and remains
+outside those development fits. Unknown actual dates cannot produce targets, and an
+outcome whose `target_known_at` is not before a forecast origin cannot enter that
+origin's training history.
+
+All five baselines are executable and roll one week at a time. Historical mean and
+seasonal naive use only targets revealed by that origin; recent mean uses the same
+past-only feature row; recurring-only and zero-discretionary provide the explicit
+zero floor. After a test outcome becomes available, it may enter the next prediction
+for both baseline and candidate. This information-equivalent protocol prevents the
+model from competing against a baseline frozen at an older history. Metrics are
+weekly GBP MAE, RMSE, and signed bias, reported separately for expanding validation
+and the final test.
+
+Commit 23 will apply this same point-in-time protocol to the primary candidate and
+will define its model-selection and failure-behaviour gates. Multi-horizon paths
+belong to Commit 24.

@@ -27,6 +27,7 @@ from cashflow_ai.imports.normalisation import (
     map_csv_row,
     normalise_transaction,
 )
+from cashflow_ai.persistence.base import utc_now
 from cashflow_ai.persistence.database import session_scope
 from cashflow_ai.persistence.models import (
     BalanceSnapshotRecord,
@@ -116,6 +117,7 @@ def _raw_record(
     canonical_fingerprint: str | None,
     review_status: ReviewStatus,
     issues: list[dict[str, Any]],
+    received_at: datetime,
 ) -> RawTransactionRecord:
     return RawTransactionRecord(
         import_batch_id=import_batch_id,
@@ -133,6 +135,7 @@ def _raw_record(
         canonical_fingerprint=canonical_fingerprint,
         issues_json=issues,
         review_status=review_status.value,
+        created_at=received_at,
     )
 
 
@@ -183,7 +186,7 @@ def _verified_record(
     transaction: NormalisedTransaction,
     raw_transaction_id: str,
     *,
-    confirmed_at: datetime,
+    received_at: datetime,
 ) -> VerifiedTransactionRecord:
     draft = transaction.draft
     return VerifiedTransactionRecord(
@@ -201,7 +204,7 @@ def _verified_record(
         direction=cast(Direction, draft.direction).value,
         category_id=None,
         financial_role_id=FinancialRole.UNKNOWN.value,
-        verified_at=confirmed_at,
+        verified_at=received_at,
     )
 
 
@@ -210,7 +213,7 @@ def _persist_statement_metadata(
     *,
     import_batch_id: str,
     plan: CsvImportPlan,
-    confirmed_at: datetime,
+    received_at: datetime,
 ) -> None:
     statement_context = plan.statement_context
     coverage = statement_context.coverage
@@ -219,7 +222,7 @@ def _persist_statement_metadata(
             import_batch_id=import_batch_id,
             flags_json=sorted(flag.value for flag in statement_context.flags),
             note=statement_context.note,
-            created_at=confirmed_at,
+            created_at=received_at,
         )
     )
     repository.add_coverage(
@@ -257,7 +260,7 @@ def _persist_statement_metadata(
                 balance=balance,
                 currency=balances.currency.value,
                 as_of_date=as_of_date,
-                recorded_at=confirmed_at,
+                recorded_at=received_at,
                 source=source.value,
                 verification_status=VerificationStatus.VERIFIED.value,
             )
@@ -319,7 +322,7 @@ def _persist_document(
     *,
     mime_type: str,
     plan: CsvImportPlan,
-    confirmation: CsvImportConfirmation,
+    received_at: datetime,
 ) -> CsvImportSummary:
     account = AccountRepository(session).get(plan.account_id)
     if account is None:
@@ -349,14 +352,14 @@ def _persist_document(
             mime_type=mime_type,
             byte_size=document.byte_size,
             verification_status=VerificationStatus.UNVERIFIED.value,
-            imported_at=confirmation.confirmed_at,
+            imported_at=received_at,
         )
     )
     _persist_statement_metadata(
         statement_repository,
         import_batch_id=batch.id,
         plan=plan,
-        confirmed_at=confirmation.confirmed_at,
+        received_at=received_at,
     )
 
     transaction_repository = TransactionRepository(session)
@@ -397,6 +400,7 @@ def _persist_document(
                             IssueSeverity.ERROR,
                         )
                     ],
+                    received_at=received_at,
                 )
             )
             continue
@@ -432,6 +436,7 @@ def _persist_document(
                             ),
                         )
                     ],
+                    received_at=received_at,
                 )
             )
             continue
@@ -445,12 +450,11 @@ def _persist_document(
                 canonical_fingerprint=transaction.canonical_fingerprint,
                 review_status=ReviewStatus.CONFIRMED,
                 issues=[],
+                received_at=received_at,
             )
         )
         verified = transaction_repository.add_verified(
-            _verified_record(
-                transaction, raw.id, confirmed_at=confirmation.confirmed_at
-            )
+            _verified_record(transaction, raw.id, received_at=received_at)
         )
         if verified.balance_after is not None:
             balance_repository.add(
@@ -460,7 +464,7 @@ def _persist_document(
                     balance=verified.balance_after,
                     currency=verified.currency,
                     as_of_date=verified.posting_date or verified.transaction_date,
-                    recorded_at=confirmation.confirmed_at,
+                    recorded_at=received_at,
                     source=BalanceSnapshotSource.RUNNING_BALANCE.value,
                     verification_status=VerificationStatus.VERIFIED.value,
                 )
@@ -515,11 +519,17 @@ def persist_confirmed_csv(
             CsvImportErrorCode.PREVIEW_CHANGED,
             "uploaded CSV bytes changed after the confirmed preview",
         )
+    received_at = utc_now()
+    if confirmation.confirmed_at > received_at:
+        raise CsvImportError(
+            CsvImportErrorCode.INVALID_CONFIRMATION_TIME,
+            "CSV confirmation time cannot be in the future",
+        )
     with session_scope(factory) as session:
         return _persist_document(
             session,
             document,
             mime_type=mime_type,
             plan=plan,
-            confirmation=confirmation,
+            received_at=received_at,
         )

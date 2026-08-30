@@ -16,10 +16,11 @@ explicit PDF review contracts, verified balance snapshots, and a conservative
 financial-data freshness assessment, plus user-confirmed financial-role
 suggestions for transfers, refunds, and reimbursements, and deterministic
 coverage-aware cash-flow analytics, and explainable deterministic transaction
-categorisation, plus a leakage-aware TF-IDF and Logistic Regression transaction
-category training and evaluation pipeline**. PDF persistence, APIs, user
-interfaces, forecast generation, hybrid category assignment, and other
-machine-learning components have not been implemented yet.
+categorisation, a leakage-aware TF-IDF and Logistic Regression transaction-category
+pipeline, hybrid category decisions, recurring-payment review, point-in-time
+forecast data, and rolling simple baselines. PDF persistence, APIs, user interfaces,
+the primary weekly forecasting model, multi-week cash/balance forecast paths, and
+production model lifecycle management have not been implemented yet.
 
 ## Problem
 
@@ -142,6 +143,11 @@ atomically and records one immutable audit entry per changed transaction. Role
 signs are enforced, competing suggestions are rejected after a decision, and
 raw source values and categories remain untouched.
 
+Confirmation, rejection, direct overrides, and `needs_review` flags use the
+server's UTC receipt time for stored review and audit history. A caller-supplied
+aware timestamp cannot backdate a decision into an earlier analytics, recurrence,
+training, or forecast cutoff.
+
 Statement flags and free-text notes appear only as reference context in the
 review queue. They are never parsed to assign a role. There is no API or visual
 review screen yet, and the role-review stage itself does not calculate totals.
@@ -173,9 +179,10 @@ groceries, utilities, transport, subscriptions, health, education, and travel.
 The service follows a visible precedence: the latest transaction-specific user
 decision, then an active scoped personal rule, an exact known-merchant mapping,
 a whole-phrase keyword rule, and finally `needs_review`. The separately trained
-Commit 19 model candidate does not change that sequence. Commit 20 will insert
-eligible predictions between keyword rules and the fallback. The deterministic
-service itself does not make probabilistic predictions.
+Commit 19 model candidate does not change that sequence. Commit 20's hybrid
+service inserts only an eligible prediction between keyword rules and the
+fallback. The deterministic service itself does not make probabilistic
+predictions.
 
 Personal rules can be restricted by merchant, direction, account, description
 phrase, and an inclusive absolute-amount range. All supplied restrictions must
@@ -187,8 +194,8 @@ Each run returns a privacy-safe explanation containing a controlled reason,
 precedence source, rule identity where applicable, and which fields matched. It
 updates only the verified transaction's category; financial role, raw import
 evidence, source text, amounts, dates, statement notes, and flags remain
-unchanged. Personal-rule storage, a correction workflow, APIs, and review screens
-belong to Commit 20 and later interface stages.
+unchanged. Commit 20 adds local personal-rule storage and a correction workflow;
+APIs and review screens remain later interface stages.
 
 ### Implemented ML categoriser candidate boundary
 
@@ -219,10 +226,10 @@ descriptions or merchant names. The learned TF-IDF
 vocabulary remains private inside the artefact and only trusted, locally created
 artefacts may be loaded.
 
-This stage neither changes a transaction category nor inserts ML into the
-deterministic precedence. Commit 20 owns hybrid rule-plus-model inference,
-confidence thresholds, low-confidence review, and feedback. Commit 26 owns the
-database model registry and active-model lifecycle.
+This standalone training stage neither changes a transaction category nor inserts
+ML into the deterministic precedence. Commit 20's hybrid service owns
+rule-plus-model inference, confidence thresholds, low-confidence review, and
+feedback. Commit 26 owns the database model registry and active-model lifecycle.
 
 The CSV preview, confirmation, and persistence pipeline currently consists of
 Python services rather than an upload or review screen.
@@ -327,6 +334,8 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 - [`docs/persistence.md`](docs/persistence.md)
 - [`docs/analytics.md`](docs/analytics.md)
 - [`docs/categorisation.md`](docs/categorisation.md)
+- [`docs/recurrence.md`](docs/recurrence.md)
+- [`docs/forecasting.md`](docs/forecasting.md)
 - [`docs/modelling.md`](docs/modelling.md)
 - [`docs/evaluation.md`](docs/evaluation.md)
 - [`docs/privacy.md`](docs/privacy.md)
@@ -346,9 +355,12 @@ implemented. Coverage-aware cash-flow analytics and gap-preserving balance
 history are implemented as read-only Python services. Deterministic merchant,
 keyword, and caller-supplied scoped personal categorisation rules are implemented
 with an explicit `needs_review` fallback. A standalone, evaluated ML category
-candidate can now be trained and stored locally without changing transaction
-categories. The next stages will add the hybrid correction workflow, APIs, the
-frontend, deployment, and release documentation.
+candidate can be trained and stored locally; hybrid decisions then combine it with
+deterministic rules without background retraining. Coverage-aware recurring-payment
+detection, weekly forecast data, and rolling simple baselines are also implemented.
+These stages expose Python service boundaries rather than an end-user application.
+The next stages will add the primary weekly model, multi-week forecast composition,
+anomaly/planning services, APIs, the frontend, deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.
@@ -370,21 +382,36 @@ unmatched rows: predictions meeting an explicit confidence threshold may be
 applied; lower-confidence predictions leave the transaction unchanged and enter a
 review queue. Decision source and ML model version are audited. Corrections are
 transaction-only unless the user explicitly supplies and requests a narrow personal
-rule. Corrected examples can be prepared for manual, cutoff-safe retraining; no
-background retraining occurs.
+rule that matches the selected transaction on every supplied scope. Feedback must
+follow the transaction's existing verification, decisions, and corrections and
+cannot be future-dated. A later applied decision supersedes stale pending reviews.
+Corrected examples can be prepared for manual, cutoff-safe retraining; no background
+retraining occurs.
 
 ## Recurring-payment status
 
 Commit 21 detects weekly, fortnightly, monthly, quarterly, and annual patterns from
-verified transactions using merchant, amount, and interval consistency. It predicts
-the next date and confidence. Only expected dates inside verified statement coverage
-count as missed; gaps remain unknown. Users explicitly confirm or cancel candidates,
-and only confirmed expense members enter recurring-spend analytics.
+verified transactions using merchant, amount, and interval consistency at an explicit
+timezone-aware knowledge cutoff. Candidate identity includes account, normalised
+merchant, currency, direction, financial role, and frequency, so unlike financial
+series cannot merge. Every candidate records its evidence date/cutoff and every
+transaction member records when it was identified. It predicts the next date and
+confidence. Only expected dates inside coverage known by the cutoff count as missed;
+gaps remain unknown. Users explicitly confirm or cancel candidates, and only confirmed
+expense members enter recurring-spend analytics. Historical inspection returns an
+as-of projection without overwriting a newer persisted state.
+
+Run `make demo-recurrence` for a complete fictional detect-confirm-refresh lifecycle.
 
 ## Forecast-data status
 
 Commit 22 builds a daily coverage calendar, fully covered weekly discretionary
 targets, past-only lag/rolling/payday/month features, confirmed recurring-flow
-inputs, expanding-window folds, and a final chronological test. Unknown dates stay
-null and break lag chains. Five baselines establish what later ML must beat. Run
-`make demo-forecast` for a readable synthetic check.
+inputs, expanding-window validation folds, and a separate final chronological test.
+Daily and weekly values retain `known_at` timestamps: a lag or training target is
+usable only after its coverage, verification, role, and recurrence evidence was
+actually available and its full UTC calendar day has ended. Unknown, partial, or
+not-yet-known dates stay null and break lag chains.
+Five rolling, one-week-ahead baselines receive the same revealed history and establish
+the comparison protocol for the later primary model. Run `make demo-forecast` for a
+readable synthetic check.

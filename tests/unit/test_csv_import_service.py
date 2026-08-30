@@ -60,6 +60,7 @@ CSV_CONTENT = (
     b"31/02/2026,Broken date,-8.00,978.50,bad-1\n"
 )
 CONFIRMED_AT = datetime(2026, 8, 10, 12, 0, tzinfo=UTC)
+RECEIVED_AT = datetime(2026, 8, 14, 12, 0, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -155,8 +156,12 @@ def import_csv(
 
 def test_confirmed_import_preserves_and_classifies_every_row(
     factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     seed_account(factory)
+    monkeypatch.setattr(
+        "cashflow_ai.imports.csv_import_service.utc_now", lambda: RECEIVED_AT
+    )
 
     summary = persist_confirmed_csv(
         factory,
@@ -185,7 +190,7 @@ def test_confirmed_import_preserves_and_classifies_every_row(
         assert batch is not None
         assert batch.verification_status == "needs_review"
         assert batch.source_filename == "synthetic-statement.csv"
-        assert batch.imported_at == CONFIRMED_AT
+        assert batch.imported_at == RECEIVED_AT
 
         context = session.scalar(select(ImportContextRecord))
         coverage = session.scalar(select(StatementCoverageRecord))
@@ -207,6 +212,7 @@ def test_confirmed_import_preserves_and_classifies_every_row(
         verified = tuple(session.scalars(select(VerifiedTransactionRecord)))
 
         assert context is not None
+        assert context.created_at == RECEIVED_AT
         assert context.flags_json == ["contains_refunds", "other_context"]
         assert context.note == "Synthetic fixture with one deliberately invalid row."
         assert coverage is not None
@@ -219,6 +225,7 @@ def test_confirmed_import_preserves_and_classifies_every_row(
             ("statement_closing", Decimal("978.50")),
             ("statement_opening", Decimal("1000.00")),
         ]
+        assert {item.recorded_at for item in balances} == {RECEIVED_AT}
         assert [item.as_of_date for item in balances[:2]] == [
             date(2026, 7, 1),
             date(2026, 7, 2),
@@ -235,9 +242,128 @@ def test_confirmed_import_preserves_and_classifies_every_row(
         assert raw_rows[4].issues_json[0]["code"] == "invalid_date"
         assert raw_rows[-1].canonical_fingerprint is None
         assert raw_rows[-1].raw_payload["Date"] == "31/02/2026"
+        assert {item.created_at for item in raw_rows} == {RECEIVED_AT}
         assert len(verified) == 2
+        assert {item.verified_at for item in verified} == {RECEIVED_AT}
         assert verified[0].amount == Decimal("-4.50")
         assert verified[0].financial_role_id == "unknown"
+
+
+def test_client_confirmation_time_cannot_backdate_import_evidence(
+    factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed_account(factory)
+    calls = 0
+
+    def receipt_time() -> datetime:
+        nonlocal calls
+        calls += 1
+        if calls > 1:
+            raise AssertionError("CSV import must obtain exactly one receipt time")
+        return RECEIVED_AT
+
+    monkeypatch.setattr("cashflow_ai.imports.csv_import_service.utc_now", receipt_time)
+    reported_confirmation = datetime(2020, 1, 1, tzinfo=UTC)
+    early_cutoff = datetime(2025, 1, 1, tzinfo=UTC)
+    summary = persist_confirmed_csv(
+        factory,
+        CSV_CONTENT,
+        "synthetic-statement.csv",
+        mime_type="text/csv",
+        plan=import_plan(),
+        confirmation=CsvImportConfirmation(
+            preview_file_hash=calculate_file_hash(CSV_CONTENT),
+            user_confirmed=True,
+            confirmed_at=reported_confirmation,
+        ),
+    )
+
+    assert calls == 1
+    with session_scope(factory) as session:
+        batch = session.get(ImportBatchRecord, summary.import_batch_id)
+        assert batch is not None
+        context = session.scalar(select(ImportContextRecord))
+        raw_rows = tuple(session.scalars(select(RawTransactionRecord)))
+        verified = tuple(session.scalars(select(VerifiedTransactionRecord)))
+        balances = tuple(session.scalars(select(BalanceSnapshotRecord)))
+        assert context is not None
+        assert batch.imported_at == RECEIVED_AT
+        assert context.created_at == RECEIVED_AT
+        assert {item.created_at for item in raw_rows} == {RECEIVED_AT}
+        assert {item.verified_at for item in verified} == {RECEIVED_AT}
+        assert {item.recorded_at for item in balances} == {RECEIVED_AT}
+
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(ImportBatchRecord)
+                .where(ImportBatchRecord.imported_at <= early_cutoff)
+            )
+            == 0
+        )
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(StatementCoverageRecord)
+                .join(ImportContextRecord)
+                .where(ImportContextRecord.created_at <= early_cutoff)
+            )
+            == 0
+        )
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(RawTransactionRecord)
+                .where(RawTransactionRecord.created_at <= early_cutoff)
+            )
+            == 0
+        )
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(VerifiedTransactionRecord)
+                .where(VerifiedTransactionRecord.verified_at <= early_cutoff)
+            )
+            == 0
+        )
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(BalanceSnapshotRecord)
+                .where(BalanceSnapshotRecord.recorded_at <= early_cutoff)
+            )
+            == 0
+        )
+
+
+def test_future_client_confirmation_time_fails_before_persistence(
+    factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed_account(factory)
+    monkeypatch.setattr(
+        "cashflow_ai.imports.csv_import_service.utc_now", lambda: RECEIVED_AT
+    )
+    future_confirmation = CsvImportConfirmation(
+        preview_file_hash=calculate_file_hash(CSV_CONTENT),
+        user_confirmed=True,
+        confirmed_at=datetime(2099, 1, 1, tzinfo=UTC),
+    )
+
+    with pytest.raises(CsvImportError) as error:
+        persist_confirmed_csv(
+            factory,
+            CSV_CONTENT,
+            "synthetic-statement.csv",
+            mime_type="text/csv",
+            plan=import_plan(),
+            confirmation=future_confirmation,
+        )
+
+    assert error.value.code is CsvImportErrorCode.INVALID_CONFIRMATION_TIME
+    with session_scope(factory) as session:
+        assert session.scalar(select(func.count()).select_from(ImportBatchRecord)) == 0
 
 
 def test_repeated_file_returns_existing_batch_without_writing_again(

@@ -13,6 +13,7 @@ from typing import cast
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from cashflow_ai.persistence.base import utc_now
 from cashflow_ai.persistence.database import session_scope
 from cashflow_ai.persistence.models import (
     AccountRecord,
@@ -60,6 +61,7 @@ class FinancialRoleServiceErrorCode(StrEnum):
     SUGGESTION_ALREADY_REVIEWED = "suggestion_already_reviewed"
     STALE_SUGGESTION = "stale_suggestion"
     SIGN_INCOMPATIBLE_ROLE = "sign_incompatible_role"
+    INVALID_REVIEW_CHRONOLOGY = "invalid_review_chronology"
 
 
 class FinancialRoleServiceError(ValueError):
@@ -92,6 +94,35 @@ def _require_aware(value: datetime) -> None:
     if value.tzinfo is None or value.utcoffset() is None:
         msg = "role-review timestamps must be timezone-aware"
         raise ValueError(msg)
+
+
+def _authoritative_review_time(reported_at: datetime) -> datetime:
+    """Return server receipt time after validating the reported client value."""
+    _require_aware(reported_at)
+    received_at = utc_now()
+    _require_aware(received_at)
+    return received_at
+
+
+def _require_receipt_after_evidence(
+    repository: FinancialRoleRepository,
+    transaction: VerifiedTransactionRecord,
+    *,
+    received_at: datetime,
+    suggestion_created_at: datetime | None = None,
+) -> None:
+    """Prevent server receipt time from preceding persisted transaction history."""
+    evidence_times = [transaction.verified_at]
+    if suggestion_created_at is not None:
+        evidence_times.append(suggestion_created_at)
+    audits = repository.list_audits_for_transaction(transaction.id)
+    if audits:
+        evidence_times.append(audits[-1].changed_at)
+    if any(received_at < evidence_at for evidence_at in evidence_times):
+        raise FinancialRoleServiceError(
+            FinancialRoleServiceErrorCode.INVALID_REVIEW_CHRONOLOGY,
+            "role decision was received before its existing verified evidence",
+        )
 
 
 def _normalise_text(value: str) -> str:
@@ -488,11 +519,29 @@ def confirm_financial_role_suggestion(
     reviewed_at: datetime,
 ) -> RoleDecisionResult:
     """Atomically apply a pending suggestion after explicit user confirmation."""
-    _require_aware(reviewed_at)
+    received_at = _authoritative_review_time(reviewed_at)
     with session_scope(factory) as session:
         repository = FinancialRoleRepository(session)
         suggestion = _require_pending(repository.get_suggestion(suggestion_id))
         subject = _require_transaction(repository, suggestion.verified_transaction_id)
+        counterpart = (
+            _require_transaction(repository, suggestion.counterpart_transaction_id)
+            if suggestion.counterpart_transaction_id is not None
+            else None
+        )
+        _require_receipt_after_evidence(
+            repository,
+            subject,
+            received_at=received_at,
+            suggestion_created_at=suggestion.created_at,
+        )
+        if counterpart is not None:
+            _require_receipt_after_evidence(
+                repository,
+                counterpart,
+                received_at=received_at,
+                suggestion_created_at=suggestion.created_at,
+            )
         if subject.financial_role_id != FinancialRole.UNKNOWN.value:
             raise FinancialRoleServiceError(
                 FinancialRoleServiceErrorCode.STALE_SUGGESTION,
@@ -505,7 +554,7 @@ def confirm_financial_role_suggestion(
                     repository,
                     subject,
                     FinancialRole(suggestion.suggested_role_id),
-                    changed_at=reviewed_at,
+                    changed_at=received_at,
                     source=RoleDecisionSource.USER_CONFIRMATION,
                     suggestion_id=suggestion.id,
                 ),
@@ -513,10 +562,7 @@ def confirm_financial_role_suggestion(
         ]
 
         transaction_ids = [subject.id]
-        if suggestion.counterpart_transaction_id is not None:
-            counterpart = _require_transaction(
-                repository, suggestion.counterpart_transaction_id
-            )
+        if counterpart is not None:
             if counterpart.financial_role_id != FinancialRole.UNKNOWN.value:
                 raise FinancialRoleServiceError(
                     FinancialRoleServiceErrorCode.STALE_SUGGESTION,
@@ -530,7 +576,7 @@ def confirm_financial_role_suggestion(
                         repository,
                         counterpart,
                         FinancialRole(cast(str, counterpart_role)),
-                        changed_at=reviewed_at,
+                        changed_at=received_at,
                         source=RoleDecisionSource.USER_CONFIRMATION,
                         suggestion_id=suggestion.id,
                     ),
@@ -539,10 +585,10 @@ def confirm_financial_role_suggestion(
             transaction_ids.append(counterpart.id)
 
         suggestion.status = RoleSuggestionStatus.CONFIRMED.value
-        suggestion.reviewed_at = reviewed_at
+        suggestion.reviewed_at = received_at
         repository.reject_pending_for_transactions(
             tuple(transaction_ids),
-            reviewed_at=reviewed_at,
+            reviewed_at=received_at,
             except_suggestion_id=suggestion.id,
         )
         return RoleDecisionResult(
@@ -559,13 +605,29 @@ def reject_financial_role_suggestion(
     reviewed_at: datetime,
 ) -> RoleDecisionResult:
     """Reject a pending suggestion without changing any transaction role."""
-    _require_aware(reviewed_at)
+    received_at = _authoritative_review_time(reviewed_at)
     with session_scope(factory) as session:
-        suggestion = _require_pending(
-            FinancialRoleRepository(session).get_suggestion(suggestion_id)
+        repository = FinancialRoleRepository(session)
+        suggestion = _require_pending(repository.get_suggestion(suggestion_id))
+        subject = _require_transaction(repository, suggestion.verified_transaction_id)
+        _require_receipt_after_evidence(
+            repository,
+            subject,
+            received_at=received_at,
+            suggestion_created_at=suggestion.created_at,
         )
+        if suggestion.counterpart_transaction_id is not None:
+            counterpart = _require_transaction(
+                repository, suggestion.counterpart_transaction_id
+            )
+            _require_receipt_after_evidence(
+                repository,
+                counterpart,
+                received_at=received_at,
+                suggestion_created_at=suggestion.created_at,
+            )
         suggestion.status = RoleSuggestionStatus.REJECTED.value
-        suggestion.reviewed_at = reviewed_at
+        suggestion.reviewed_at = received_at
         return RoleDecisionResult(
             suggestion_id=suggestion.id,
             suggestion_status=RoleSuggestionStatus.REJECTED,
@@ -601,15 +663,20 @@ def apply_transaction_review_action(
     changed_at: datetime,
 ) -> RoleDecisionResult:
     """Apply one explicit role override or structured needs-review flag."""
-    _require_aware(changed_at)
+    received_at = _authoritative_review_time(changed_at)
     with session_scope(factory) as session:
         repository = FinancialRoleRepository(session)
         transaction = _require_transaction(repository, transaction_id)
+        _require_receipt_after_evidence(
+            repository,
+            transaction,
+            received_at=received_at,
+        )
         if action is TransactionReviewAction.NEEDS_REVIEW:
             added = repository.add_flag_once(
                 transaction.id,
                 flag="needs_review",
-                created_at=changed_at,
+                created_at=received_at,
             )
             return RoleDecisionResult(needs_review_flagged=added)
 
@@ -618,12 +685,12 @@ def apply_transaction_review_action(
             repository,
             transaction,
             role,
-            changed_at=changed_at,
+            changed_at=received_at,
             source=RoleDecisionSource.USER_OVERRIDE,
             suggestion_id=None,
         )
         repository.reject_pending_for_transactions(
-            (transaction.id,), reviewed_at=changed_at
+            (transaction.id,), reviewed_at=received_at
         )
         return RoleDecisionResult(
             assignments=(assignment,) if assignment is not None else ()

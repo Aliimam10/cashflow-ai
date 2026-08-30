@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import Decimal
 from enum import StrEnum
 
@@ -61,18 +61,32 @@ class DailyForecastObservation(_ForecastModel):
     status: ForecastDayStatus
     discretionary_spending: Money | None
     transaction_count: int | None = Field(default=None, ge=0)
+    known_at: datetime | None = None
 
     @model_validator(mode="after")
     def validate_known_value(self) -> DailyForecastObservation:
         """Require values only for covered days and use non-negative spend magnitude."""
         covered = self.status is ForecastDayStatus.COVERED
-        if covered != (
-            self.discretionary_spending is not None
-            and self.transaction_count is not None
+        values_present = (
+            self.discretionary_spending is not None,
+            self.transaction_count is not None,
+            self.known_at is not None,
+        )
+        if (covered and not all(values_present)) or (
+            not covered and any(values_present)
         ):
             raise ValueError(
-                "covered days require values and unknown days must retain nulls"
+                "covered days require values and availability; "
+                "unknown days retain nulls"
             )
+        if self.known_at is not None and (
+            self.known_at.tzinfo is None or self.known_at.utcoffset() is None
+        ):
+            raise ValueError("daily availability must be timezone-aware")
+        if self.known_at is not None and self.known_at.astimezone(
+            UTC
+        ) < datetime.combine(self.observation_date, time.max, tzinfo=UTC):
+            raise ValueError("daily evidence cannot be available before its day ends")
         if self.discretionary_spending is not None and self.discretionary_spending < 0:
             raise ValueError(
                 "daily discretionary spending must be a non-negative magnitude"
@@ -87,6 +101,7 @@ class WeeklyForecastTarget(_ForecastModel):
     week_end: date
     discretionary_spending: Money
     known_recurring_outflow: Money
+    known_at: datetime
 
     @model_validator(mode="after")
     def validate_week(self) -> WeeklyForecastTarget:
@@ -97,6 +112,29 @@ class WeeklyForecastTarget(_ForecastModel):
             raise ValueError("weekly targets must cover Monday through Sunday")
         if self.discretionary_spending < 0 or self.known_recurring_outflow < 0:
             raise ValueError("weekly targets must use non-negative magnitudes")
+        if self.known_at.tzinfo is None or self.known_at.utcoffset() is None:
+            raise ValueError("weekly target availability must be timezone-aware")
+        if self.known_at.astimezone(UTC) < datetime.combine(
+            self.week_end, time.max, tzinfo=UTC
+        ):
+            raise ValueError("a weekly target cannot be known before its week ends")
+        return self
+
+
+class RecurringOutflowProjection(_ForecastModel):
+    """Point-in-time evidence for known recurring outflow in one future week."""
+
+    week_start: date
+    amount: Money = Field(ge=0)
+    known_at: datetime
+
+    @model_validator(mode="after")
+    def validate_projection(self) -> RecurringOutflowProjection:
+        """Require an aware evidence time and a Monday projection week."""
+        if self.week_start.weekday() != 0:
+            raise ValueError("recurring-outflow projection must start on Monday")
+        if self.known_at.tzinfo is None or self.known_at.utcoffset() is None:
+            raise ValueError("recurring-outflow evidence must be timezone-aware")
         return self
 
 
@@ -104,6 +142,7 @@ class ForecastFeatureRow(_ForecastModel):
     """One target with features known strictly before its week starts."""
 
     week_start: date
+    forecast_origin_at: datetime
     target: Money
     lag_1: Money
     lag_2: Money
@@ -115,6 +154,27 @@ class ForecastFeatureRow(_ForecastModel):
     month: int = Field(ge=1, le=12)
     week_of_year: int = Field(ge=1, le=53)
     known_recurring_outflow: Money
+    target_known_at: datetime
+
+    @model_validator(mode="after")
+    def validate_target_availability(self) -> ForecastFeatureRow:
+        """Retain when the historical outcome became safe to reveal."""
+        expected_origin = datetime.combine(self.week_start, time.min, tzinfo=UTC)
+        if (
+            self.week_start.weekday() != 0
+            or self.forecast_origin_at.tzinfo is None
+            or self.forecast_origin_at.utcoffset() is None
+            or self.forecast_origin_at != expected_origin
+        ):
+            raise ValueError("forecast origin must be Monday 00:00 UTC")
+        if (
+            self.target_known_at.tzinfo is None
+            or self.target_known_at.utcoffset() is None
+        ):
+            raise ValueError("forecast target availability must be timezone-aware")
+        if self.target_known_at.date() < self.week_start + timedelta(days=6):
+            raise ValueError("forecast target cannot be known before its week ends")
+        return self
 
 
 class ForecastDataset(_ForecastModel):
@@ -124,6 +184,34 @@ class ForecastDataset(_ForecastModel):
     daily_calendar: tuple[DailyForecastObservation, ...]
     weekly_targets: tuple[WeeklyForecastTarget, ...]
     feature_rows: tuple[ForecastFeatureRow, ...]
+    next_recurring_outflow: RecurringOutflowProjection | None = None
+
+    @model_validator(mode="after")
+    def validate_point_in_time_evidence(self) -> ForecastDataset:
+        """Bind every exposed value to evidence available by the dataset cutoff."""
+        cutoff = self.plan.knowledge_cutoff_at
+        if any(
+            item.known_at is not None and item.known_at > cutoff
+            for item in self.daily_calendar
+        ) or any(item.known_at > cutoff for item in self.weekly_targets):
+            raise ValueError("forecast evidence cannot follow the dataset cutoff")
+        targets = {item.week_start: item for item in self.weekly_targets}
+        if any(
+            (target := targets.get(row.week_start)) is None
+            or row.target_known_at != target.known_at
+            for row in self.feature_rows
+        ):
+            raise ValueError("forecast rows must retain target availability evidence")
+        if self.next_recurring_outflow is not None:
+            if not self.weekly_targets or self.next_recurring_outflow.week_start != (
+                self.weekly_targets[-1].week_start + timedelta(weeks=1)
+            ):
+                raise ValueError(
+                    "next recurring outflow must follow the latest weekly target"
+                )
+            if self.next_recurring_outflow.known_at > cutoff:
+                raise ValueError("recurring-outflow evidence cannot follow the cutoff")
+        return self
 
 
 class ForecastBaselineName(StrEnum):
@@ -167,6 +255,7 @@ class ForecastBaselineEvaluation(_ForecastModel):
     final_test_week_starts: tuple[date, ...] = Field(min_length=1)
     expanding_folds: tuple[ExpandingWindowFold, ...] = Field(min_length=1)
     metrics: tuple[BaselineMetrics, ...] = Field(min_length=5)
+    expanding_metrics: tuple[BaselineMetrics, ...] = Field(min_length=5)
 
 
 __all__ = [
@@ -178,6 +267,7 @@ __all__ = [
         "BaselineMetrics",
         "DailyForecastObservation",
         "ExpandingWindowFold",
+        "RecurringOutflowProjection",
         "WeeklyForecastTarget",
     }
 ]

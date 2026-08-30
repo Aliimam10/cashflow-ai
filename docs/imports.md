@@ -104,6 +104,16 @@ in one database transaction. It requires:
 - a valid mapping for the re-parsed full document; and
 - explicit, timezone-stamped confirmation of the exact preview hash.
 
+The client-reported confirmation time must be timezone-aware and cannot be in
+the future. It records user intent in the request, but it is not trusted as the
+historical availability time. The service obtains one server UTC receipt time
+for the atomic import and uses that same value for the batch, context, every
+preserved row, verified transaction, and balance observation. Consequently, an
+old client clock cannot make newly uploaded evidence appear available to an
+earlier training or evaluation cutoff. The current persistence contract has no
+separate reported-confirmation column, so the client value is validated but is
+not stored by overloading an authoritative audit timestamp.
+
 Every source row is accounted for. Valid unique rows retain a raw record and
 create a separate verified transaction. Exact duplicate rows are preserved but
 skipped. Probable duplicates are preserved with their score and reasons and

@@ -71,6 +71,12 @@ The confirmed CSV import is one such unit of work. It records document,
 statement context, coverage, balances, preserved rows, and accepted transactions
 together; any exception rolls all of them back. Invalid and probable-duplicate
 rows remain auditable raw evidence but do not receive a verified transaction.
+One server-generated UTC receipt time is shared by all availability-bearing
+records in that transaction: `import_batches.imported_at`,
+`import_contexts.created_at`, `raw_transactions.created_at`,
+`verified_transactions.verified_at`, and `balance_snapshots.recorded_at`.
+Caller-reported confirmation time is never used to backdate those fields, and a
+future client timestamp fails before any database write.
 
 ## Balance observations
 
@@ -130,6 +136,13 @@ uses the existing structured `user_flags` table and is idempotent. A decision
 rejects other pending suggestions involving the affected transaction, while raw
 transactions, categories, statement notes, and import context remain unchanged.
 
+Suggestion review times, role-audit change times, and structured review-flag creation
+times come from one server UTC receipt time for the operation, not the timestamp
+reported by its caller. The caller value is timezone-validated but is not stored
+because the schema has no distinct reported-time field. Receipt chronology is
+checked against verified transaction evidence, suggestion creation, and prior role
+audits before anything is changed.
+
 ## Deterministic category assignment
 
 Categorisation reuses the seeded `categories`, `verified_transactions`, and
@@ -183,11 +196,44 @@ tables. Commit 17 adds no migration, stored aggregate, cache, or new dependency.
 confidence, and model version. `personal_category_rules` stores only explicitly
 requested local rules with merchant and optional direction, account, description,
 amount, and priority scope. Migration `0004` is additive; it does not rebuild or
-rewrite imported transactions.
+rewrite imported transactions. A later applied resolution marks older pending
+decisions as superseded. Category corrections are append-only and use server receipt
+time as their historical-visibility timestamp; an explicitly requested personal
+rule is stored only after every supplied scope matches its source transaction.
 
 ## Commit 21 recurrence records
 
 Migration `0005` adds `recurring_payment_candidates` and
 `recurring_payment_members`. Membership preserves verified evidence. Pending,
-confirmed, and cancelled states are auditable; confirmation links to the existing
-`recurring_series` table. No source or verified transaction is rewritten.
+confirmed, and cancelled review state is stored with its review time; confirmation
+links to the existing `recurring_series` table. No source or verified transaction is
+rewritten. Candidate review time and confirmed-series creation time share one server
+UTC receipt value. Caller-reported review time remains unpersisted request metadata;
+future reported values and a server receipt that precedes the candidate's persisted
+evidence chronology fail atomically.
+
+Migration `0006` adds the candidate's currency, direction, financial role,
+`evidence_as_of_date`, and `knowledge_cutoff_at`, plus `identified_at` on every
+member. The migration is additive and deliberately does not merge legacy candidates,
+rewrite reviews, or add a uniqueness rule that old `0005` data might violate.
+
+For legacy rows, currency and direction come from the earliest linked verified
+transaction when possible; otherwise the conservative compatibility fallbacks are
+GBP and the sign of the expected amount. Financial role comes from the newest role
+audit no later than the original detection time and falls back to `unknown` rather
+than copying a later current role. Evidence date is the newest linked transaction
+date capped at detection.
+
+Revision `0005` did not record when the derived candidate identity or individual
+membership links became known, so revision `0006` must not guess those historical
+times. It writes one migration-execution timestamp to `knowledge_cutoff_at` and every
+legacy member's `identified_at`. This conservatively quarantines migrated recurrence
+evidence from every forecast cutoff before the migration while preserving the
+original detection time, review time, candidate, membership links, and source
+transactions unchanged. Recurrence created after the migration stores its actual
+service cutoff instead. Services treat a migrated stored review state as pending
+before this boundary and use the boundary as the earliest effective confirmation
+time afterward. This preserves the original audit values without allowing them to
+backdate historical detection or forecasting. A downgrade removes only the new
+provenance fields and constraints; reapplying `0006` establishes a new conservative
+availability boundary because the discarded provenance cannot be reconstructed.

@@ -222,6 +222,12 @@ Any failure rolls back the entire decision. Role signs are checked, competing
 pending suggestions are rejected, categories and raw evidence are untouched,
 and repeated suggestion generation is idempotent.
 
+The service records its own aware UTC receipt time for confirmations, rejections,
+direct overrides, and structured review flags. Caller-reported times are validated
+for timezone awareness but never become the historical visibility timestamp. The
+receipt must not precede transaction verification, suggestion creation, or an
+existing role audit, so a current decision cannot appear inside an earlier cutoff.
+
 Statement flags and notes are joined into the local review projection for
 reference only. They are not inputs to suggestion rules and cannot change roles,
 categories, analytics, or forecasts. This module adds no financial totals,
@@ -394,20 +400,31 @@ transaction data.
 Commit 20 orders evidence as explicit transaction decision, persisted personal
 rule, merchant mapping, keyword rule, then selected local ML candidate. A model is
 rejected if evaluation did not select it or its taxonomy differs. Low-confidence
-results do not mutate transactions; feedback supersedes them and appends correction
-history atomically. Personal rules require an explicit request. No API or UI is
-added in this commit.
+results do not mutate transactions; a later applied resolution or explicit feedback
+supersedes stale pending entries. Feedback appends correction history atomically,
+uses server receipt time as its historical visibility boundary, and a requested
+personal rule must match the selected transaction on every supplied scope. Personal
+rules require an explicit request. No API or UI is added in this commit.
 
 ## Recurrence boundary
 
-The recurrence service groups owned verified transactions by account, normalised
-merchant, currency, direction, and financial role. It scores amount/timing
-consistency and stores candidate-to-transaction evidence. Confirmation creates a
-recurring series; cancellation suppresses the candidate. Forecasting remains later.
+The recurrence service reconstructs owned verified transactions, financial roles,
+source verification, and statement coverage at an explicit knowledge cutoff. It
+groups by account, normalised merchant, currency, direction, financial role, and
+frequency, then scores amount/timing consistency and stores both candidate cutoff
+provenance and the time each transaction became a member. Confirmation creates a
+recurring series and cancellation suppresses the candidate. An older as-of request
+may return a transient historical projection but never rolls a newer persisted
+candidate or review backward; a general append-only active/cancelled series history
+is not claimed by this boundary.
 
 ## Forecast-data boundary
 
 Commit 22 is read-only. It intersects verified coverage across selected accounts,
-retains every calendar date, aggregates expense rows outside confirmed recurring
-series, and builds features from strictly prior consecutive weeks. Evaluation is
-chronological and does not persist a forecast run.
+retains every calendar date, reconstructs financial roles and recurrence membership
+as of the plan cutoff, and aggregates expense rows outside then-known confirmed
+recurring series. Every covered day and complete week retains when its full evidence
+became available. Features use only strictly prior consecutive weeks whose values
+were known before the forecast Monday; later imports and corrections therefore
+cannot become earlier lags. Evaluation is chronological and does not persist a
+forecast run.

@@ -1,4 +1,4 @@
-.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import check-ocr demo-data demo-forecast db-upgrade db-downgrade
+.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import check-ocr demo-data demo-recurrence demo-forecast db-upgrade db-downgrade
 
 setup:
 	uv sync --dev
@@ -34,6 +34,9 @@ check-ocr:
 
 demo-data:
 	uv run python scripts/generate_demo_data.py --profile all
+
+demo-recurrence:
+	uv run python scripts/demo_recurrence.py
 
 demo-forecast:
 	uv run cashflow-forecast-demo --weeks 20 --test-weeks 3

@@ -47,9 +47,9 @@ latest transaction-specific user decision
 
 An existing category correction supplies the transaction-specific user decision
 and remains authoritative across repeat runs. Commit 19 trains and evaluates a
-separate classifier candidate, but the deterministic service still does not
-load or call it. Commit 20 will add eligible predictions between the keyword tier
-and `needs_review`.
+separate classifier candidate. Commit 20's hybrid service can call an eligible
+candidate between the keyword tier and `needs_review`; the deterministic Commit 18
+service itself still does not load a model.
 
 Priority is explicit for personal and keyword rules. More narrowly scoped
 matches and stable rule identities provide deterministic tie-breaking where
@@ -70,8 +70,9 @@ combination of:
 Every supplied restriction uses AND semantics: all of them must match the same
 verified transaction. Rules are bound to the selected local profile and inactive
 rules are ignored. Commit 18 accepts these typed rules for one service run but
-does not store them. Personal-rule creation, persistence, editing, deletion, and
-the user-facing category correction workflow belong to Commit 20.
+does not store them. Commit 20 persists only a rule the user explicitly requests,
+after verifying every supplied scope matches the selected transaction. Editing,
+deletion, and a user-facing review screen remain later interface work.
 
 ## Decisions and explanations
 
@@ -154,16 +155,17 @@ The sidecar keeps separate aggregate exclusion counts for the historical and
 final datasets without storing excluded rows.
 Commit 19 does not interpret those probabilities, choose a confidence threshold,
 call the model from rule categorisation, or write a predicted category. Commit
-20 owns that hybrid decision and feedback workflow. Commit 26 owns database model
-registration and active-model selection.
+20's separate hybrid service owns that decision and feedback workflow. Commit 26
+owns database model registration and active-model selection.
 
 ## Current limitations
 
 - Merchant and keyword coverage is intentionally conservative rather than
   exhaustive.
-- The Commit 19 classifier remains a standalone candidate; there is no
-  probabilistic fallback until Commit 20 connects an eligible model.
-- Personal rules are caller-supplied in-memory inputs until Commit 20.
+- The Commit 19 classifier remains a standalone candidate; only Commit 20's hybrid
+  service may call a selected, compatible local candidate.
+- Commit 18 accepts caller-supplied rules in memory; Commit 20 persists only rules
+  explicitly requested through feedback.
 - Category explanations are returned for the current run but are not yet shown
   in a review screen.
 - A local user may not yet have enough explicitly corrected categories for both
@@ -177,9 +179,15 @@ Precedence is latest user correction, persisted personal rule, merchant mapping,
 keyword rule, ML fallback, then review. The ML maximum class probability is compared
 with the caller's threshold. High-confidence predictions are assigned and audited;
 low-confidence predictions are stored only for review, leaving the current category
-unchanged. Repeating an identical run does not duplicate the latest decision.
+unchanged. Repeating an identical run does not duplicate the latest decision. If a
+later run resolves a transaction with an applied deterministic or high-confidence
+decision, its older pending review entries are superseded rather than left stale.
 
 All feedback appends correction history. A reusable rule is created only when the
-user chooses that scope and supplies its merchant-anchored constraints. Corrections
-can later feed a manually prepared leakage-safe training dataset; neither feedback
-nor inference automatically retrains the model.
+user chooses that scope and every supplied merchant, account, direction,
+description, and amount constraint matches the selected transaction. The reported
+event time must follow verification and existing decisions/corrections and cannot
+be in the future; the server receipt time is the authoritative training-visibility
+boundary, so current feedback cannot be backdated into historical truth.
+Corrections can later feed a manually prepared leakage-safe training dataset;
+neither feedback nor inference automatically retrains the model.

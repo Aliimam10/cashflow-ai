@@ -590,6 +590,11 @@ class RecurringPaymentCandidateRecord(Base):
         ForeignKey("recurring_series.id", ondelete="SET NULL")
     )
     merchant_group: Mapped[str] = mapped_column(String(500))
+    currency: Mapped[str] = mapped_column(String(3))
+    direction: Mapped[str] = mapped_column(String(10))
+    financial_role_id: Mapped[str] = mapped_column(
+        ForeignKey("financial_roles.id", ondelete="RESTRICT")
+    )
     expected_amount: Mapped[Decimal] = mapped_column(MONEY)
     frequency: Mapped[str] = mapped_column(String(20))
     interval_days: Mapped[int] = mapped_column(Integer)
@@ -598,12 +603,19 @@ class RecurringPaymentCandidateRecord(Base):
     covered_missed_count: Mapped[int] = mapped_column(Integer, default=0)
     status: Mapped[str] = mapped_column(String(20), default="pending")
     detected_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+    evidence_as_of_date: Mapped[date] = mapped_column(Date)
+    knowledge_cutoff_at: Mapped[datetime] = mapped_column(UTCDateTime())
     reviewed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
 
     __table_args__ = (
         CheckConstraint(
             "frequency IN ('weekly', 'fortnightly', 'monthly', 'quarterly', 'annual')",
             name="ck_recurring_candidates_frequency",
+        ),
+        CheckConstraint("currency = 'GBP'", name="ck_recurring_candidates_currency"),
+        CheckConstraint(
+            "direction IN ('inflow', 'outflow')",
+            name="ck_recurring_candidates_direction",
         ),
         CheckConstraint("interval_days > 0", name="ck_recurring_candidates_interval"),
         CheckConstraint(
@@ -638,6 +650,7 @@ class RecurringPaymentMemberRecord(Base):
         ForeignKey("verified_transactions.id", ondelete="CASCADE"),
         primary_key=True,
     )
+    identified_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
 
 
 class BudgetRecord(Base):

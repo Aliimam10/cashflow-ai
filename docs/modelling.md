@@ -133,3 +133,13 @@ candidate; it does not claim every purchase was optional. Baselines are historic
 mean, recent four-week mean, 52-week seasonal naive, recurring-only, and zero
 discretionary. For this target the last two intentionally predict zero as the same
 sanity floor; recurring flow remains separate for later cash-flow composition.
+
+Baselines are recalculated at every one-week-ahead origin from targets whose
+`known_at` precedes that origin. The historical and seasonal references therefore
+learn from a newly revealed test week before predicting the following week, just as
+the candidate may use it. A seasonal value that is missing or not yet known falls
+back to the then-known historical mean.
+
+The primary weekly model and its target-free inference boundary belong to Commit 23.
+It must use the same point-in-time folds and information-equivalent baselines defined
+by Commit 22.

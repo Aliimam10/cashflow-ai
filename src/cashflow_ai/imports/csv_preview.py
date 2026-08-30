@@ -41,6 +41,7 @@ class CsvImportErrorCode(StrEnum):
     INVALID_HEADER = "invalid_header"
     MISSING_MAPPED_COLUMN = "missing_mapped_column"
     CONFIRMATION_REQUIRED = "confirmation_required"
+    INVALID_CONFIRMATION_TIME = "invalid_confirmation_time"
     PREVIEW_CHANGED = "preview_changed"
     UNSUPPORTED_MIME_TYPE = "unsupported_mime_type"
     ACCOUNT_NOT_FOUND = "account_not_found"

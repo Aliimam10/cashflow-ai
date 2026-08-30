@@ -486,6 +486,14 @@ shows current transaction data plus statement flags and note as inert local
 reference context. Free text is not a rule input and never appears in controlled
 reason codes.
 
+The `reviewed_at` and `changed_at` service arguments must be timezone-aware for
+boundary compatibility, but stored suggestion reviews, role audits, and
+`needs_review` flags use one authoritative server UTC receipt time per operation.
+That time must not precede the relevant verification, suggestion, or existing audit.
+The current schema has no separate caller-reported-time field, so the supplied value
+is deliberately not persisted and cannot make a decision visible to an earlier
+knowledge cutoff.
+
 ## Coverage-aware analytics contracts
 
 `AnalyticsScope` identifies the local profile, a non-empty unique account set,
@@ -531,20 +539,44 @@ threshold. `HybridCategoryDecision` distinguishes applied from pending review an
 exposes controlled source, confidence, model version, and explanation fields.
 `CategoryFeedback` requires a timezone-aware audit time and either
 `transaction_only` or `create_personal_rule`; the latter requires the complete
-rule rather than inferring one. `ManualRetrainingDataset` preserves its Commit 19
-knowledge cutoff.
+rule rather than inferring one. The reported time must be no earlier than
+transaction verification or the latest decision and must be strictly later than
+the latest correction; future timestamps fail closed. The server receipt time is
+persisted as the authoritative cutoff-visible time. A requested personal rule must
+match the selected transaction on every supplied scope. An applied resolution
+supersedes older pending review records. `ManualRetrainingDataset` preserves its
+Commit 19 knowledge cutoff.
 
 ## Recurrence contracts
 
 `RecurrenceDetectionPolicy` makes occurrence, amount, interval, and confidence
-thresholds explicit. `RecurringPaymentCandidate` carries controlled grouping,
-frequency, signed amount, evidence dates, next date, confidence, covered misses,
-and review status. `RecurrenceReview` records explicit confirmation or cancellation.
+thresholds explicit. `RecurringPaymentCandidate` carries account and controlled
+merchant grouping, currency, direction, financial role, frequency, signed amount,
+chronological evidence dates, next date, confidence, covered misses, review status,
+`evidence_as_of_date`, and timezone-aware `knowledge_cutoff_at`. Its next date must
+follow both the latest occurrence and evidence date. The persistence member link adds
+`identified_at`, so recurrence membership can be queried as of a past cutoff.
+`RecurrenceReview` records explicit confirmation or cancellation with an aware audit
+time.
 
 ## Forecast-data contracts
 
-`DailyForecastObservation` uses `0.00` for covered zero-spend days and null for
-unknown days. `WeeklyForecastTarget` requires a complete Monday-to-Sunday week.
-`ForecastFeatureRow` carries lag 1/2/4, rolling 4/8, payday distance, calendar, and
-known recurring-flow inputs. Baseline evaluation records chronological splits,
-predictions, MAE, RMSE, and bias.
+`DailyForecastObservation` uses `0.00` for a covered zero-spend day and null values for
+an unknown day. A covered value also requires a timezone-aware `known_at` no earlier
+than the end of its UTC calendar day. `WeeklyForecastTarget` requires a complete
+Monday-to-Sunday week and retains the latest `known_at` evidence across that week.
+`ForecastFeatureRow` carries a Monday UTC `forecast_origin_at`, lag 1/2/4, rolling
+4/8, payday distance, calendar, known recurring-flow inputs, and `target_known_at`.
+The dataset contract binds those timestamps to the explicit knowledge cutoff and
+requires row targets to retain their weekly availability evidence.
+`RecurringOutflowProjection` binds the next Monday's aggregate confirmed recurring
+amount to the cutoff at which that projection was known; a zero therefore represents
+cutoff-verified absence, not an arbitrary caller default.
+
+Baseline evaluation records both rolling expanding-validation metrics and final-test
+metrics, including predictions, MAE, RMSE, and signed bias. Fold contracts require
+training weeks to strictly precede their test week.
+
+The primary-model policy, target-free inference row, model comparison, and prediction
+contracts belong to Commit 23. Commit 22 stops at validated data and baseline
+evaluation.
