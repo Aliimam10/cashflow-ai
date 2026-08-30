@@ -76,6 +76,18 @@ from cashflow_ai.schemas.financial_roles import (
     RoleSuggestionStatus,
     TransactionReviewAction,
 )
+from cashflow_ai.schemas.forecast_models import (
+    FEATURE_NAMES,
+    ForecastFeatureImportance,
+    ForecastInferenceRow,
+    ForecastModelComparison,
+    ForecastModelName,
+    ForecastModelPolicy,
+    ForecastPrediction,
+    ForecastTrainingResult,
+    HorizonPerformance,
+    RegressionMetrics,
+)
 from cashflow_ai.schemas.forecasting import (
     BaselineMetrics,
     DailyForecastObservation,
@@ -209,6 +221,7 @@ from cashflow_ai.schemas.transactions import (
 )
 
 __all__ = [
+    "FEATURE_NAMES",
     "Account",
     "AccountBalanceHistory",
     "AccountCoverageIndicator",
@@ -282,10 +295,18 @@ __all__ = [
     "ForecastDataset",
     "ForecastDatasetPlan",
     "ForecastDayStatus",
+    "ForecastFeatureImportance",
     "ForecastFeatureRow",
+    "ForecastInferenceRow",
+    "ForecastModelComparison",
+    "ForecastModelName",
+    "ForecastModelPolicy",
+    "ForecastPrediction",
+    "ForecastTrainingResult",
     "FreshnessPolicy",
     "FreshnessWarningCode",
     "HoldoutEvaluation",
+    "HorizonPerformance",
     "HybridCategorisationPlan",
     "HybridCategoryDecision",
     "HybridDecisionSource",
@@ -336,6 +357,7 @@ __all__ = [
     "RecurrenceStatus",
     "RecurringOutflowProjection",
     "RecurringPaymentCandidate",
+    "RegressionMetrics",
     "RepeatedFileAssessment",
     "ReviewReason",
     "ReviewStatus",

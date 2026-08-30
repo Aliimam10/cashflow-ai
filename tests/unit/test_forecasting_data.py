@@ -18,6 +18,7 @@ from cashflow_ai.forecasting import (
     ForecastingDataErrorCode,
     build_forecast_dataset,
     build_forecast_feature_rows,
+    build_next_forecast_inference_row,
     evaluate_forecast_baselines,
     validate_forecast_dataset,
 )
@@ -1326,7 +1327,7 @@ def test_forecast_contract_invariants() -> None:
         )
 
 
-def test_point_in_time_contracts_fail_closed() -> None:
+def test_point_in_time_contracts_and_next_input_fail_closed() -> None:
     first = date(2026, 1, 5)
     targets = tuple(
         WeeklyForecastTarget(
@@ -1399,6 +1400,46 @@ def test_point_in_time_contracts_fail_closed() -> None:
                 *rows[1:],
             ),
         )
+
+    too_short = valid.model_copy(update={"weekly_targets": targets[:7]})
+    with pytest.raises(ForecastingDataError):
+        build_next_forecast_inference_row(too_short)
+    nonconsecutive = valid.model_copy(
+        update={"weekly_targets": (*targets[-9:-2], targets[-1])}
+    )
+    with pytest.raises(ForecastingDataError):
+        build_next_forecast_inference_row(nonconsecutive)
+    next_origin = datetime.combine(
+        targets[-1].week_start + timedelta(weeks=1), time.min, tzinfo=UTC
+    )
+    late = valid.model_copy(
+        update={
+            "weekly_targets": (
+                *targets[-8:-1],
+                targets[-1].model_copy(update={"known_at": next_origin}),
+            )
+        }
+    )
+    with pytest.raises(ForecastingDataError):
+        build_next_forecast_inference_row(late)
+    without_recurring_evidence = valid.model_copy(
+        update={"next_recurring_outflow": None}
+    )
+    with pytest.raises(ForecastingDataError):
+        build_next_forecast_inference_row(without_recurring_evidence)
+    next_row = build_next_forecast_inference_row(valid)
+    assert next_row.known_recurring_outflow == 0
+    assert next_row.recurring_outflow_known_at == targets[-1].known_at
+    assert valid.next_recurring_outflow is not None
+    too_late_recurring = valid.model_copy(
+        update={
+            "next_recurring_outflow": valid.next_recurring_outflow.model_copy(
+                update={"known_at": next_origin}
+            )
+        }
+    )
+    with pytest.raises(ForecastingDataError):
+        build_next_forecast_inference_row(too_late_recurring)
 
     for projection in (
         {

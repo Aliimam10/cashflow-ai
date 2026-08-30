@@ -577,6 +577,15 @@ Baseline evaluation records both rolling expanding-validation metrics and final-
 metrics, including predictions, MAE, RMSE, and signed bias. Fold contracts require
 training weeks to strictly precede their test week.
 
-The primary-model policy, target-free inference row, model comparison, and prediction
-contracts belong to Commit 23. Commit 22 stops at validated data and baseline
-evaluation.
+`ForecastModelPolicy` makes sample requirements, final-test size, relative MAE
+improvement, allowed RMSE regression, allowed absolute-bias increase,
+gradient-boosting parameters, and seed explicit. `ForecastInferenceRow` contains only
+features for one future Monday: it has no target field and its month, ISO week, and
+UTC origin must match that date. Its recurring-flow amount carries an aware evidence
+time strictly before the origin. `ForecastModelComparison` records the executable
+selected model or baseline, justification, optional low-data versus complete
+evaluation evidence, separate final and expanding baseline references, horizon-one
+performance, signed controlled permutation importance, chronological dates, the
+complete model policy, training cutoff, and eligible sample count.
+`ForecastPrediction` is one non-negative weekly discretionary-spending amount plus
+its forecast origin, selected model identity, selection state, and training cutoff.

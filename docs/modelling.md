@@ -140,6 +140,40 @@ learn from a newly revealed test week before predicting the following week, just
 the candidate may use it. A seasonal value that is missing or not yet known falls
 back to the then-known historical mean.
 
-The primary weekly model and its target-free inference boundary belong to Commit 23.
-It must use the same point-in-time folds and information-equivalent baselines defined
-by Commit 22.
+## Primary weekly model
+
+The candidate is scikit-learn's `HistGradientBoostingRegressor`. It learns nonlinear
+relationships among lag, rolling, payday, calendar, and known recurring-flow
+features. Preprocessing is not required because all inputs are already numeric and
+bounded by typed contracts. Fixed Decimal values are copied to floats only at the ML
+boundary; stored financial values remain unchanged.
+
+Selection requires candidate MAE to improve on the best baseline by the configured
+relative margin on both expanding validation and the final chronological test. A tie
+is not an improvement. It also caps relative RMSE regression and the increase in
+absolute signed bias in each comparison; passing MAE alone is insufficient. Low-data
+histories select the executable recent rolling mean without claiming evaluation
+metrics.
+
+Permutation importance is calculated on the held-out final period and keeps signed
+MAE changes, including zero and negative values. It is descriptive, not causal
+financial advice.
+
+The inference boundary is separate from labelled training rows. A target-free
+`ForecastInferenceRow` contains only past lags/rolling values, payday/calendar
+features, and the next week's known recurring outflow with its evidence time. The
+canonical builder derives that amount from the dataset's cutoff-bound confirmed
+recurrence projection; zero is not a caller-invented default. Its origin must be
+Monday UTC and it may target exactly the Monday following the latest observed week. The
+predictor returns one non-negative weekly discretionary amount using the selected
+gradient-booster or recorded baseline. It cannot accept the future target, skip to an
+arbitrary date, use history learned at or after that origin, or recursively generate
+a multi-week forecast. The comparison retains the full model policy, deterministic
+seed, feature-row count, and knowledge cutoff; each prediction identifies its origin,
+selected implementation, selection state, and training cutoff.
+
+Availability timestamps are part of the modelling evidence, not cosmetic metadata.
+A statement first uploaded today cannot be relabelled as though its weeks were known
+at past forecast origins; consequently it cannot by itself produce an honest
+historical backtest. This conservative refusal is preferable to inflated synthetic
+performance and remains until trustworthy point-in-time snapshots exist.

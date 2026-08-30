@@ -57,8 +57,7 @@ make demo-forecast
 Expected output includes `weekly targets: 20`, `leakage-safe feature rows: 12`,
 `final test weeks: 3`, and MAE for five baselines. Each baseline is evaluated as a
 rolling one-week-ahead prediction: after a test week's outcome becomes available it
-may enter the next week's history. Commit 23 must give the primary candidate the same
-information at each origin.
+may enter the next week's history, exactly as it may for the model.
 
 To demonstrate a missing statement week:
 
@@ -70,3 +69,57 @@ Expected output includes `gap retained`. You may safely vary `--weeks` (minimum 
 `--test-weeks` while leaving eight lag weeks plus training and validation, and
 `--gap-week` from zero through `weeks - 1`; invalid combinations fail with a readable
 argument error. All inputs are synthetic.
+
+## Primary model and manual verification
+
+Commit 23 uses histogram gradient boosting for nonlinear weekly regression. Expanding
+validation repeatedly fits a fresh estimator on outcomes that were available before
+one later forecast origin. It supports model development without shuffling time. The
+separate final chronological block is withheld from that development comparison and
+acts as the last check on later consecutive weeks.
+
+The candidate and every baseline receive the same information at each origin.
+Selection requires the configured relative MAE improvement in both expanding
+validation and the final test, while RMSE may not regress beyond its configured
+allowance and absolute bias may not increase beyond its configured amount. Failure
+of any gate selects an executable simple baseline; insufficient history selects the
+recent four-week mean without inventing zero-valued evaluation metrics.
+
+Permutation importance is calculated only on the held-out final block. Its signed
+`mae_increase` records how much shuffling a feature changes error: positive values
+suggest useful held-out signal, while zero or negative values must remain visible and
+must not be presented as proof of causality. Multi-week paths start in Commit 24.
+
+Run:
+
+```bash
+make demo-forecast-model
+```
+
+Expected output includes the selected model, whether the advanced candidate passed,
+the candidate and best-baseline final MAE, and a controlled top-feature name. It also
+prints `next forecast week:` and `predicted discretionary spending:`. The prediction
+amount is deliberately not fixed in this document because it follows the explicit
+synthetic parameters and fitted estimator.
+
+Test safe fallback behavior with:
+
+```bash
+uv run cashflow-forecast-model-demo --weeks 36 --test-weeks 4 --flat
+```
+
+Expected output includes `advanced selected: false` and an executable baseline in
+`selected model:`. You may vary `--weeks` (minimum 22), `--test-weeks`, and
+`--minimum-improvement` from 0 through 1. All data is fictional.
+
+Inference never accepts a target value. The canonical builder derives a
+`ForecastInferenceRow` from the latest eight consecutive, already known weeks and
+the dataset's cutoff-bound expected recurring outflow. The recurring amount carries
+its own evidence time; zero means no confirmed occurrence was known by that cutoff,
+not a caller-supplied guess. The predictor accepts exactly the Monday after the latest
+observed week and rejects any fitted outcome or recurring input learned at or after
+that origin. It returns one non-negative discretionary-spending amount. Arbitrary
+historical dates, skipped weeks, and multi-week recursive paths are rejected rather
+than silently changing the question being forecast. The result also identifies its
+forecast origin, selected model or baseline, whether the advanced model passed, and
+the training knowledge cutoff so callers can explain how it was produced.

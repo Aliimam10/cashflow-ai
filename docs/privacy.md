@@ -211,5 +211,10 @@ times to prevent future statement imports, role changes, or recurrence decisions
 leaking into a historical fold. It does not backdate a statement uploaded today to
 manufacture past model knowledge.
 
-Commit 23 must preserve this local numeric-feature boundary when it introduces the
-primary model; no model implementation or prediction is part of Commit 22.
+The Commit 23 estimator receives numeric feature copies only. It never receives
+merchant names, descriptions, raw rows, notes, account names, or identifiers. The
+inference row is target-free and represents exactly one next week. Comparison
+metrics, signed feature importance, and predictions are also derived private
+financial data even without transaction text; they must not enter telemetry or
+committed fixtures based on a real person. The model remains in memory and is not
+committed or persisted in this stage.

@@ -428,3 +428,21 @@ became available. Features use only strictly prior consecutive weeks whose value
 were known before the forecast Monday; later imports and corrections therefore
 cannot become earlier lags. Evaluation is chronological and does not persist a
 forecast run.
+
+## Primary forecasting model boundary
+
+Commit 23 consumes only validated Commit 22 feature rows. Each expanding-validation
+origin constructs a fresh gradient-boosting estimator from outcomes available before
+that origin and predicts the later week. Information-equivalent baselines roll
+forward through the same revealed outcomes. A separate model is fitted on the
+pre-test history for the final chronological block. Candidate selection jointly
+gates MAE, RMSE, and absolute bias in both comparisons.
+
+If selected, one in-memory estimator is fitted on all eligible rows. Otherwise the
+recorded executable baseline remains active, including a recent-mean fallback when
+there is too little evaluation data. Both receive a target-free row produced from the
+latest eight known weeks plus a cutoff-bound recurring-outflow projection, and may
+predict exactly the next unobserved Monday only. Runtime history retains availability
+timestamps; inference fails closed if any fitted outcome or recurring input was not
+known before that Monday. No model artefact, registry entry, multi-week forecast run,
+API, or UI is created yet.

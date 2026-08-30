@@ -28,6 +28,7 @@ from cashflow_ai.persistence.models import (
     UserProfileRecord,
     VerifiedTransactionRecord,
 )
+from cashflow_ai.schemas.forecast_models import ForecastInferenceRow
 from cashflow_ai.schemas.forecasting import (
     BaselineMetrics,
     DailyForecastObservation,
@@ -420,6 +421,59 @@ def validate_forecast_dataset(dataset: ForecastDataset) -> None:
             ForecastingDataErrorCode.INVALID_EVALUATION_POLICY,
             "forecast features must be derived from the supplied past weekly targets",
         )
+
+
+def build_next_forecast_inference_row(dataset: ForecastDataset) -> ForecastInferenceRow:
+    """Build target-free features for the next Monday from known weekly history."""
+    if len(dataset.weekly_targets) < 8:
+        raise ForecastingDataError(
+            ForecastingDataErrorCode.TOO_FEW_COMPLETE_WEEKS,
+            "eight consecutive known weeks are required for next-week inference",
+        )
+    history = dataset.weekly_targets[-8:]
+    if not all(
+        current.week_start - previous.week_start == timedelta(weeks=1)
+        for previous, current in pairwise(history)
+    ):
+        raise ForecastingDataError(
+            ForecastingDataErrorCode.TOO_FEW_COMPLETE_WEEKS,
+            "the latest eight known weeks must be consecutive for inference",
+        )
+    week_start = history[-1].week_start + timedelta(weeks=1)
+    forecast_origin = datetime.combine(week_start, time.min, tzinfo=UTC)
+    if any(item.known_at >= forecast_origin for item in history):
+        raise ForecastingDataError(
+            ForecastingDataErrorCode.TOO_FEW_COMPLETE_WEEKS,
+            "the latest eight weekly outcomes must be known before forecast origin",
+        )
+    recurring = dataset.next_recurring_outflow
+    if recurring is None or recurring.week_start != week_start:
+        raise ForecastingDataError(
+            ForecastingDataErrorCode.INVALID_EVALUATION_POLICY,
+            "next-week recurring outflow requires cutoff-bound projection evidence",
+        )
+    if recurring.known_at >= forecast_origin:
+        raise ForecastingDataError(
+            ForecastingDataErrorCode.INVALID_EVALUATION_POLICY,
+            "recurring outflow must be known before the forecast origin",
+        )
+    values = tuple(item.discretionary_spending for item in history)
+    since, until = _payday_distances(week_start, dataset.plan.payday_days)
+    return ForecastInferenceRow(
+        week_start=week_start,
+        forecast_origin_at=forecast_origin,
+        lag_1=values[-1],
+        lag_2=values[-2],
+        lag_4=values[-4],
+        rolling_mean_4=sum(values[-4:], start=_ZERO) / 4,
+        rolling_mean_8=sum(values, start=_ZERO) / 8,
+        days_since_payday=since,
+        days_until_payday=until,
+        month=week_start.month,
+        week_of_year=week_start.isocalendar().week,
+        known_recurring_outflow=recurring.amount,
+        recurring_outflow_known_at=recurring.known_at,
+    )
 
 
 def build_forecast_dataset(

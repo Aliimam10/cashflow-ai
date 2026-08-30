@@ -91,6 +91,21 @@ model from competing against a baseline frozen at an older history. Metrics are
 weekly GBP MAE, RMSE, and signed bias, reported separately for expanding validation
 and the final test.
 
-Commit 23 will apply this same point-in-time protocol to the primary candidate and
-will define its model-selection and failure-behaviour gates. Multi-horizon paths
-belong to Commit 24.
+Commit 23 reports gradient-boosting MAE, RMSE, and bias for both comparisons. At each
+expanding origin it fits a fresh estimator only on earlier available outcomes; the
+final estimator fits the eligible pre-test history and predicts the final block.
+Horizon-one performance is reported explicitly; multi-horizon paths belong to Commit
+24.
+
+Selection is deliberately conjunctive. On both expanding validation and the final
+test, candidate MAE must beat that comparison's best simple baseline by more than the
+configured relative margin, candidate RMSE must remain within the configured
+relative regression allowance, and candidate absolute bias must remain within the
+configured additive allowance. Any failure keeps the appropriate executable
+baseline in control. Low-data fallback results leave evaluation metrics absent rather
+than representing “not evaluated” as zero error.
+
+Permutation importance is calculated against final held-out MAE. The reported
+`mae_increase` stays signed: a negative value means shuffling happened to improve
+held-out error and is evidence against claiming that feature helped. Importance is a
+diagnostic for this sample, not causal or financial-advice evidence.

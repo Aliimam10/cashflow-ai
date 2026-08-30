@@ -18,8 +18,8 @@ suggestions for transfers, refunds, and reimbursements, and deterministic
 coverage-aware cash-flow analytics, and explainable deterministic transaction
 categorisation, a leakage-aware TF-IDF and Logistic Regression transaction-category
 pipeline, hybrid category decisions, recurring-payment review, point-in-time
-forecast data, and rolling simple baselines. PDF persistence, APIs, user interfaces,
-the primary weekly forecasting model, multi-week cash/balance forecast paths, and
+forecast data and baselines, and an evaluated weekly gradient-boosting candidate.
+PDF persistence, APIs, user interfaces, multi-week cash/balance forecast paths, and
 production model lifecycle management have not been implemented yet.
 
 ## Problem
@@ -357,10 +357,11 @@ keyword, and caller-supplied scoped personal categorisation rules are implemente
 with an explicit `needs_review` fallback. A standalone, evaluated ML category
 candidate can be trained and stored locally; hybrid decisions then combine it with
 deterministic rules without background retraining. Coverage-aware recurring-payment
-detection, weekly forecast data, and rolling simple baselines are also implemented.
-These stages expose Python service boundaries rather than an end-user application.
-The next stages will add the primary weekly model, multi-week forecast composition,
-anomaly/planning services, APIs, the frontend, deployment, and release documentation.
+detection, weekly forecast data, rolling simple baselines, and an in-memory primary
+weekly model candidate are also implemented. These stages expose Python service
+boundaries rather than an end-user application. The next stages will add multi-week
+forecast composition, anomaly/planning services, APIs, the frontend, deployment,
+and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.
@@ -412,6 +413,17 @@ Daily and weekly values retain `known_at` timestamps: a lag or training target i
 usable only after its coverage, verification, role, and recurrence evidence was
 actually available and its full UTC calendar day has ended. Unknown, partial, or
 not-yet-known dates stay null and break lag chains.
-Five rolling, one-week-ahead baselines receive the same revealed history and establish
-the comparison protocol for the later primary model. Run `make demo-forecast` for a
-readable synthetic check.
+Five rolling, one-week-ahead baselines receive the same revealed history as the ML
+candidate. Run `make demo-forecast` for a readable synthetic check.
+
+Commit 23 adds the primary `HistGradientBoostingRegressor`, trained independently in
+each expanding validation fold and compared with Commit 22's information-equivalent
+baselines on both validation and a held-out final period. It reports MAE, RMSE,
+signed bias, horizon performance, and signed held-out permutation importance. ML is
+selected only when it improves MAE and stays inside explicit RMSE and absolute-bias
+limits in both comparisons; otherwise an executable baseline remains in control.
+Inference accepts target-free features plus a cutoff-bound recurring-outflow
+projection and predicts exactly the next unobserved week, not an arbitrary historical
+week or a multi-week path. Runtime history keeps its evidence times and fails closed
+if anything was learned too late. Run `make demo-forecast-model` for the synthetic
+model comparison and next-week prediction.
