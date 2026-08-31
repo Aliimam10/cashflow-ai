@@ -32,6 +32,7 @@ dependencies = [
 ]
 
 [project.scripts]
+cashflow-anomaly-demo = "cashflow_ai.anomalies.demo:main"
 cashflow-forecast-demo = "cashflow_ai.forecasting.demo:main"
 cashflow-forecast-model-demo = "cashflow_ai.forecasting.model_demo:main"
 cashflow-forecast-path-demo = "cashflow_ai.forecasting.path_demo:main"

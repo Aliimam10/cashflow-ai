@@ -126,3 +126,24 @@ minimum uncertainty prevents a perfectly flat or tiny calibration sample from
 claiming certainty. Baseline selection and stale evidence multiply interval width by
 caller-visible policy values. The deterministic seed makes synthetic evaluation and
 manual verification reproducible.
+
+## Transaction anomaly evaluation boundary
+
+Commit 25 does not have reviewed real-world anomaly labels, so supervised metrics
+such as precision, recall, false-positive rate, or fraud loss would be fabricated.
+The rule layer is the meaningful transparent baseline: every rule has a controlled
+reason and synthetic positive/negative case. Isolation Forest adds only a review
+signal and must not be described as outperforming those rules or detecting fraud.
+
+Automated evaluation verifies that the reference period precedes the detection
+window, current rows do not update their own past-only features, category levels are
+fit on reference data, and a fixed seed reproduces scores. It also verifies
+per-account coverage/history gating; pending, duplicate, transfer, unresolved, and
+uncovered exclusions; protected confirmed recurrence; every specified rule; careful
+wording; and safe rules-only fallback.
+
+The contamination parameter sets an outlier decision threshold within Isolation
+Forest. It is not a measured fraud prevalence. The transformed bounded score is a
+ranking aid rather than a calibrated probability. A later reviewed dataset can add
+precision/recall and alert-volume analysis without weakening the current leakage and
+privacy gates.

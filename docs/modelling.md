@@ -198,3 +198,32 @@ the result says so. Configured minimum uncertainty and widening multipliers prev
 flat synthetic history or stale evidence from being represented as certainty. The
 bootstrap assumes historical residuals remain informative and does not model regime
 changes, correlated weekly errors, or recurring-payment amount uncertainty yet.
+
+## Unsupervised transaction anomaly candidate
+
+Commit 25 uses deterministic financial rules as the interpretable first layer and
+Isolation Forest as a complementary unsupervised candidate. Unlike the categoriser,
+it has no confirmed category label to predict; unlike the forecast model, it does not
+predict a future amount. Random isolation trees learn combinations that are easy to
+separate from earlier covered activity. The decision margin is converted to a stable
+bounded review score, not a fraud probability.
+
+Training uses only the earlier reference portion of the requested lookback. Numeric
+features are constructed chronologically before each row updates prior merchant and
+category state. Category levels are learned from the reference data and encoded as
+numeric indicators; unseen detection categories do not alter that fitted vocabulary.
+The later detection window is scored without refitting. Fixed estimators,
+contamination, and random seed make the local run reproducible.
+
+The candidate is disabled when per-account coverage or eligible reference count is
+below the caller-visible policy. Transfers, pending rows, duplicates, uncovered
+dates, and unresolved/excluded roles never enter it. Confirmed recurring transactions
+may help define history but are suppressed as generic current outliers; a dedicated
+rule handles a price increase. Rule-only fallback retains concrete duplicate,
+cancellation, recurrence-price, and negative-balance evidence without claiming an
+advanced model ran.
+
+There is no labelled anomaly benchmark in this commit, so no precision, recall, or
+fraud-detection claim is made. Synthetic examples verify implementation behaviour,
+not predictive quality. Commit 26 will persist data-minimised version and evaluation
+metadata; the fitted Commit 25 estimator remains in memory.

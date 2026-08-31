@@ -467,3 +467,25 @@ range rather than disguising the limitation.
 One-off signed scenario events and a discretionary-spending multiplier exist only in
 the returned path. This stage does not write `scenarios`, `forecast_runs`, model
 metadata, alerts, or transactions, and does not expose an API or UI.
+
+## Anomaly-review boundary
+
+`cashflow_ai.anomalies` is a separate read-only domain/application module. It loads
+owned, cutoff-verified transaction lineage and statement coverage, reconstructs
+audited role/category evidence, applies controlled rules, and optionally fits an
+in-memory Isolation Forest on an earlier reference period. Routes and future UI
+components must consume its typed result rather than reproduce thresholds or pass
+unvalidated DataFrames.
+
+Rules and the model have distinct responsibilities. Duplicate, recurrence,
+cancellation, daily-spend, and balance rules provide concrete review reasons.
+Isolation Forest supplies an additional unsupervised unusualness signal only after
+coverage, history, role, pending, transfer, and duplicate gates pass. A confirmed
+recurring flow is withheld from generic scoring so normal rent is not flagged merely
+because it is large. Neither path mutates a transaction or claims fraud.
+
+Commit 25 deliberately does not use the existing `anomaly_alerts` or
+`model_metadata` persistence tables. Commit 26 owns lightweight model registry and
+evaluation persistence; later interface work owns alert review state. This keeps
+current model output reversible, avoids silently opening database alerts during a
+read operation, and prevents a partial lifecycle from being presented as complete.

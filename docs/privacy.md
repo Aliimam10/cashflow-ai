@@ -230,3 +230,23 @@ The service returns an in-memory result and writes no scenario, forecast-run, mo
 transaction, or balance row. Manual verification uses fixed fictional identities and
 amounts. The CLI's £ symbol and outputs are synthetic demonstration text, not a real
 account export or financial advice.
+
+## Anomaly-review privacy
+
+Anomaly detection runs entirely inside the local process. Merchant and category
+history is used transiently to construct features, but returned signals contain only
+controlled reason codes, transaction/account identifiers, bounded scores, and
+optional numeric comparisons. Raw payloads, descriptions, merchant text, statement
+notes, filenames, and account names are not copied into alerts or normal logs.
+
+Even data-minimised anomaly scores, merchant frequencies, category levels, balances,
+and alert identities are derived private financial data. Results and the in-memory
+fitted model must not enter telemetry, committed fixtures, screenshots based on a
+real user, or support bundles. All automated tests and the manual CLI create only
+fictional records in an in-memory SQLite database.
+
+Commit 25 performs no write to transactions, imports, anomaly alerts, or model
+metadata. It neither stores the fitted Isolation Forest nor learns automatically
+from user review. Later persistence must preserve this local boundary, avoid raw
+feature text in metadata, and record a review as an explicit user action rather than
+silently using it as a training label.

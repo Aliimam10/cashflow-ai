@@ -20,8 +20,10 @@ categorisation, a leakage-aware TF-IDF and Logistic Regression transaction-categ
 pipeline, hybrid category decisions, recurring-payment review, point-in-time
 forecast data and baselines, and an evaluated weekly gradient-boosting candidate.
 Residual-bootstrap forecast intervals, confirmed recurring-flow composition, and
-daily balance paths are also implemented. PDF persistence, APIs, user interfaces,
-and production model lifecycle management have not been implemented yet.
+daily balance paths are also implemented. Review-only financial rules and a
+coverage-gated Isolation Forest now identify unusual transactions without claiming
+fraud. PDF persistence, APIs, user interfaces, alert persistence, and production
+model lifecycle management have not been implemented yet.
 
 ## Problem
 
@@ -318,6 +320,12 @@ Generated files are written under `data/demo/generated/` and are intentionally
 ignored because they can be reproduced from source. Run the CLI with `--help`
 to select a profile, date range, seed, output directory, or CSV layout.
 
+Run the fictional unusual-transaction review demo:
+
+```bash
+make demo-anomalies
+```
+
 ## Privacy
 
 This repository must never contain real bank statements, credentials, personal
@@ -337,6 +345,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 - [`docs/categorisation.md`](docs/categorisation.md)
 - [`docs/recurrence.md`](docs/recurrence.md)
 - [`docs/forecasting.md`](docs/forecasting.md)
+- [`docs/anomalies.md`](docs/anomalies.md)
 - [`docs/modelling.md`](docs/modelling.md)
 - [`docs/evaluation.md`](docs/evaluation.md)
 - [`docs/privacy.md`](docs/privacy.md)
@@ -361,9 +370,11 @@ deterministic rules without background retraining. Coverage-aware recurring-paym
 detection, weekly forecast data, rolling simple baselines, and an in-memory primary
 weekly model candidate are also implemented. Residual-bootstrap uncertainty,
 cutoff-safe recurring flows and balance evidence, and hypothetical daily balance
-paths are implemented as a read-only service. These stages expose Python service
-boundaries rather than an end-user application. The next stages will add anomaly and
-planning services, APIs, the frontend, deployment, and release documentation.
+paths are implemented as a read-only service. Rule-based unusual-transaction review
+and a coverage/history-gated Isolation Forest candidate are also implemented without
+persisting alerts. These stages expose Python service boundaries rather than an
+end-user application. The next stages will add lightweight model metadata, planning
+services, APIs, the frontend, deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.
@@ -438,3 +449,16 @@ remain visible; baseline selection, limited residual history, and stale financia
 evidence produce warnings and explicit widening. Optional spending multipliers and
 signed one-off scenario events alter only the returned what-if path and are never
 persisted. Run `make demo-forecast-path` for a fictional 30-day example.
+
+## Anomaly-review status
+
+Commit 25 checks verified recent transactions using eight transparent financial
+rules and, only when coverage and earlier history are adequate, an in-memory
+Isolation Forest. The model uses past-only amount, merchant, category, weekday,
+merchant-gap, median-difference, and novelty features. Transfers, pending rows,
+duplicates, unresolved roles, and uncovered dates are excluded from ML; confirmed
+recurring payments are protected from generic alerts. Results use only `Unusual`,
+`Possible duplicate`, or `Needs review`, expose rule/model evidence and sufficiency
+warnings, and never call an outlier fraud. Run `make demo-anomalies` for a fictional
+model-backed review or add `--sparse` to the underlying CLI to see safe rule-only
+fallback behaviour.

@@ -606,3 +606,27 @@ bounds. `BalanceForecastPath` covers every requested date and carries the select
 model, residual method, widening factor, stable warnings, source freshness warnings,
 confirmed recurring occurrences, held-out interval performance, and a final summary
 that must equal the last daily point.
+
+## Anomaly-review contracts
+
+`AnomalyDetectionPolicy` makes lookback/detection windows, per-account coverage,
+minimum history, robust rule thresholds, recurrence-price tolerance, Isolation
+Forest size/contamination, merchant-gap cap, and random seed explicit.
+`AnomalyDetectionPlan` adds an owned profile/account scope, an as-of date, and an
+aware knowledge cutoff. The reference period ends immediately before the detection
+period.
+
+`AnomalySignal` contains only a controlled reason, bounded score, optional numeric
+comparison, and optional related transaction identity. It never contains raw source
+payload or description text. `TransactionAnomalyAlert` requires unique reasons and
+ties wording to evidence: duplicates use `Possible duplicate`, a model-only outlier
+uses `Unusual`, and any other rule-backed item uses `Needs review`. Its top-level
+score must equal its strongest signal, and model score must appear exactly when an
+Isolation Forest signal exists.
+
+`AnomalyDetectionResult` records rule-only versus rules-and-model mode, ordered
+alerts, verified/reference/scored counts, minimum per-account coverage, aggregate
+model-exclusion counts, warnings, and optional in-memory model metadata. Metadata
+contains controlled feature/version/parameter/date/count information only. Contract
+validation forbids a rules-only response from claiming scored rows or a model-backed
+response from omitting reproducibility evidence.
