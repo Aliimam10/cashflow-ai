@@ -155,8 +155,8 @@ The sidecar keeps separate aggregate exclusion counts for the historical and
 final datasets without storing excluded rows.
 Commit 19 does not interpret those probabilities, choose a confidence threshold,
 call the model from rule categorisation, or write a predicted category. Commit
-20's separate hybrid service owns that decision and feedback workflow. Commit 26
-owns database model registration and active-model selection.
+20's separate hybrid service owns that decision and feedback workflow. The local
+model registry owns database registration and explicit active-model selection.
 
 ## Current limitations
 

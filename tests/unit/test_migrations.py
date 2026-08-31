@@ -6,11 +6,13 @@ import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import pytest
 from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
 from sqlalchemy import Engine, inspect, select, text
+from sqlalchemy.exc import IntegrityError
 
 from cashflow_ai.persistence import Base, create_sqlite_engine
 from cashflow_ai.persistence.models import CategoryRecord, FinancialRoleRecord
@@ -417,3 +419,136 @@ def test_recurrence_hardening_migration_backfills_identity_and_member_time(
     assert "knowledge_cutoff_at" not in candidate_columns
     assert "identified_at" not in member_columns
     assert member_count == 2
+
+
+def test_model_registry_migration_preserves_legacy_rows_and_enforces_activation(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "model-registry.db"
+    config = migration_config(database_path)
+    command.upgrade(config, "0006")
+    engine = migrated_engine(database_path)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO model_metadata "
+                "(id, model_name, model_version, task, artifact_path, "
+                "training_cutoff, metrics_json, parameters_json, created_at) "
+                "VALUES ('legacy-model', 'legacy_forecast', 'v1', "
+                "'cash_flow_forecasting', NULL, '2025-06-30', "
+                "'{\"mae\": 10}', '{\"seed\": 7}', '2025-07-01 00:00:00')"
+            )
+        )
+
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        migrated = connection.execute(
+            text(
+                "SELECT model_type, training_start_date, training_end_date, "
+                "feature_schema_version, feature_names_json, "
+                "metadata_format_version, activation_eligible, is_active, "
+                "metrics_json, parameters_json FROM model_metadata "
+                "WHERE id = 'legacy-model'"
+            )
+        ).one()
+        columns = {
+            column["name"]: column
+            for column in inspect(connection).get_columns("model_metadata")
+        }
+        indexes = {
+            item["name"]: item
+            for item in inspect(connection).get_indexes("model_metadata")
+        }
+
+    assert tuple(migrated[:4]) == (
+        "legacy_forecast",
+        "2025-06-30",
+        "2025-06-30",
+        "legacy_unknown",
+    )
+    assert json.loads(migrated.feature_names_json) == []
+    assert tuple(migrated[5:8]) == ("legacy-0", 0, 0)
+    assert json.loads(migrated.metrics_json) == {"mae": 10}
+    assert json.loads(migrated.parameters_json) == {"seed": 7}
+    for required in (
+        "model_type",
+        "training_start_date",
+        "training_end_date",
+        "feature_schema_version",
+        "feature_names_json",
+        "metadata_format_version",
+        "activation_eligible",
+        "is_active",
+    ):
+        assert columns[required]["nullable"] is False
+    assert indexes["uq_model_metadata_active_task"]["unique"] == 1
+
+    insert_current = text(
+        "INSERT INTO model_metadata "
+        "(id, model_name, model_type, model_version, task, artifact_path, "
+        "training_cutoff, training_start_date, training_end_date, "
+        "feature_schema_version, feature_names_json, taxonomy_version, "
+        "metrics_json, parameters_json, metadata_format_version, "
+        "activation_eligible, is_active, activated_at, created_at) VALUES "
+        "(:id, :name, 'hist_gradient_boosting', :version, :task, NULL, "
+        "'2025-06-30', '2025-01-01', '2025-06-30', 'weekly_v1', "
+        "'[\"lag_1\"]', NULL, '{\"metrics\": []}', "
+        "'{\"parameters\": []}', '1.0', :eligible, :active, "
+        ":activated_at, '2025-07-01 00:00:00')"
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            insert_current,
+            {
+                "id": "active-1",
+                "name": "forecast_a",
+                "version": "v1",
+                "task": "cash_flow_forecasting",
+                "eligible": 1,
+                "active": 1,
+                "activated_at": "2025-07-02 00:00:00",
+            },
+        )
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            insert_current,
+            {
+                "id": "active-2",
+                "name": "forecast_b",
+                "version": "v1",
+                "task": "cash_flow_forecasting",
+                "eligible": 1,
+                "active": 1,
+                "activated_at": "2025-07-02 00:00:00",
+            },
+        )
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            insert_current,
+            {
+                "id": "ineligible-active",
+                "name": "anomaly_a",
+                "version": "v1",
+                "task": "transaction_anomaly_detection",
+                "eligible": 0,
+                "active": 1,
+                "activated_at": "2025-07-02 00:00:00",
+            },
+        )
+
+    command.downgrade(config, "0006")
+    with engine.connect() as connection:
+        downgraded = connection.execute(
+            text(
+                "SELECT model_name, metrics_json, parameters_json "
+                "FROM model_metadata WHERE id = 'legacy-model'"
+            )
+        ).one()
+        downgraded_columns = {
+            column["name"]
+            for column in inspect(connection).get_columns("model_metadata")
+        }
+    assert downgraded.model_name == "legacy_forecast"
+    assert json.loads(downgraded.metrics_json) == {"mae": 10}
+    assert json.loads(downgraded.parameters_json) == {"seed": 7}
+    assert "model_type" not in downgraded_columns

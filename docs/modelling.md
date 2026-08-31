@@ -101,10 +101,10 @@ historical and final dataset exclusion counts, training dates and cutoffs, split
 policy, baseline and candidate metrics, selection result, software versions,
 creation time, and the model checksum.
 
-Commit 20 will decide when rule fallbacks may call an eligible candidate, apply
+Commit 20 decides when rule fallbacks may call an eligible candidate, apply
 confidence thresholds, queue uncertain predictions, and record user feedback.
-Commit 26 will provide the lightweight database registry and active-model
-lifecycle. Commit 19 performs neither responsibility.
+The local model registry records the selected evaluation evidence and owns explicit
+activation; Commit 19 itself performs neither responsibility.
 
 ## Synthetic data
 
@@ -225,5 +225,6 @@ advanced model ran.
 
 There is no labelled anomaly benchmark in this commit, so no precision, recall, or
 fraud-detection claim is made. Synthetic examples verify implementation behaviour,
-not predictive quality. Commit 26 will persist data-minimised version and evaluation
-metadata; the fitted Commit 25 estimator remains in memory.
+not predictive quality. The model registry can persist data-minimised run metadata,
+but marks this unsupervised candidate ineligible for activation and does not persist
+the fitted Commit 25 estimator.

@@ -338,7 +338,8 @@ This boundary returns raw class probabilities but defines no automatic category
 or confidence decision. Commit 20 owns hybrid precedence, confidence thresholds,
 review queues, corrections, and model-version audit on decisions. Commit 26 owns
 database registration, active-model selection, and broader model evaluation
-records; Commit 19 adds no registry migration and does not activate a candidate.
+records; Commit 19 itself adds no registry migration and does not activate a
+candidate.
 
 ## Coverage-aware analytics
 
@@ -484,8 +485,22 @@ coverage, history, role, pending, transfer, and duplicate gates pass. A confirme
 recurring flow is withheld from generic scoring so normal rent is not flagged merely
 because it is large. Neither path mutates a transaction or claims fraud.
 
-Commit 25 deliberately does not use the existing `anomaly_alerts` or
-`model_metadata` persistence tables. Commit 26 owns lightweight model registry and
-evaluation persistence; later interface work owns alert review state. This keeps
-current model output reversible, avoids silently opening database alerts during a
-read operation, and prevents a partial lifecycle from being presented as complete.
+Commit 25 deliberately does not use `anomaly_alerts`. The separate model-registry
+module now writes only aggregate model metadata; its anomaly adapter never stores
+transaction-level alerts or scores and does not make the in-memory candidate active.
+Later interface work owns alert review state. This keeps current model output
+reversible, avoids silently opening database alerts during a read operation, and
+prevents a partial lifecycle from being presented as complete.
+
+## Local model-registry boundary
+
+`cashflow_ai.model_registry` adapts evaluated outputs from categorisation,
+forecasting, and anomaly detection into one privacy-safe contract. Its application
+service delegates database selection to `ModelMetadataRepository`; model modules do
+not write registry records while training. Registration and activation are separate
+operations, and the database permits only one active eligible version per task.
+
+The registry stores aggregate evidence and controlled feature/parameter identities.
+It does not accept transaction rows, learned vocabularies, forecast actual/prediction
+pairs, anomaly alerts, raw import evidence, or statement notes. Routes and UI controls
+must call this service instead of changing activation columns directly.

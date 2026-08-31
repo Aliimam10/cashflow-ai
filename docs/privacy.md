@@ -167,6 +167,15 @@ versions, creation time, and an artefact checksum. It does not
 contain learned vocabulary or row-level data. These aggregates can still reveal
 information about local activity, so the sidecar remains private and ignored.
 
+The SQLite model registry applies the same minimisation to database metadata.
+Categorisation confusion matrices and per-category support, forecast held-out actuals
+and predictions, anomaly alerts, descriptions, merchant names, learned vocabulary,
+transaction/account/profile identifiers, and statement notes are not copied into a
+registry row. It retains controlled model identities, aggregate metrics, training
+dates, features, parameters, selection state, and a relative `models/` artefact path.
+Absolute paths are rejected because they may reveal a username or filesystem layout.
+The local database and referenced artefacts remain ignored private runtime data.
+
 Joblib model loading is a trusted-local operation because deserialising an
 untrusted file can execute code. A checksum detects accidental replacement but
 does not make a downloaded model trustworthy. CashFlow AI must load only

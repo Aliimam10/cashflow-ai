@@ -630,3 +630,18 @@ model-exclusion counts, warnings, and optional in-memory model metadata. Metadat
 contains controlled feature/version/parameter/date/count information only. Contract
 validation forbids a rules-only response from claiming scored rows or a model-backed
 response from omitting reproducibility evidence.
+
+## Model-registry contracts
+
+`ModelRegistration` is the immutable, data-minimised input for one evaluated version.
+It requires an ordered training range, non-empty versioned feature schema, at least
+one aggregate metric, unique metric and parameter identities, and an aware creation
+time after the training data. Categorisation registrations additionally require a
+taxonomy version and a repository-relative artefact path beneath `models/`.
+
+`RegisteredModel` adds the database identity, metadata-format version, activation
+eligibility, active state, and optional activation time. An active record must be
+eligible and timestamped. `ModelActivation` ties an active version to exactly one
+`ModelTask` and optionally identifies the version it replaced. Categorisation,
+cash-flow forecasting, and transaction anomaly detection are separate tasks, so one
+task's active version cannot be selected for another.

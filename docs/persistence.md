@@ -56,6 +56,19 @@ duplicating the same review item. Database checks constrain suggestion kind,
 status, confidence, counterpart shape, role coherence, review timestamps, and
 audit sources.
 
+Migration `0007` additively extends `model_metadata` with model type, training date
+range, feature schema, optional taxonomy version, metadata format, and explicit
+activation state. Existing rows retain their original metrics, parameters, artefact
+path, cutoff, and creation time; they are conservatively marked `legacy-0`, inactive,
+and ineligible. Database checks require ordered training dates and prevent an active
+row without eligibility or an activation time. A partial unique index permits at
+most one active version for each modelling task.
+
+`ModelMetadataRepository` stages immutable version records and resolves active
+versions. The model-registry service owns registration and atomic activation; direct
+callers must not toggle database fields. Registry metadata is local application data,
+not a deployment record or cloud experiment log.
+
 ## Repository transactions
 
 Repositories stage and flush records but do not commit independently. Callers

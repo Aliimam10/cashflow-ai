@@ -232,7 +232,8 @@ artefacts may be loaded.
 This standalone training stage neither changes a transaction category nor inserts
 ML into the deterministic precedence. Commit 20's hybrid service owns
 rule-plus-model inference, confidence thresholds, low-confidence review, and
-feedback. Commit 26 owns the database model registry and active-model lifecycle.
+feedback. The separate local registry owns database model metadata and explicit
+active-model selection.
 
 The CSV preview, confirmation, and persistence pipeline currently consists of
 Python services rather than an upload or review screen.
@@ -326,6 +327,12 @@ Run the fictional unusual-transaction review demo:
 make demo-anomalies
 ```
 
+Run the fictional model registration and explicit activation demo:
+
+```bash
+make demo-model-registry
+```
+
 ## Privacy
 
 This repository must never contain real bank statements, credentials, personal
@@ -346,6 +353,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 - [`docs/recurrence.md`](docs/recurrence.md)
 - [`docs/forecasting.md`](docs/forecasting.md)
 - [`docs/anomalies.md`](docs/anomalies.md)
+- [`docs/model_registry.md`](docs/model_registry.md)
 - [`docs/modelling.md`](docs/modelling.md)
 - [`docs/evaluation.md`](docs/evaluation.md)
 - [`docs/privacy.md`](docs/privacy.md)
@@ -372,9 +380,12 @@ weekly model candidate are also implemented. Residual-bootstrap uncertainty,
 cutoff-safe recurring flows and balance evidence, and hypothetical daily balance
 paths are implemented as a read-only service. Rule-based unusual-transaction review
 and a coverage/history-gated Isolation Forest candidate are also implemented without
-persisting alerts. These stages expose Python service boundaries rather than an
-end-user application. The next stages will add lightweight model metadata, planning
-services, APIs, the frontend, deployment, and release documentation.
+persisting alerts. A data-minimised local model registry now records versions,
+training dates, feature schemas, aggregate evaluation metrics, parameters, artefact
+provenance, and one explicitly active eligible version per modelling task. These
+stages expose Python service boundaries rather than an end-user application. The next
+stages will add planning services, APIs, the frontend, deployment, and release
+documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

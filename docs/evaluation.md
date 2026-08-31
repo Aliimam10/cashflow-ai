@@ -147,3 +147,18 @@ Forest. It is not a measured fraud prevalence. The transformed bounded score is 
 ranking aid rather than a calibrated probability. A later reviewed dataset can add
 precision/recall and alert-volume analysis without weakening the current leakage and
 privacy gates.
+
+## Registry evaluation records
+
+The local model registry preserves only aggregate metrics already produced by each
+model-specific evaluation. It does not recalculate evaluation, weaken a selection
+policy, or infer missing scores. Categorisation records candidate and baseline
+classification metrics for both required holdouts. Forecasting records candidate and
+baseline MAE, RMSE, and bias for expanding validation and final testing when those
+results exist. Low-data fallback records its sample count without inventing error
+metrics. Anomaly detection records run sufficiency diagnostics but remains
+activation-ineligible because it has no labelled accuracy benchmark.
+
+Activation eligibility comes from the owning evaluation boundary. Registry
+activation is a later explicit selection action; merely inserting a row never makes
+the model active.

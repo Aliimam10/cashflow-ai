@@ -186,6 +186,16 @@ from cashflow_ai.schemas.ml_categorisation import (
     TrainingExclusionCount,
     TrainingExclusionReason,
 )
+from cashflow_ai.schemas.model_registry import (
+    ModelActivation,
+    ModelFeatureSchema,
+    ModelMetric,
+    ModelMetricUnit,
+    ModelParameter,
+    ModelRegistration,
+    ModelTask,
+    RegisteredModel,
+)
 from cashflow_ai.schemas.normalisation import (
     CalendarFeatures,
     NormalisationErrorCode,
@@ -384,6 +394,13 @@ __all__ = [
     "MLTrainingPlan",
     "ManualRetrainingDataset",
     "MerchantCategoryMapping",
+    "ModelActivation",
+    "ModelFeatureSchema",
+    "ModelMetric",
+    "ModelMetricUnit",
+    "ModelParameter",
+    "ModelRegistration",
+    "ModelTask",
     "MonthlyCashFlow",
     "MonthlyComparison",
     "MonthlyComparisonUnavailableReason",
@@ -408,6 +425,7 @@ __all__ = [
     "RecurringForecastOccurrence",
     "RecurringOutflowProjection",
     "RecurringPaymentCandidate",
+    "RegisteredModel",
     "RegressionMetrics",
     "RepeatedFileAssessment",
     "ReviewReason",

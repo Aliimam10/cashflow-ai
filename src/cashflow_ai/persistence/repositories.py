@@ -19,6 +19,7 @@ from cashflow_ai.persistence.models import (
     FinancialRoleSuggestionRecord,
     ImportBatchRecord,
     ImportContextRecord,
+    ModelMetadataRecord,
     PersonalCategoryRuleRecord,
     RawTransactionRecord,
     RecurringPaymentCandidateRecord,
@@ -1113,3 +1114,63 @@ class FinancialRoleRepository:
         )
         self._session.flush()
         return True
+
+
+class ModelMetadataRepository:
+    """Persist and select data-minimised local model metadata."""
+
+    def __init__(self, session: Session) -> None:
+        """Bind repository operations to one transaction-scoped session."""
+        self._session = session
+
+    def add(self, metadata: ModelMetadataRecord) -> ModelMetadataRecord:
+        """Stage and flush one immutable model version."""
+        self._session.add(metadata)
+        self._session.flush()
+        return metadata
+
+    def get(self, model_id: str) -> ModelMetadataRecord | None:
+        """Return one registered model version by identifier."""
+        return self._session.get(ModelMetadataRecord, model_id)
+
+    def get_version(
+        self,
+        *,
+        model_name: str,
+        model_version: str,
+    ) -> ModelMetadataRecord | None:
+        """Find a version before attempting its unique insert."""
+        statement = select(ModelMetadataRecord).where(
+            ModelMetadataRecord.model_name == model_name,
+            ModelMetadataRecord.model_version == model_version,
+        )
+        return self._session.scalar(statement)
+
+    def list(self, *, task: str | None = None) -> tuple[ModelMetadataRecord, ...]:
+        """Return versions in stable task/name/version order."""
+        statement = select(ModelMetadataRecord)
+        if task is not None:
+            statement = statement.where(ModelMetadataRecord.task == task)
+        statement = statement.order_by(
+            ModelMetadataRecord.task,
+            ModelMetadataRecord.model_name,
+            ModelMetadataRecord.created_at,
+            ModelMetadataRecord.model_version,
+            ModelMetadataRecord.id,
+        )
+        return tuple(self._session.scalars(statement))
+
+    def get_active(self, *, task: str) -> ModelMetadataRecord | None:
+        """Return the single explicitly active version for a modelling task."""
+        statement = select(ModelMetadataRecord).where(
+            ModelMetadataRecord.task == task,
+            ModelMetadataRecord.is_active.is_(True),
+        )
+        return self._session.scalar(statement)
+
+    def deactivate_for_task(self, *, task: str) -> ModelMetadataRecord | None:
+        """Deactivate and return the previously active version, when present."""
+        active = self.get_active(task=task)
+        if active is not None:
+            active.is_active = False
+        return active

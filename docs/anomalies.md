@@ -70,9 +70,10 @@ history, so a transaction cannot normalise itself.
 The returned model score is a bounded ranking aid derived from Isolation Forest's
 decision margin. It is not a probability of fraud. The configured contamination is a
 model threshold assumption, not the expected real fraud rate. A fixed estimator
-count and random seed make the same synthetic scan reproducible. Commit 26 will own
-persistent model metadata and evaluation records; Commit 25 keeps the fitted model
-and all results in memory.
+count and random seed make the same synthetic scan reproducible. The local model
+registry can persist aggregate run metadata without alerts or transaction-level
+scores. The fitted model remains in memory and the unsupervised candidate is not
+activation-eligible without a labelled evaluation gate.
 
 ## Manual verification
 

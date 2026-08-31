@@ -731,19 +731,49 @@ class ModelMetadataRecord(Base):
 
     id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True, default=new_id)
     model_name: Mapped[str] = mapped_column(String(100))
+    model_type: Mapped[str] = mapped_column(String(100))
     model_version: Mapped[str] = mapped_column(String(100))
     task: Mapped[str] = mapped_column(String(100))
     artifact_path: Mapped[str | None] = mapped_column(String(500))
     training_cutoff: Mapped[date | None] = mapped_column(Date)
+    training_start_date: Mapped[date] = mapped_column(Date)
+    training_end_date: Mapped[date] = mapped_column(Date)
+    feature_schema_version: Mapped[str] = mapped_column(String(50))
+    feature_names_json: Mapped[list[str]] = mapped_column(JSON, default=list)
+    taxonomy_version: Mapped[str | None] = mapped_column(String(50))
     metrics_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     parameters_json: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
+    metadata_format_version: Mapped[str] = mapped_column(String(20), default="1.0")
+    activation_eligible: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=False)
+    activated_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
 
     __table_args__ = (
         UniqueConstraint(
             "model_name", "model_version", name="uq_model_metadata_version"
         ),
+        CheckConstraint(
+            "training_end_date >= training_start_date",
+            name="ck_model_metadata_training_dates",
+        ),
+        CheckConstraint(
+            "is_active = 0 OR activation_eligible = 1",
+            name="ck_model_metadata_active_eligible",
+        ),
+        CheckConstraint(
+            "is_active = 0 OR activated_at IS NOT NULL",
+            name="ck_model_metadata_active_timestamp",
+        ),
     )
+
+
+Index(
+    "uq_model_metadata_active_task",
+    ModelMetadataRecord.task,
+    unique=True,
+    sqlite_where=ModelMetadataRecord.is_active.is_(True),
+)
 
 
 class ForecastRunRecord(Base):
