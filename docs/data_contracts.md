@@ -664,3 +664,17 @@ transactions or simulations. `SafeWeeklySpending` records every input to its
 constraint formula and validates that the returned amount equals the lower cash and
 budget limit. `FinancialPlanningResult` requires one aligned future projection per
 selected account and unique structured warnings.
+
+## Scenario-comparison contracts
+
+`FinancialScenario` represents exactly one of nine supported user-facing changes.
+Its validator separates one-off amounts, new recurring amounts/frequencies, category
+reductions, and confirmed recurring-payment cancellation. Amounts are positive user
+magnitudes; the scenario service compiles the signed cash direction.
+
+`FinancialScenarioComparison` binds the unchanged `BalanceForecastPath`, compiled
+`ForecastScenario`, separate hypothetical path, both planning results, exact balance
+differences, coverage-aware budget effects, goal effects, safe-spending difference,
+and inherited uncertainty evidence. Contract validators recompute monetary
+differences, reject scenario budget projections without a baseline projection, and
+require every result to remain explicitly hypothetical.

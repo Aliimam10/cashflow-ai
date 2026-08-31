@@ -339,6 +339,12 @@ Run the fictional coverage-aware budget and safe-spending demo:
 make demo-planning
 ```
 
+Compare a fictional baseline with an isolated £250 one-off purchase:
+
+```bash
+make demo-scenario
+```
+
 ## Privacy
 
 This repository must never contain real bank statements, credentials, personal
@@ -361,6 +367,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 - [`docs/anomalies.md`](docs/anomalies.md)
 - [`docs/model_registry.md`](docs/model_registry.md)
 - [`docs/planning.md`](docs/planning.md)
+- [`docs/scenarios.md`](docs/scenarios.md)
 - [`docs/modelling.md`](docs/modelling.md)
 - [`docs/evaluation.md`](docs/evaluation.md)
 - [`docs/privacy.md`](docs/privacy.md)
@@ -392,10 +399,11 @@ training dates, feature schemas, aggregate evaluation metrics, parameters, artef
 provenance, and one explicitly active eligible version per modelling task. These
 stages now also include persisted monthly category and weekly discretionary budgets,
 savings and minimum-balance goals, coverage-aware budget projections, required
-savings contributions, and conservative safe-weekly-spending estimates. They expose
-Python service boundaries rather than an end-user application. The next stages will
-add scenario planning, derived-data invalidation, APIs, the frontend, deployment, and
-release documentation.
+savings contributions, conservative safe-weekly-spending estimates, and isolated
+baseline-versus-scenario comparisons for nine one-off and recurring financial
+changes. They expose Python service boundaries rather than an end-user application.
+The next stages will add derived-data invalidation, APIs, the frontend, deployment,
+and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

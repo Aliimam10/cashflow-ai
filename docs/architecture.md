@@ -516,4 +516,10 @@ projections.
 The planning service reuses coverage-aware analytics for actual spending and accepts
 only a reduced balance-forecast projection rather than daily simulation paths. It
 does not modify transactions, categories, recurrence, forecasts, balances, or model
-metadata. Scenario overlays remain isolated for Commit 28.
+metadata.
+
+`cashflow_ai.planning.scenarios` coordinates the existing forecast-path and planning
+boundaries without reproducing either model. It runs an empty baseline overlay first,
+then a separate typed hypothetical overlay using identical evidence, model, residuals,
+and random seed. It never calls a persistence writer. Future routes and pages must
+render the returned comparison rather than mutating baseline paths or financial rows.

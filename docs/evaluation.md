@@ -171,3 +171,11 @@ recurrence exclusions, ownership, period shapes, forecast-summary alignment,
 constraint selection, and database preservation. A partial month must never emit a
 run-rate budget projection. Safe spending uses the lower forecast path and inherits
 its warnings; it is not evaluated or presented as guaranteed financial advice.
+
+Scenario evaluation checks all nine supported types, cash direction, fixed and
+calendar recurrence, confirmed-cancellation identity, horizon and ownership scope,
+category state, baseline immutability, budget arithmetic, goal risk, and safe-spending
+differences. It verifies that transactions, recurring records, and the existing
+scenario table have identical row counts before and after evaluation. The scenario
+path must inherit model selection, interval method/performance, widening, residual
+widths, freshness warnings, and recurring evidence from its baseline.

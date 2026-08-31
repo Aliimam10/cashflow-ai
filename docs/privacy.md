@@ -183,6 +183,13 @@ statement notes, OCR text, or model vocabulary. Returned warnings use controlled
 codes and record identifiers rather than echoing free-text goal names. The synthetic
 manual demo uses an in-memory database and fictional values.
 
+Scenario comparison retains a user-supplied name/description only inside its local
+in-memory request and response. It does not log that text or persist the scenario.
+Compiled forecast adjustments contain controlled identities, dates, directions, and
+amounts only. Evaluation never inserts or updates transaction, recurrence, budget,
+goal, forecast-run, or scenario records. The manual scenario demo uses only fictional
+values in an in-memory database.
+
 Joblib model loading is a trusted-local operation because deserialising an
 untrusted file can execute code. A checksum detects accidental replacement but
 does not make a downloaded model trustworthy. CashFlow AI must load only
