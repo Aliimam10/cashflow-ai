@@ -645,3 +645,22 @@ eligible and timestamped. `ModelActivation` ties an active version to exactly on
 `ModelTask` and optionally identifies the version it replaced. Categorisation,
 cash-flow forecasting, and transaction anomaly detection are separate tasks, so one
 task's active version cannot be selected for another.
+
+## Financial-planning contracts
+
+`BudgetCreate` and `Budget` distinguish full-calendar-month category limits from
+Monday-to-Sunday non-recurring spending limits. `FinancialGoalCreate` validates a
+future dated savings target or a date-free minimum-balance floor; `FinancialGoal`
+can also represent a conservatively retained legacy savings row without a target
+date.
+
+`BudgetProgress` binds observed and projected use to the exact
+`DataCoverageIndicator` for its elapsed period. Complete coverage requires a
+projection; partial or missing coverage forbids one. `FinancialGoalProgress`
+separates savings-contribution evidence from minimum-balance forecast evidence.
+
+`PlanningBalanceProjection` is the reduced forecast boundary and cannot carry daily
+transactions or simulations. `SafeWeeklySpending` records every input to its
+constraint formula and validates that the returned amount equals the lower cash and
+budget limit. `FinancialPlanningResult` requires one aligned future projection per
+selected account and unique structured warnings.

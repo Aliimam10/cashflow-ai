@@ -69,6 +69,19 @@ versions. The model-registry service owns registration and atomic activation; di
 callers must not toggle database fields. Registry metadata is local application data,
 not a deployment record or cloud experiment log.
 
+Migration `0008` adds explicit `monthly_category`/`weekly_discretionary` budget types
+and `savings_target`/`minimum_balance` goal types. Existing rows are preserved as
+monthly category budgets and savings targets. Category is nullable only for weekly
+budgets; partial indexes allow one weekly budget per profile/week and one balance
+floor per account. Application validation additionally requires calendar-month and
+Monday-to-Sunday periods and a future date on every newly created savings target.
+
+Because the pre-`0008` schema cannot represent weekly budgets or minimum-balance
+goals, downgrade refuses to proceed while either exists. It does not delete or
+mislabel them. After those records are intentionally handled, downgrade preserves
+legacy-compatible category budgets and savings targets while removing the type
+columns.
+
 ## Repository transactions
 
 Repositories stage and flush records but do not commit independently. Callers

@@ -552,3 +552,135 @@ def test_model_registry_migration_preserves_legacy_rows_and_enforces_activation(
     assert json.loads(downgraded.metrics_json) == {"mae": 10}
     assert json.loads(downgraded.parameters_json) == {"seed": 7}
     assert "model_type" not in downgraded_columns
+
+
+def test_planning_type_migration_preserves_legacy_rows_and_blocks_lossy_downgrade(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "planning-types.db"
+    config = migration_config(database_path)
+    command.upgrade(config, "0007")
+    engine = migrated_engine(database_path)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO user_profiles "
+                "(id, display_name, base_currency, timezone, created_at, updated_at) "
+                "VALUES ('planning-profile', 'Fictional User', 'GBP', 'UTC', "
+                "'2026-08-01 00:00:00', '2026-08-01 00:00:00')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO accounts "
+                "(id, user_profile_id, name, account_type, currency, "
+                "institution_label, is_active, created_at) VALUES "
+                "('planning-account', 'planning-profile', 'Fictional Account', "
+                "'current', 'GBP', NULL, 1, '2026-08-01 00:00:00')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO budgets "
+                "(id, user_profile_id, category_id, period_start, period_end, "
+                "amount_limit, currency) VALUES "
+                "('legacy-budget', 'planning-profile', 'groceries', "
+                "'2026-08-01', '2026-08-31', 200.00, 'GBP')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO savings_goals "
+                "(id, account_id, name, target_amount, current_amount, "
+                "target_date, created_at) VALUES "
+                "('legacy-goal', 'planning-account', 'Fictional Goal', "
+                "500.00, 100.00, '2026-12-31', '2026-08-01 00:00:00')"
+            )
+        )
+
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        budget_type = connection.scalar(
+            text("SELECT budget_type FROM budgets WHERE id = 'legacy-budget'")
+        )
+        goal_type = connection.scalar(
+            text("SELECT goal_type FROM savings_goals WHERE id = 'legacy-goal'")
+        )
+        budget_columns = {
+            item["name"]: item for item in inspect(connection).get_columns("budgets")
+        }
+        goal_indexes = {
+            item["name"]: item
+            for item in inspect(connection).get_indexes("savings_goals")
+        }
+    assert budget_type == "monthly_category"
+    assert goal_type == "savings_target"
+    assert budget_columns["budget_type"]["nullable"] is False
+    assert budget_columns["category_id"]["nullable"] is True
+    assert goal_indexes["uq_savings_goals_minimum_balance"]["unique"] == 1
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO budgets "
+                "(id, user_profile_id, budget_type, category_id, period_start, "
+                "period_end, amount_limit, currency) VALUES "
+                "('weekly-budget', 'planning-profile', 'weekly_discretionary', "
+                "NULL, '2026-08-03', '2026-08-09', 50.00, 'GBP')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO savings_goals "
+                "(id, account_id, goal_type, name, target_amount, current_amount, "
+                "target_date, created_at) VALUES "
+                "('minimum-goal', 'planning-account', 'minimum_balance', "
+                "'Fictional Floor', 250.00, 0.00, NULL, "
+                "'2026-08-01 00:00:00')"
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="cannot downgrade planning types"):
+        command.downgrade(config, "0007")
+    with engine.connect() as connection:
+        assert (
+            connection.scalar(
+                text("SELECT COUNT(*) FROM budgets WHERE id = 'weekly-budget'")
+            )
+            == 1
+        )
+        assert (
+            connection.scalar(
+                text("SELECT COUNT(*) FROM savings_goals WHERE id = 'minimum-goal'")
+            )
+            == 1
+        )
+
+    with engine.begin() as connection:
+        connection.execute(text("DELETE FROM budgets WHERE id = 'weekly-budget'"))
+        connection.execute(text("DELETE FROM savings_goals WHERE id = 'minimum-goal'"))
+    command.downgrade(config, "0007")
+    with engine.connect() as connection:
+        legacy_budget = connection.execute(
+            text(
+                "SELECT category_id, amount_limit FROM budgets "
+                "WHERE id = 'legacy-budget'"
+            )
+        ).one()
+        legacy_goal = connection.execute(
+            text(
+                "SELECT target_amount, current_amount FROM savings_goals "
+                "WHERE id = 'legacy-goal'"
+            )
+        ).one()
+        budget_columns = {
+            item["name"]: item for item in inspect(connection).get_columns("budgets")
+        }
+        goal_columns = {
+            item["name"] for item in inspect(connection).get_columns("savings_goals")
+        }
+    assert tuple(legacy_budget) == ("groceries", 200)
+    assert tuple(legacy_goal) == (500, 100)
+    assert "budget_type" not in budget_columns
+    assert budget_columns["category_id"]["nullable"] is False
+    assert "goal_type" not in goal_columns

@@ -12,6 +12,7 @@ from sqlalchemy.sql.elements import ColumnElement
 from cashflow_ai.persistence.models import (
     AccountRecord,
     BalanceSnapshotRecord,
+    BudgetRecord,
     CategoryCorrectionRecord,
     CategoryDecisionRecord,
     CategoryRecord,
@@ -24,6 +25,7 @@ from cashflow_ai.persistence.models import (
     RawTransactionRecord,
     RecurringPaymentCandidateRecord,
     RecurringPaymentMemberRecord,
+    SavingsGoalRecord,
     StatementCoverageRecord,
     UserFlagRecord,
     UserProfileRecord,
@@ -1174,3 +1176,85 @@ class ModelMetadataRepository:
         if active is not None:
             active.is_active = False
         return active
+
+
+class PlanningRepository:
+    """Persist and retrieve budgets and goals within an owned profile scope."""
+
+    def __init__(self, session: Session) -> None:
+        """Bind repository operations to one transaction-scoped session."""
+        self._session = session
+
+    def add_budget(self, budget: BudgetRecord) -> BudgetRecord:
+        """Stage and flush one validated budget."""
+        self._session.add(budget)
+        self._session.flush()
+        return budget
+
+    def get_category(self, category_id: str) -> CategoryRecord | None:
+        """Return one category used to validate a category-budget target."""
+        return self._session.get(CategoryRecord, category_id)
+
+    def list_budgets_on(
+        self,
+        *,
+        user_profile_id: str,
+        as_of_date: date,
+    ) -> tuple[BudgetRecord, ...]:
+        """Return budgets whose inclusive period contains the selected date."""
+        statement = (
+            select(BudgetRecord)
+            .where(
+                BudgetRecord.user_profile_id == user_profile_id,
+                BudgetRecord.period_start <= as_of_date,
+                BudgetRecord.period_end >= as_of_date,
+            )
+            .order_by(
+                BudgetRecord.budget_type,
+                BudgetRecord.category_id,
+                BudgetRecord.period_start,
+                BudgetRecord.id,
+            )
+        )
+        return tuple(self._session.scalars(statement))
+
+    def get_weekly_budget(
+        self,
+        *,
+        user_profile_id: str,
+        period_start: date,
+        period_end: date,
+    ) -> BudgetRecord | None:
+        """Return the exact weekly discretionary budget for a forecast week."""
+        statement = select(BudgetRecord).where(
+            BudgetRecord.user_profile_id == user_profile_id,
+            BudgetRecord.budget_type == "weekly_discretionary",
+            BudgetRecord.period_start == period_start,
+            BudgetRecord.period_end == period_end,
+        )
+        return self._session.scalar(statement)
+
+    def add_goal(self, goal: SavingsGoalRecord) -> SavingsGoalRecord:
+        """Stage and flush one validated savings or minimum-balance goal."""
+        self._session.add(goal)
+        self._session.flush()
+        return goal
+
+    def list_goals_for_accounts(
+        self,
+        account_ids: tuple[str, ...],
+    ) -> tuple[tuple[SavingsGoalRecord, AccountRecord], ...]:
+        """Return selected-account goals with ownership evidence."""
+        statement = (
+            select(SavingsGoalRecord, AccountRecord)
+            .join(AccountRecord, AccountRecord.id == SavingsGoalRecord.account_id)
+            .where(SavingsGoalRecord.account_id.in_(account_ids))
+            .order_by(
+                SavingsGoalRecord.goal_type,
+                SavingsGoalRecord.account_id,
+                SavingsGoalRecord.target_date,
+                SavingsGoalRecord.name,
+                SavingsGoalRecord.id,
+            )
+        )
+        return tuple(self._session.execute(statement).tuples())

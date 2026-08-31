@@ -504,3 +504,16 @@ The registry stores aggregate evidence and controlled feature/parameter identiti
 It does not accept transaction rows, learned vocabularies, forecast actual/prediction
 pairs, anomaly alerts, raw import evidence, or statement notes. Routes and UI controls
 must call this service instead of changing activation columns directly.
+
+## Financial-planning boundary
+
+`cashflow_ai.planning` owns persisted budget/goal creation and deterministic planning
+calculations. Its routes and future UI must remain thin: they pass typed requests,
+invoke the service, and render the returned coverage, amounts, limiting factor, and
+warnings. They must not reproduce money formulas or silently replace unavailable
+projections.
+
+The planning service reuses coverage-aware analytics for actual spending and accepts
+only a reduced balance-forecast projection rather than daily simulation paths. It
+does not modify transactions, categories, recurrence, forecasts, balances, or model
+metadata. Scenario overlays remain isolated for Commit 28.

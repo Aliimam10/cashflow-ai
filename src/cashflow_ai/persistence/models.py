@@ -654,7 +654,7 @@ class RecurringPaymentMemberRecord(Base):
 
 
 class BudgetRecord(Base):
-    """Category budget for an inclusive date period."""
+    """Monthly category or weekly non-recurring spending budget."""
 
     __tablename__ = "budgets"
 
@@ -662,7 +662,8 @@ class BudgetRecord(Base):
     user_profile_id: Mapped[str] = mapped_column(
         ForeignKey("user_profiles.id", ondelete="CASCADE"), index=True
     )
-    category_id: Mapped[str] = mapped_column(
+    budget_type: Mapped[str] = mapped_column(String(30))
+    category_id: Mapped[str | None] = mapped_column(
         ForeignKey("categories.id", ondelete="RESTRICT")
     )
     period_start: Mapped[date] = mapped_column(Date)
@@ -678,14 +679,42 @@ class BudgetRecord(Base):
             "period_end",
             name="uq_budgets_period",
         ),
+        CheckConstraint(
+            "budget_type IN ('monthly_category', 'weekly_discretionary')",
+            name="ck_budgets_type",
+        ),
+        CheckConstraint(
+            "(budget_type = 'monthly_category' AND category_id IS NOT NULL) OR "
+            "(budget_type = 'weekly_discretionary' AND category_id IS NULL)",
+            name="ck_budgets_shape",
+        ),
+        CheckConstraint(
+            "(budget_type = 'monthly_category' "
+            "AND strftime('%d', period_start) = '01' "
+            "AND period_end = date(period_start, '+1 month', '-1 day')) OR "
+            "(budget_type = 'weekly_discretionary' "
+            "AND CAST(strftime('%w', period_start) AS INTEGER) = 1 "
+            "AND julianday(period_end) - julianday(period_start) = 6)",
+            name="ck_budgets_period_shape",
+        ),
         CheckConstraint("period_end >= period_start", name="ck_budgets_dates"),
         CheckConstraint("amount_limit >= 0", name="ck_budgets_amount"),
         CheckConstraint("currency = 'GBP'", name="ck_budgets_currency"),
     )
 
 
+Index(
+    "uq_budgets_weekly_discretionary_period",
+    BudgetRecord.user_profile_id,
+    BudgetRecord.period_start,
+    BudgetRecord.period_end,
+    unique=True,
+    sqlite_where=BudgetRecord.budget_type == "weekly_discretionary",
+)
+
+
 class SavingsGoalRecord(Base):
-    """Named balance target for an account."""
+    """Named savings target or minimum-balance floor for an account."""
 
     __tablename__ = "savings_goals"
 
@@ -693,6 +722,7 @@ class SavingsGoalRecord(Base):
     account_id: Mapped[str] = mapped_column(
         ForeignKey("accounts.id", ondelete="CASCADE"), index=True
     )
+    goal_type: Mapped[str] = mapped_column(String(30))
     name: Mapped[str] = mapped_column(String(100))
     target_amount: Mapped[Decimal] = mapped_column(MONEY)
     current_amount: Mapped[Decimal] = mapped_column(MONEY, default=Decimal("0.00"))
@@ -701,9 +731,25 @@ class SavingsGoalRecord(Base):
 
     __table_args__ = (
         UniqueConstraint("account_id", "name", name="uq_savings_goals_account_name"),
+        CheckConstraint(
+            "goal_type IN ('savings_target', 'minimum_balance')",
+            name="ck_savings_goals_type",
+        ),
+        CheckConstraint(
+            "goal_type = 'savings_target' OR target_date IS NULL",
+            name="ck_savings_goals_shape",
+        ),
         CheckConstraint("target_amount > 0", name="ck_savings_goals_target"),
         CheckConstraint("current_amount >= 0", name="ck_savings_goals_current"),
     )
+
+
+Index(
+    "uq_savings_goals_minimum_balance",
+    SavingsGoalRecord.account_id,
+    unique=True,
+    sqlite_where=SavingsGoalRecord.goal_type == "minimum_balance",
+)
 
 
 class ScenarioRecord(Base):

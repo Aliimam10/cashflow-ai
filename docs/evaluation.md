@@ -162,3 +162,12 @@ activation-ineligible because it has no labelled accuracy benchmark.
 Activation eligibility comes from the owning evaluation boundary. Registry
 activation is a later explicit selection action; merely inserting a row never makes
 the model active.
+
+## Deterministic planning checks
+
+Budget and goal calculations are deterministic rather than learned models. Evaluation
+therefore verifies arithmetic, fixed-precision rounding, coverage refusal, role and
+recurrence exclusions, ownership, period shapes, forecast-summary alignment,
+constraint selection, and database preservation. A partial month must never emit a
+run-rate budget projection. Safe spending uses the lower forecast path and inherits
+its warnings; it is not evaluated or presented as guaranteed financial advice.

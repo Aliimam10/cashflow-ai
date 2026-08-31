@@ -333,6 +333,12 @@ Run the fictional model registration and explicit activation demo:
 make demo-model-registry
 ```
 
+Run the fictional coverage-aware budget and safe-spending demo:
+
+```bash
+make demo-planning
+```
+
 ## Privacy
 
 This repository must never contain real bank statements, credentials, personal
@@ -354,6 +360,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 - [`docs/forecasting.md`](docs/forecasting.md)
 - [`docs/anomalies.md`](docs/anomalies.md)
 - [`docs/model_registry.md`](docs/model_registry.md)
+- [`docs/planning.md`](docs/planning.md)
 - [`docs/modelling.md`](docs/modelling.md)
 - [`docs/evaluation.md`](docs/evaluation.md)
 - [`docs/privacy.md`](docs/privacy.md)
@@ -383,9 +390,12 @@ and a coverage/history-gated Isolation Forest candidate are also implemented wit
 persisting alerts. A data-minimised local model registry now records versions,
 training dates, feature schemas, aggregate evaluation metrics, parameters, artefact
 provenance, and one explicitly active eligible version per modelling task. These
-stages expose Python service boundaries rather than an end-user application. The next
-stages will add planning services, APIs, the frontend, deployment, and release
-documentation.
+stages now also include persisted monthly category and weekly discretionary budgets,
+savings and minimum-balance goals, coverage-aware budget projections, required
+savings contributions, and conservative safe-weekly-spending estimates. They expose
+Python service boundaries rather than an end-user application. The next stages will
+add scenario planning, derived-data invalidation, APIs, the frontend, deployment, and
+release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

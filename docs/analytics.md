@@ -133,8 +133,8 @@ missing balances by summing transactions.
 - Commit 18 categorisation is deterministic only; evaluated ML categorisation and
   the persistent correction/personal-rule workflow arrive in Commits 19 and 20.
 - Recurrence detection and confirmation arrive in Commit 21.
-- Forecasting, anomaly detection, budgets, APIs, and visual dashboards are later
-  stages.
+- Budget planning now consumes these coverage indicators and verified breakdowns;
+  APIs and visual dashboards remain later stages.
 - Approved PDF rows are still review-only until their complete atomic persistence
   workflow is implemented.
 

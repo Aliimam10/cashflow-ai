@@ -176,6 +176,13 @@ dates, features, parameters, selection state, and a relative `models/` artefact 
 Absolute paths are rejected because they may reveal a username or filesystem layout.
 The local database and referenced artefacts remain ignored private runtime data.
 
+Planning calculations query only verified transaction amounts, controlled categories
+and financial roles, statement coverage, persisted budget/goal values, and reduced
+forecast summaries. They do not read raw payloads, merchant names, descriptions,
+statement notes, OCR text, or model vocabulary. Returned warnings use controlled
+codes and record identifiers rather than echoing free-text goal names. The synthetic
+manual demo uses an in-memory database and fictional values.
+
 Joblib model loading is a trusted-local operation because deserialising an
 untrusted file can execute code. A checksum detects accidental replacement but
 does not make a downloaded model trustworthy. CashFlow AI must load only
