@@ -81,6 +81,14 @@ class UserProfileRepository:
         """Return a profile by ID when it exists."""
         return self._session.get(UserProfileRecord, profile_id)
 
+    def list_all(self) -> tuple[UserProfileRecord, ...]:
+        """Return local profiles in deterministic creation order."""
+        statement = select(UserProfileRecord).order_by(
+            UserProfileRecord.created_at,
+            UserProfileRecord.id,
+        )
+        return tuple(self._session.scalars(statement))
+
 
 class AccountRepository:
     """Store and query supported cash accounts."""
@@ -160,6 +168,10 @@ class TransactionRepository:
         self._session.add(transaction)
         self._session.flush()
         return transaction
+
+    def get_verified(self, transaction_id: str) -> VerifiedTransactionRecord | None:
+        """Return one verified transaction by its public identifier."""
+        return self._session.get(VerifiedTransactionRecord, transaction_id)
 
     def get_raw_by_source_fingerprint(
         self,
@@ -270,6 +282,13 @@ class StatementRepository:
         self._session.flush()
         return coverage
 
+    def get_context_for_batch(self, import_batch_id: str) -> ImportContextRecord | None:
+        """Return stored statement context for one import batch."""
+        statement = select(ImportContextRecord).where(
+            ImportContextRecord.import_batch_id == import_batch_id
+        )
+        return self._session.scalar(statement)
+
     def add_balance(self, balance: BalanceSnapshotRecord) -> BalanceSnapshotRecord:
         """Stage and flush one statement balance snapshot."""
         return BalanceSnapshotRepository(self._session).add(balance)
@@ -360,6 +379,15 @@ class BalanceSnapshotRepository:
         self._session.add(balance)
         self._session.flush()
         return balance
+
+    def list_for_batch(self, import_batch_id: str) -> tuple[BalanceSnapshotRecord, ...]:
+        """Return statement balance evidence in deterministic source order."""
+        statement = (
+            select(BalanceSnapshotRecord)
+            .where(BalanceSnapshotRecord.import_batch_id == import_batch_id)
+            .order_by(BalanceSnapshotRecord.source, BalanceSnapshotRecord.id)
+        )
+        return tuple(self._session.scalars(statement))
 
     def latest_verified_for_account(
         self,

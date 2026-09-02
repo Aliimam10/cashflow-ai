@@ -692,3 +692,27 @@ evidence, and unavailable has no generated result.
 affected output. `DerivedRefreshResult` pairs a transient caller payload only with a
 successfully current freshness record; it is not a persistence contract for that
 payload.
+
+## Local API contracts
+
+`schemas.api` defines frozen, extra-forbidden transport contracts for health,
+readiness, profile creation, account creation, verified transactions, import context,
+OCR status, and privacy-safe problems. API responses use the existing domain enums
+for currencies, directions, financial roles, account types, source types, and
+verification state instead of introducing transport-only spellings.
+
+`TransactionResponse` deliberately omits the retained raw-import record. The
+canonical description and other verified fields remain available to the local
+interface, while original row payloads stay behind the audit boundary.
+`ImportContextResponse` reconstructs the stored statement coverage, explicit gaps,
+reported balances, controlled flags, and inert note without interpreting the note.
+
+Uploads remain multipart rather than being embedded in JSON. Complex confirmation
+contracts are JSON-encoded form fields and validated against their existing
+`CsvImportPlan`, `CsvImportConfirmation`, or `StatementApproval` models. PDF review
+and confirmation do not accept caller-supplied preview/review models as trusted
+input; the service reconstructs those contracts from the exact uploaded source.
+
+`ApiProblem` contains a stable controlled code, a bounded safe message, optional PDF
+page numbers, and data-minimised validation issues. It cannot carry a rejected input
+value, traceback, raw row, SQL statement, or request body.

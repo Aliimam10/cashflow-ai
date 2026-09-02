@@ -268,3 +268,26 @@ persistence service must atomically retain the approved rows, rejected-row
 evidence, import batch, confirmed coverage, and balance snapshots together. A
 partial shortcut that stores only the approved opening or closing balance would
 lose source lineage and is not permitted.
+
+## Local HTTP import workflow
+
+Commit 30 makes the existing import boundaries callable through multipart FastAPI
+routes. Uploads are read with the import module's existing byte limits, closed after
+reading, and never written to an application-managed upload directory.
+
+CSV preview returns the existing non-persistent preview and proposed mapping.
+Confirmation requires the exact CSV again with the reviewed plan and confirmation;
+the domain service recomputes the fingerprint and performs the same atomic all-row
+preservation used by direct Python callers.
+
+Digital and scanned PDF preview routes remain separate so OCR is deliberate and
+local. The OCR status route lets an interface explain a missing Tesseract installation
+before upload. Both the review and confirmation routes require the exact PDF again,
+re-run the selected extractor, and rebuild the review server-side. The confirmation
+route returns the existing approved evidence contract only. It does not turn the
+absence of PDF persistence into an implicit database write.
+
+This stateless design costs repeated extraction, especially for OCR, but avoids a
+private server-side upload cache and prevents client-edited preview JSON from becoming
+trusted source evidence. A later UI may keep its own visible preview state, but trust
+still comes from the exact document and explicit approval checked by the backend.

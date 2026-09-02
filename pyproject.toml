@@ -20,15 +20,18 @@ classifiers = [
 ]
 dependencies = [
     "alembic>=1.16,<2",
+    "fastapi>=0.141,<1",
     "joblib>=1.5,<2",
     "pdfplumber>=0.11,<1",
     "pillow>=11,<13",
     "pydantic-settings>=2.10,<3",
     "pymupdf>=1.26,<2",
     "pytesseract>=0.3.13,<1",
+    "python-multipart>=0.0.32,<1",
     "pyyaml>=6,<7",
     "scikit-learn>=1.7,<2",
     "sqlalchemy>=2.0,<3",
+    "uvicorn>=0.52,<1",
 ]
 
 [project.scripts]
@@ -40,9 +43,12 @@ cashflow-model-registry-demo = "cashflow_ai.model_registry.demo:main"
 cashflow-planning-demo = "cashflow_ai.planning.demo:main"
 cashflow-scenario-demo = "cashflow_ai.planning.scenario_demo:main"
 cashflow-invalidation-demo = "cashflow_ai.invalidation.demo:main"
+cashflow-api = "cashflow_ai.api.cli:main"
+cashflow-api-demo = "cashflow_ai.api.demo:main"
 
 [dependency-groups]
 dev = [
+    "httpx2>=2.12,<3",
     "mypy>=1.15,<2",
     "pre-commit>=4,<5",
     "pytest>=8.3,<9",

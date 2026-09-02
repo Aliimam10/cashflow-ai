@@ -536,3 +536,29 @@ Future API orchestration begins a computation, invokes the relevant domain servi
 then completes the token. A changed dependency revision prevents completion. Routes
 must call `require_current_derived_result` before serving a previously calculated
 result rather than inferring freshness from timestamps.
+
+## Local API boundary
+
+`cashflow_ai.api` is the first local transport layer over the modular monolith. The
+application factory constructs FastAPI with an explicitly replaceable container for
+settings, the SQLAlchemy engine/session factory, and the optional OCR-engine factory.
+Production defaults are assembled in one place; tests inject isolated SQLite engines
+and fictional OCR implementations without changing domain code.
+
+Routes own only HTTP concerns: typed JSON or multipart form input, bounded upload
+reading, dependency resolution, response models, and status codes. Application
+services validate ownership and state before delegating to the existing import and
+persistence boundaries. Domain parsing, statement reconciliation, duplicate handling,
+and database transactions remain outside the route module. The app does not silently
+run Alembic; readiness is false until the caller deliberately upgrades the schema.
+
+CSV confirmation reuses the established hash-bound atomic importer. PDF review and
+confirmation are stateless and re-extract the exact uploaded bytes on each call. A
+client cannot promote a modified preview by posting an untrusted review object back
+to the server. PDF approval remains an in-memory result until a future atomic
+persistence boundary can retain approved and rejected evidence together.
+
+The server is restricted to loopback configuration and disposes its database engine
+on shutdown. Exception translation is centralised and debug tracebacks are disabled
+at the financial-data boundary. The OpenAPI document describes only the routes
+actually available in Commit 30; financial calculation routes remain Commit 31 work.

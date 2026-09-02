@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Final, NamedTuple
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 ENV_PREFIX: Final = "CASHFLOW_"
@@ -81,6 +81,8 @@ class _SettingsInput(BaseSettings):
     log_format: LogFormat | None = None
     timezone: str = "UTC"
     database_url: str = "sqlite:///data/cashflow.db"
+    api_host: str = "127.0.0.1"
+    api_port: int = 8000
 
 
 class Settings(BaseModel):
@@ -95,6 +97,8 @@ class Settings(BaseModel):
     log_format: LogFormat
     timezone: str
     database_url: str = "sqlite:///data/cashflow.db"
+    api_host: str = "127.0.0.1"
+    api_port: int = Field(default=8000, ge=1, le=65_535)
 
     @field_validator("log_level")
     @classmethod
@@ -124,6 +128,15 @@ class Settings(BaseModel):
         """Restrict Version 1 persistence to local SQLite URLs."""
         if not value.startswith(("sqlite:///", "sqlite+pysqlite:///")):
             msg = "Version 1 database URL must use local SQLite"
+            raise ValueError(msg)
+        return value
+
+    @field_validator("api_host")
+    @classmethod
+    def validate_api_host(cls, value: str) -> str:
+        """Keep the unauthenticated Version 1 API bound to the local machine."""
+        if value not in {"127.0.0.1", "localhost", "::1"}:
+            msg = "Version 1 API host must be a loopback address"
             raise ValueError(msg)
         return value
 
@@ -167,4 +180,6 @@ def load_settings(
         log_format=profile.log_format if raw.log_format is None else raw.log_format,
         timezone=raw.timezone,
         database_url=raw.database_url,
+        api_host=raw.api_host,
+        api_port=raw.api_port,
     )

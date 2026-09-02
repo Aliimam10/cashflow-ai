@@ -22,8 +22,10 @@ forecast data and baselines, and an evaluated weekly gradient-boosting candidate
 Residual-bootstrap forecast intervals, confirmed recurring-flow composition, and
 daily balance paths are also implemented. Review-only financial rules and a
 coverage-gated Isolation Forest now identify unusual transactions without claiming
-fraud. PDF persistence, APIs, user interfaces, alert persistence, and production
-model lifecycle management have not been implemented yet.
+fraud. A loopback-only FastAPI boundary now exposes profile/account setup, safe
+statement preview and confirmation, import context, and verified transaction reads.
+PDF persistence, user interfaces, alert persistence, analytics-facing APIs, and
+production model lifecycle management have not been implemented yet.
 
 ## Problem
 
@@ -61,8 +63,9 @@ Relational database
 ```
 
 Version 1 uses SQLite locally and in the Docker environment. PostgreSQL is
-postponed until the local single-user application is complete. FastAPI and
-Streamlit will be added in later, separately reviewed stages.
+postponed until the local single-user application is complete. The first FastAPI
+ingestion and transaction boundary is implemented; analytics-facing APIs and the
+Streamlit frontend remain later, separately reviewed stages.
 
 ### Planned statement import
 
@@ -351,6 +354,16 @@ Run the fictional derived-result invalidation and refresh lifecycle:
 make demo-invalidation
 ```
 
+Run the fictional HTTP API workflow without retaining its temporary database:
+
+```bash
+make demo-api
+```
+
+To inspect the local API interactively, run `make db-upgrade`, then `make api`,
+and open `http://127.0.0.1:8000/docs`. See
+[`docs/api.md`](docs/api.md) for the route contracts and current limitations.
+
 ## Privacy
 
 This repository must never contain real bank statements, credentials, personal
@@ -362,6 +375,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 
 ## Documentation
 
+- [`docs/api.md`](docs/api.md)
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/data_contracts.md`](docs/data_contracts.md)
 - [`docs/imports.md`](docs/imports.md)
@@ -410,9 +424,12 @@ savings contributions, conservative safe-weekly-spending estimates, and isolated
 baseline-versus-scenario comparisons for nine one-off and recurring financial
 changes. Account source revisions, selective derived-result invalidation, atomic
 mutation hooks, current/stale/unavailable states, and race-safe synchronous
-recomputation are also implemented without persisting private report payloads. These
-features expose Python service boundaries rather than an end-user application. The
-next stages will add APIs, the frontend, deployment, and release documentation.
+recomputation are also implemented without persisting private report payloads. A
+loopback-only FastAPI application now exposes the profile, account, CSV/PDF preview,
+confirmed CSV import, statement context, and verified-transaction boundaries with
+generated OpenAPI documentation. PDF approval is still returned only in memory. The
+next stage adds analytics, forecasting, anomaly, model-registry, planning, and
+scenario APIs; later stages add the frontend, deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

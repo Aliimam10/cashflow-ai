@@ -286,3 +286,27 @@ Change types intentionally say `category_changed` or `statement_added` without
 copying the corrected category, filename, transaction identity, or amount. Normal
 application logs may record the controlled status/code but must not add the private
 source values that caused it.
+
+## Local API privacy boundary
+
+The first FastAPI server binds only to validated loopback hosts. This reduces network
+exposure but is not authentication; it must not be made externally reachable until a
+separate access-control and deployment design is reviewed.
+
+Uploaded CSV/PDF bytes are bounded, processed in memory, and closed after each call.
+The API creates no upload cache. Stateless confirmation means the exact source must
+be supplied again and verified rather than storing an unreviewed document between
+requests. CSV confirmation may then persist through the established audit-preserving
+service. PDF approval remains non-persistent.
+
+Transaction responses omit raw source payloads. Readiness checks connectivity and
+schema names only. Central exception handlers return controlled codes/messages and
+must not echo body values, raw rows, SQL, local file paths, subprocess output, or
+tracebacks. FastAPI debug responses remain disabled even when general local debug
+logging is enabled. OpenAPI describes schemas and routes but contains no runtime
+financial records.
+
+The API demo and automated route tests use fictional uploads and temporary databases.
+The manual demo removes its database after completion. Real local statements and
+databases remain governed by the repository ignore rules and must never be copied
+into request examples, test failures, screenshots, or committed API documentation.

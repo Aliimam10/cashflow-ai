@@ -189,3 +189,21 @@ recomputation. Integration tests verify statement import, category correction,
 transfer confirmation, and manual balance write the expected revision in the same
 transaction. Migration tests verify constraints, empty additive upgrade, metadata-only
 downgrade, and preservation of source accounts.
+
+## Local API verification
+
+Commit 30 verifies the application factory, dependency injection, OpenAPI contents,
+health/readiness distinction, profile/account ownership rules, CSV preview and atomic
+confirmation, digital-PDF review/approval, injected OCR behaviour, import-context
+reconstruction, and verified-transaction reads. Tests also exercise upload limits,
+unsupported media, invalid multipart JSON, missing/inactive/currency-mismatched
+accounts, absent schema/dependencies, and sanitised framework, database, and
+unexpected errors.
+
+Privacy assertions ensure transaction routes omit raw source payloads, validation
+errors omit rejected values, and debug configuration cannot expose tracebacks. Both
+PDF extraction routes are checked with fictional generated documents, and no test
+uses a real statement. The synthetic manual demo verifies the public CSV path and
+proves its temporary database is removed. API tests remain correctness evidence, not
+proof of compatibility with every bank PDF layout, production security, scale, or
+network deployment.

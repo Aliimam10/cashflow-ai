@@ -1,4 +1,4 @@
-.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import check-ocr demo-data demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade
+.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import check-ocr api demo-api demo-data demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade
 
 setup:
 	uv sync --dev
@@ -31,6 +31,12 @@ check-import:
 
 check-ocr:
 	uv run python -c "from cashflow_ai.imports import PytesseractOcrEngine; PytesseractOcrEngine().ensure_available(); print('Local Tesseract OCR is available')"
+
+api:
+	uv run cashflow-api
+
+demo-api:
+	uv run cashflow-api-demo
 
 demo-data:
 	uv run python scripts/generate_demo_data.py --profile all
