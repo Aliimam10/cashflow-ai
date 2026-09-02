@@ -10,6 +10,8 @@ from uuid import UUID
 from pydantic import AwareDatetime, BaseModel, ConfigDict, model_validator
 from sqlalchemy.orm import Session, sessionmaker
 
+from cashflow_ai.invalidation import invalidate_derived_results_in_session
+from cashflow_ai.persistence.base import utc_now
 from cashflow_ai.persistence.database import session_scope
 from cashflow_ai.persistence.models import (
     BalanceSnapshotRecord,
@@ -29,6 +31,7 @@ from cashflow_ai.schemas.freshness import (
     VerifiedBalanceEvidence,
 )
 from cashflow_ai.schemas.imports import VerificationStatus
+from cashflow_ai.schemas.invalidation import SourceDataChangeType
 from cashflow_ai.schemas.money import Money
 from cashflow_ai.schemas.statements import (
     BalanceSnapshot,
@@ -128,6 +131,12 @@ def record_manual_balance(
                 source=BalanceSnapshotSource.MANUAL.value,
                 verification_status=VerificationStatus.VERIFIED.value,
             )
+        )
+        invalidate_derived_results_in_session(
+            session,
+            account_id=entry.account_id,
+            change_type=SourceDataChangeType.CURRENT_BALANCE_CHANGED,
+            changed_at=utc_now(),
         )
         return _balance_contract(record)
 

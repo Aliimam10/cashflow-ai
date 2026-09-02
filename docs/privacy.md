@@ -273,3 +273,16 @@ metadata. It neither stores the fitted Isolation Forest nor learns automatically
 from user review. Later persistence must preserve this local boundary, avoid raw
 feature text in metadata, and record a review as an explicit user action rather than
 silently using it as a training label.
+
+## Derived-freshness privacy
+
+Invalidation metadata contains account/output identities, integer revisions,
+controlled source-change codes, statuses, and timestamps only. It never stores
+transaction descriptions, merchants, raw rows, OCR text, balances, totals, model
+features, predictions, scenario assumptions, or report payloads. Even the fictional
+demo callback payload is returned in memory and absent from both metadata tables.
+
+Change types intentionally say `category_changed` or `statement_added` without
+copying the corrected category, filename, transaction identity, or amount. Normal
+application logs may record the controlled status/code but must not add the private
+source values that caused it.

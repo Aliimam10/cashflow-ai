@@ -16,6 +16,8 @@ from cashflow_ai.persistence.models import (
     CategoryCorrectionRecord,
     CategoryDecisionRecord,
     CategoryRecord,
+    DerivedResultStateRecord,
+    FinancialDataRevisionRecord,
     FinancialRoleAuditRecord,
     FinancialRoleSuggestionRecord,
     ImportBatchRecord,
@@ -1258,3 +1260,48 @@ class PlanningRepository:
             )
         )
         return tuple(self._session.execute(statement).tuples())
+
+
+class DerivedDataRepository:
+    """Persist account revisions and derived-result freshness metadata."""
+
+    def __init__(self, session: Session) -> None:
+        """Bind metadata operations to one caller-owned transaction."""
+        self._session = session
+
+    def get_revision(self, account_id: str) -> FinancialDataRevisionRecord | None:
+        """Return the latest source-data revision for an account."""
+        return self._session.get(FinancialDataRevisionRecord, account_id)
+
+    def add_revision(
+        self, revision: FinancialDataRevisionRecord
+    ) -> FinancialDataRevisionRecord:
+        """Stage and flush a new account revision row."""
+        self._session.add(revision)
+        self._session.flush()
+        return revision
+
+    def get_state(
+        self, account_id: str, output_type: str
+    ) -> DerivedResultStateRecord | None:
+        """Return one account/output freshness row."""
+        statement = select(DerivedResultStateRecord).where(
+            DerivedResultStateRecord.account_id == account_id,
+            DerivedResultStateRecord.output_type == output_type,
+        )
+        return self._session.scalar(statement)
+
+    def add_state(self, state: DerivedResultStateRecord) -> DerivedResultStateRecord:
+        """Stage and flush one new freshness row."""
+        self._session.add(state)
+        self._session.flush()
+        return state
+
+    def list_states(self, account_id: str) -> tuple[DerivedResultStateRecord, ...]:
+        """Return persisted freshness rows in stable output order."""
+        statement = (
+            select(DerivedResultStateRecord)
+            .where(DerivedResultStateRecord.account_id == account_id)
+            .order_by(DerivedResultStateRecord.output_type)
+        )
+        return tuple(self._session.scalars(statement))

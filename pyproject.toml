@@ -39,6 +39,7 @@ cashflow-forecast-path-demo = "cashflow_ai.forecasting.path_demo:main"
 cashflow-model-registry-demo = "cashflow_ai.model_registry.demo:main"
 cashflow-planning-demo = "cashflow_ai.planning.demo:main"
 cashflow-scenario-demo = "cashflow_ai.planning.scenario_demo:main"
+cashflow-invalidation-demo = "cashflow_ai.invalidation.demo:main"
 
 [dependency-groups]
 dev = [

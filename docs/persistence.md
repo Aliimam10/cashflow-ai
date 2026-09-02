@@ -82,6 +82,18 @@ mislabel them. After those records are intentionally handled, downgrade preserve
 legacy-compatible category budgets and savings targets while removing the type
 columns.
 
+Migration `0009` additively creates `financial_data_revisions` and
+`derived_result_states`. The first stores one monotonic revision and controlled latest
+change per account. The second stores only output type, status, required/computed
+revision, and lifecycle timestamps. Database checks prevent a current row with
+unequal revisions, a stale row without invalidation evidence, or an unavailable row
+that claims a generated result.
+
+The migration does not infer historical provenance or modify any source/derived
+financial row. Downgrade drops only these metadata tables, so all account, import,
+transaction, balance, recurrence, planning, forecast, anomaly, and model records are
+preserved.
+
 ## Repository transactions
 
 Repositories stage and flush records but do not commit independently. Callers

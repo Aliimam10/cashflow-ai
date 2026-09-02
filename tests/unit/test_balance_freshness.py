@@ -34,6 +34,7 @@ from cashflow_ai.persistence import (
 from cashflow_ai.persistence.models import (
     AccountRecord,
     BalanceSnapshotRecord,
+    FinancialDataRevisionRecord,
     FinancialRoleRecord,
     ImportBatchRecord,
     ImportContextRecord,
@@ -300,6 +301,10 @@ def test_manual_balance_is_verified_evidence_not_a_transaction(
         assert stored is not None
         assert stored.import_batch_id is None
         assert stored.verification_status == "verified"
+        revision = session.get(FinancialDataRevisionRecord, "account-1")
+        assert revision is not None
+        assert revision.revision == 1
+        assert revision.last_change_type == "current_balance_changed"
         for model in (
             ImportBatchRecord,
             ImportContextRecord,

@@ -28,6 +28,7 @@ from cashflow_ai.persistence.database import session_scope
 from cashflow_ai.persistence.models import (
     CategoryCorrectionRecord,
     CategoryDecisionRecord,
+    FinancialDataRevisionRecord,
     PersonalCategoryRuleRecord,
     VerifiedTransactionRecord,
 )
@@ -212,6 +213,10 @@ def test_rules_precede_ml_and_feedback_creates_only_explicit_narrow_rule(
             session.scalar(select(func.count()).select_from(CategoryCorrectionRecord))
             == 1
         )
+        revision = session.get(FinancialDataRevisionRecord, "current-1")
+        assert revision is not None
+        assert revision.revision == 1
+        assert revision.last_change_type == "category_changed"
 
 
 def test_transaction_only_feedback_supersedes_queue_without_creating_rule(

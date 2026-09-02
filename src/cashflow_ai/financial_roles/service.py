@@ -13,6 +13,7 @@ from typing import cast
 
 from sqlalchemy.orm import Session, sessionmaker
 
+from cashflow_ai.invalidation import invalidate_derived_results_in_session
 from cashflow_ai.persistence.base import utc_now
 from cashflow_ai.persistence.database import session_scope
 from cashflow_ai.persistence.models import (
@@ -37,6 +38,7 @@ from cashflow_ai.schemas.financial_roles import (
     RoleSuggestionStatus,
     TransactionReviewAction,
 )
+from cashflow_ai.schemas.invalidation import SourceDataChangeType
 from cashflow_ai.schemas.transactions import FinancialRole
 
 SUGGESTION_ALGORITHM_VERSION = "role-rules-1.0"
@@ -591,6 +593,24 @@ def confirm_financial_role_suggestion(
             reviewed_at=received_at,
             except_suggestion_id=suggestion.id,
         )
+        change_type = (
+            SourceDataChangeType.TRANSFER_CONFIRMED
+            if any(
+                item.new_role in {FinancialRole.TRANSFER_IN, FinancialRole.TRANSFER_OUT}
+                for item in assignments
+            )
+            else SourceDataChangeType.FINANCIAL_ROLE_CHANGED
+        )
+        account_ids = {subject.account_id}
+        if counterpart is not None:
+            account_ids.add(counterpart.account_id)
+        for account_id in sorted(account_ids):
+            invalidate_derived_results_in_session(
+                session,
+                account_id=account_id,
+                change_type=change_type,
+                changed_at=received_at,
+            )
         return RoleDecisionResult(
             suggestion_id=suggestion.id,
             suggestion_status=RoleSuggestionStatus.CONFIRMED,
@@ -692,6 +712,19 @@ def apply_transaction_review_action(
         repository.reject_pending_for_transactions(
             (transaction.id,), reviewed_at=received_at
         )
+        if assignment is not None:
+            change_type = (
+                SourceDataChangeType.TRANSFER_CONFIRMED
+                if assignment.new_role
+                in {FinancialRole.TRANSFER_IN, FinancialRole.TRANSFER_OUT}
+                else SourceDataChangeType.FINANCIAL_ROLE_CHANGED
+            )
+            invalidate_derived_results_in_session(
+                session,
+                account_id=transaction.account_id,
+                change_type=change_type,
+                changed_at=received_at,
+            )
         return RoleDecisionResult(
             assignments=(assignment,) if assignment is not None else ()
         )

@@ -27,6 +27,7 @@ from cashflow_ai.imports.normalisation import (
     map_csv_row,
     normalise_transaction,
 )
+from cashflow_ai.invalidation import invalidate_derived_results_in_session
 from cashflow_ai.persistence.base import utc_now
 from cashflow_ai.persistence.database import session_scope
 from cashflow_ai.persistence.models import (
@@ -57,6 +58,7 @@ from cashflow_ai.schemas.duplicates import (
     DuplicateStatus,
 )
 from cashflow_ai.schemas.imports import IssueSeverity, ReviewStatus, VerificationStatus
+from cashflow_ai.schemas.invalidation import SourceDataChangeType
 from cashflow_ai.schemas.normalisation import (
     NormalisedTransaction,
     OriginalTransactionValues,
@@ -475,6 +477,12 @@ def _persist_document(
         VerificationStatus.NEEDS_REVIEW.value
         if probable_rows or rejected_rows
         else VerificationStatus.VERIFIED.value
+    )
+    invalidate_derived_results_in_session(
+        session,
+        account_id=plan.account_id,
+        change_type=SourceDataChangeType.STATEMENT_ADDED,
+        changed_at=received_at,
     )
     return CsvImportSummary(
         import_batch_id=batch.id,

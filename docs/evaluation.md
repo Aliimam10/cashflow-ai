@@ -179,3 +179,13 @@ differences. It verifies that transactions, recurring records, and the existing
 scenario table have identical row counts before and after evaluation. The scenario
 path must inherit model selection, interval method/performance, widening, residual
 widths, freshness warnings, and recurring evidence from its baseline.
+
+## Derived-result freshness checks
+
+Evaluation covers every source-change/output dependency, monotonic account revisions,
+unavailable/current/stale transitions, selective invalidation, callback failure,
+out-of-order timestamps, missing accounts, display refusal, and source changes during
+recomputation. Integration tests verify statement import, category correction,
+transfer confirmation, and manual balance write the expected revision in the same
+transaction. Migration tests verify constraints, empty additive upgrade, metadata-only
+downgrade, and preservation of source accounts.

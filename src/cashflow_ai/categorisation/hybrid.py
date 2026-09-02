@@ -19,6 +19,7 @@ from cashflow_ai.categorisation.service import (
     _propose_category,
     _validate_category_targets,
 )
+from cashflow_ai.invalidation import invalidate_derived_results_in_session
 from cashflow_ai.persistence.base import new_id, utc_now
 from cashflow_ai.persistence.database import session_scope
 from cashflow_ai.persistence.models import (
@@ -51,6 +52,7 @@ from cashflow_ai.schemas.hybrid_categorisation import (
     ManualRetrainingDataset,
     deterministic_source,
 )
+from cashflow_ai.schemas.invalidation import SourceDataChangeType
 from cashflow_ai.schemas.ml_categorisation import (
     MLCategorisationInput,
     TrainingCutoff,
@@ -403,6 +405,12 @@ def apply_category_feedback(
         repository.assign_category(transaction, feedback.category_id)
         superseded = repository.supersede_pending_decisions(
             transaction.id, reviewed_at=received_at
+        )
+        invalidate_derived_results_in_session(
+            session,
+            account_id=transaction.account_id,
+            change_type=SourceDataChangeType.CATEGORY_CHANGED,
+            changed_at=received_at,
         )
         session.flush()
         return CategoryFeedbackResult(

@@ -345,6 +345,12 @@ Compare a fictional baseline with an isolated £250 one-off purchase:
 make demo-scenario
 ```
 
+Run the fictional derived-result invalidation and refresh lifecycle:
+
+```bash
+make demo-invalidation
+```
+
 ## Privacy
 
 This repository must never contain real bank statements, credentials, personal
@@ -368,6 +374,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 - [`docs/model_registry.md`](docs/model_registry.md)
 - [`docs/planning.md`](docs/planning.md)
 - [`docs/scenarios.md`](docs/scenarios.md)
+- [`docs/invalidation.md`](docs/invalidation.md)
 - [`docs/modelling.md`](docs/modelling.md)
 - [`docs/evaluation.md`](docs/evaluation.md)
 - [`docs/privacy.md`](docs/privacy.md)
@@ -401,9 +408,11 @@ stages now also include persisted monthly category and weekly discretionary budg
 savings and minimum-balance goals, coverage-aware budget projections, required
 savings contributions, conservative safe-weekly-spending estimates, and isolated
 baseline-versus-scenario comparisons for nine one-off and recurring financial
-changes. They expose Python service boundaries rather than an end-user application.
-The next stages will add derived-data invalidation, APIs, the frontend, deployment,
-and release documentation.
+changes. Account source revisions, selective derived-result invalidation, atomic
+mutation hooks, current/stale/unavailable states, and race-safe synchronous
+recomputation are also implemented without persisting private report payloads. These
+features expose Python service boundaries rather than an end-user application. The
+next stages will add APIs, the frontend, deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

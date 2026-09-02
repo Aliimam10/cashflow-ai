@@ -678,3 +678,17 @@ differences, coverage-aware budget effects, goal effects, safe-spending differen
 and inherited uncertainty evidence. Contract validators recompute monetary
 differences, reject scenario budget projections without a baseline projection, and
 require every result to remain explicitly hypothetical.
+
+## Derived-freshness contracts
+
+`FinancialDataRevision` is revision zero with no change event or a positive monotonic
+revision with one controlled source-change type and aware timestamp.
+`DerivedResultFreshness` enforces complete status shapes: current has an equal
+computed/required revision, stale has an older computed revision and invalidation
+evidence, and unavailable has no generated result.
+
+`DerivedComputationToken` captures one account/output required revision before work.
+`DerivedInvalidation` requires exactly one non-current freshness row per ordered
+affected output. `DerivedRefreshResult` pairs a transient caller payload only with a
+successfully current freshness record; it is not a persistence contract for that
+payload.

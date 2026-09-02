@@ -29,6 +29,7 @@ from cashflow_ai.persistence import Base, create_session_factory, create_sqlite_
 from cashflow_ai.persistence.database import session_scope
 from cashflow_ai.persistence.models import (
     AccountRecord,
+    FinancialDataRevisionRecord,
     FinancialRoleAuditRecord,
     FinancialRoleRecord,
     FinancialRoleSuggestionRecord,
@@ -322,6 +323,10 @@ def test_matched_transfer_is_advisory_then_confirmed_atomically(
         assert raw_incoming.original_description == original_incoming
         assert raw_outgoing.raw_payload["Description"] == original_outgoing
         assert raw_incoming.raw_payload["Description"] == original_incoming
+        revision = session.get(FinancialDataRevisionRecord, "current-1")
+        assert revision is not None
+        assert revision.revision == 1
+        assert revision.last_change_type == "transfer_confirmed"
 
     outgoing_audits = list_financial_role_audits(factory, transaction_id="outgoing")
     incoming_audits = list_financial_role_audits(factory, transaction_id="incoming")

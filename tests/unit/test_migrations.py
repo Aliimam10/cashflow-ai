@@ -26,6 +26,8 @@ EXPECTED_TABLES = {
     "categories",
     "category_corrections",
     "category_decisions",
+    "derived_result_states",
+    "financial_data_revisions",
     "financial_roles",
     "financial_role_audits",
     "financial_role_suggestions",
@@ -684,3 +686,98 @@ def test_planning_type_migration_preserves_legacy_rows_and_blocks_lossy_downgrad
     assert "budget_type" not in budget_columns
     assert budget_columns["category_id"]["nullable"] is False
     assert "goal_type" not in goal_columns
+
+
+def test_derived_freshness_migration_is_additive_constrained_and_source_safe(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "derived-freshness.db"
+    config = migration_config(database_path)
+    command.upgrade(config, "0008")
+    engine = migrated_engine(database_path)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO user_profiles "
+                "(id, display_name, base_currency, timezone, created_at, updated_at) "
+                "VALUES ('revision-profile', 'Fictional User', 'GBP', 'UTC', "
+                "'2026-09-01 00:00:00', '2026-09-01 00:00:00')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO accounts "
+                "(id, user_profile_id, name, account_type, currency, "
+                "institution_label, is_active, created_at) VALUES "
+                "('revision-account', 'revision-profile', 'Fictional Account', "
+                "'current', 'GBP', NULL, 1, '2026-09-01 00:00:00')"
+            )
+        )
+
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT COUNT(*) FROM accounts")) == 1
+        assert (
+            connection.scalar(text("SELECT COUNT(*) FROM financial_data_revisions"))
+            == 0
+        )
+        assert (
+            connection.scalar(text("SELECT COUNT(*) FROM derived_result_states")) == 0
+        )
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO financial_data_revisions "
+                "(account_id, revision, last_change_type, changed_at) VALUES "
+                "('revision-account', 1, 'statement_added', "
+                "'2026-09-01 12:00:00')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO derived_result_states "
+                "(id, account_id, output_type, status, required_revision, "
+                "computed_revision, generated_at, invalidated_at, invalidated_by) "
+                "VALUES ('revision-state', 'revision-account', 'analytics', "
+                "'unavailable', 1, NULL, NULL, '2026-09-01 12:00:00', "
+                "'statement_added')"
+            )
+        )
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO derived_result_states "
+                "(id, account_id, output_type, status, required_revision, "
+                "computed_revision, generated_at, invalidated_at, invalidated_by) "
+                "VALUES ('bad-state', 'revision-account', 'forecasts', "
+                "'current', 1, 0, '2026-09-01 12:00:00', NULL, NULL)"
+            )
+        )
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE financial_data_revisions "
+                "SET last_change_type = 'invented_change' "
+                "WHERE account_id = 'revision-account'"
+            )
+        )
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE derived_result_states "
+                "SET invalidated_by = 'invented_change' "
+                "WHERE id = 'revision-state'"
+            )
+        )
+
+    command.downgrade(config, "0008")
+    tables = set(inspect(engine).get_table_names())
+    assert "financial_data_revisions" not in tables
+    assert "derived_result_states" not in tables
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT COUNT(*) FROM accounts")) == 1
+
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT COUNT(*) FROM accounts")) == 1

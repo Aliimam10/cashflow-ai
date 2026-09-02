@@ -770,6 +770,98 @@ class ScenarioRecord(Base):
     )
 
 
+class FinancialDataRevisionRecord(Base):
+    """Latest monotonic financial-source revision for one account."""
+
+    __tablename__ = "financial_data_revisions"
+
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), primary_key=True
+    )
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+    last_change_type: Mapped[str | None] = mapped_column(String(50))
+    changed_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+
+    __table_args__ = (
+        CheckConstraint("revision >= 0", name="ck_financial_data_revisions_value"),
+        CheckConstraint(
+            "last_change_type IS NULL OR last_change_type IN "
+            "('ocr_corrected', 'transaction_amount_changed', "
+            "'financial_role_changed', 'category_changed', 'transfer_confirmed', "
+            "'statement_added', 'import_deleted', 'current_balance_changed')",
+            name="ck_financial_data_revisions_change_type",
+        ),
+        CheckConstraint(
+            "(revision = 0 AND last_change_type IS NULL AND changed_at IS NULL) OR "
+            "(revision > 0 AND last_change_type IS NOT NULL "
+            "AND changed_at IS NOT NULL)",
+            name="ck_financial_data_revisions_origin",
+        ),
+    )
+
+
+class DerivedResultStateRecord(Base):
+    """Freshness metadata for one account and derived-output family."""
+
+    __tablename__ = "derived_result_states"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True, default=new_id)
+    account_id: Mapped[str] = mapped_column(
+        ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    output_type: Mapped[str] = mapped_column(String(50))
+    status: Mapped[str] = mapped_column(String(20))
+    required_revision: Mapped[int] = mapped_column(Integer, default=0)
+    computed_revision: Mapped[int | None] = mapped_column(Integer)
+    generated_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    invalidated_at: Mapped[datetime | None] = mapped_column(UTCDateTime())
+    invalidated_by: Mapped[str | None] = mapped_column(String(50))
+
+    __table_args__ = (
+        UniqueConstraint(
+            "account_id", "output_type", name="uq_derived_result_states_scope"
+        ),
+        CheckConstraint(
+            "output_type IN ('analytics', 'recurring_series', 'anomaly_alerts', "
+            "'budgets', 'forecasts', 'scenarios', "
+            "'model_performance_comparisons')",
+            name="ck_derived_result_states_output_type",
+        ),
+        CheckConstraint(
+            "status IN ('unavailable', 'current', 'stale')",
+            name="ck_derived_result_states_status",
+        ),
+        CheckConstraint(
+            "invalidated_by IS NULL OR invalidated_by IN "
+            "('ocr_corrected', 'transaction_amount_changed', "
+            "'financial_role_changed', 'category_changed', 'transfer_confirmed', "
+            "'statement_added', 'import_deleted', 'current_balance_changed')",
+            name="ck_derived_result_states_change_type",
+        ),
+        CheckConstraint(
+            "required_revision >= 0 AND "
+            "(computed_revision IS NULL OR "
+            "(computed_revision >= 0 AND computed_revision <= required_revision))",
+            name="ck_derived_result_states_revisions",
+        ),
+        CheckConstraint(
+            "(status = 'current' AND computed_revision = required_revision "
+            "AND generated_at IS NOT NULL AND invalidated_at IS NULL "
+            "AND invalidated_by IS NULL) OR "
+            "(status = 'stale' AND computed_revision IS NOT NULL "
+            "AND computed_revision < required_revision AND generated_at IS NOT NULL "
+            "AND invalidated_at IS NOT NULL AND invalidated_by IS NOT NULL) OR "
+            "(status = 'unavailable' AND computed_revision IS NULL "
+            "AND generated_at IS NULL AND "
+            "((required_revision = 0 AND invalidated_at IS NULL "
+            "AND invalidated_by IS NULL) OR "
+            "(required_revision > 0 AND invalidated_at IS NOT NULL "
+            "AND invalidated_by IS NOT NULL)))",
+            name="ck_derived_result_states_shape",
+        ),
+    )
+
+
 class ModelMetadataRecord(Base):
     """Reproducibility and evaluation metadata for one model version."""
 

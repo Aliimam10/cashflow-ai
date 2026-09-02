@@ -31,6 +31,7 @@ from cashflow_ai.persistence import (
 from cashflow_ai.persistence.models import (
     AccountRecord,
     BalanceSnapshotRecord,
+    FinancialDataRevisionRecord,
     FinancialRoleRecord,
     ImportBatchRecord,
     ImportContextRecord,
@@ -191,6 +192,10 @@ def test_confirmed_import_preserves_and_classifies_every_row(
         assert batch.verification_status == "needs_review"
         assert batch.source_filename == "synthetic-statement.csv"
         assert batch.imported_at == RECEIVED_AT
+        revision = session.get(FinancialDataRevisionRecord, "account-1")
+        assert revision is not None
+        assert revision.revision == 1
+        assert revision.last_change_type == "statement_added"
 
         context = session.scalar(select(ImportContextRecord))
         coverage = session.scalar(select(StatementCoverageRecord))

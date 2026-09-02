@@ -523,3 +523,16 @@ boundaries without reproducing either model. It runs an empty baseline overlay f
 then a separate typed hypothetical overlay using identical evidence, model, residuals,
 and random seed. It never calls a persistence writer. Future routes and pages must
 render the returned comparison rather than mutating baseline paths or financial rows.
+
+## Derived-data invalidation boundary
+
+`cashflow_ai.invalidation` owns account source revisions, the explicit dependency
+matrix, freshness metadata, recomputation tokens, and the display guard. Source-write
+services call its session-scoped invalidator inside their existing unit of work.
+Derived modules remain responsible for their own calculations; the invalidation layer
+does not import, duplicate, or persist analytics/model payloads.
+
+Future API orchestration begins a computation, invokes the relevant domain service,
+then completes the token. A changed dependency revision prevents completion. Routes
+must call `require_current_derived_result` before serving a previously calculated
+result rather than inferring freshness from timestamps.
