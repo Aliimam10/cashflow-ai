@@ -315,28 +315,47 @@ def complete_derived_computation(
     token: DerivedComputationToken,
 ) -> DerivedResultFreshness:
     """Mark current only if no relevant source change occurred during computation."""
+    return complete_derived_computations(factory, tokens=(token,))[0]
+
+
+def complete_derived_computations(
+    factory: sessionmaker[Session],
+    *,
+    tokens: tuple[DerivedComputationToken, ...],
+) -> tuple[DerivedResultFreshness, ...]:
+    """Atomically mark every result current after validating the complete token set."""
     completed_at = utc_now()
-    if token.started_at > completed_at:
+    identities = tuple((item.account_id, item.output_type) for item in tokens)
+    if len(set(identities)) != len(identities):
+        raise DerivedDataError(
+            DerivedDataErrorCode.INVALID_COMPUTATION_TOKEN,
+            "derived computation tokens must identify unique account outputs",
+        )
+    if any(item.started_at > completed_at for item in tokens):
         raise DerivedDataError(
             DerivedDataErrorCode.INVALID_COMPUTATION_TOKEN,
             "derived computation token cannot start in the future",
         )
     with session_scope(factory) as session:
-        _require_account(session, token.account_id)
         repository = DerivedDataRepository(session)
-        state = repository.get_state(token.account_id, token.output_type.value)
-        if state is None or state.required_revision != token.required_revision:
-            raise DerivedDataError(
-                DerivedDataErrorCode.SOURCE_CHANGED_DURING_RECOMPUTATION,
-                "source data changed before derived recomputation completed",
-            )
-        state.status = DerivedResultStatus.CURRENT.value
-        state.computed_revision = state.required_revision
-        state.generated_at = completed_at
-        state.invalidated_at = None
-        state.invalidated_by = None
+        states: list[DerivedResultStateRecord] = []
+        for token in tokens:
+            _require_account(session, token.account_id)
+            state = repository.get_state(token.account_id, token.output_type.value)
+            if state is None or state.required_revision != token.required_revision:
+                raise DerivedDataError(
+                    DerivedDataErrorCode.SOURCE_CHANGED_DURING_RECOMPUTATION,
+                    "source data changed before derived recomputation completed",
+                )
+            states.append(state)
+        for state in states:
+            state.status = DerivedResultStatus.CURRENT.value
+            state.computed_revision = state.required_revision
+            state.generated_at = completed_at
+            state.invalidated_at = None
+            state.invalidated_by = None
         session.flush()
-        return _freshness_contract(state)
+        return tuple(_freshness_contract(state) for state in states)
 
 
 def recompute_derived_result[PayloadT](
@@ -382,6 +401,7 @@ __all__ = [
     "DerivedDataErrorCode",
     "begin_derived_computation",
     "complete_derived_computation",
+    "complete_derived_computations",
     "dependent_outputs",
     "get_financial_data_revision",
     "invalidate_derived_results_in_session",

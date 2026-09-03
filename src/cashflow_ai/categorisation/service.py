@@ -16,6 +16,7 @@ from cashflow_ai.persistence.repositories import (
     CategorisationRepository,
     UserProfileRepository,
 )
+from cashflow_ai.schemas.categories import CategorySummary
 from cashflow_ai.schemas.categorisation import (
     CategorisationPlan,
     CategoryDecision,
@@ -51,6 +52,23 @@ class CategorisationServiceError(ValueError):
         """Store a stable public code beside a privacy-safe message."""
         super().__init__(message)
         self.code = code
+
+
+def list_categories(
+    factory: sessionmaker[Session],
+) -> tuple[CategorySummary, ...]:
+    """Return the persisted category taxonomy without transaction data."""
+    with session_scope(factory) as session:
+        return tuple(
+            CategorySummary(
+                id=item.id,
+                name=item.name,
+                parent_id=item.parent_id,
+                taxonomy_version=item.taxonomy_version,
+                is_active=item.is_active,
+            )
+            for item in CategorisationRepository(session).list_all_categories()
+        )
 
 
 @dataclass(frozen=True)

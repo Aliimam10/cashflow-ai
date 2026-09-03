@@ -310,3 +310,11 @@ The API demo and automated route tests use fictional uploads and temporary datab
 The manual demo removes its database after completion. Real local statements and
 databases remain governed by the repository ignore rules and must never be copied
 into request examples, test failures, screenshots, or committed API documentation.
+
+Decision-support endpoints rebuild analytics, recurrence, forecast, anomaly,
+planning, and scenario results locally from verified owned records and explicit
+cutoffs. They do not accept transaction rows, fitted models, prediction results, or
+balance paths as trusted client evidence. Only revision/freshness metadata is stored
+for calculated responses. Category and financial-role review endpoints return the
+minimum context needed for a local user decision; model-information endpoints expose
+aggregate registry metadata rather than artefacts, feature values, or training rows.

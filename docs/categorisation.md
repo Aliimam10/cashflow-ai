@@ -5,9 +5,9 @@ machine learning is introduced. For example, expense-role transactions can be
 labelled as groceries, housing, utilities, transport, subscriptions, health, or
 travel, allowing the existing analytics service to group them meaningfully.
 
-This is a local Python service boundary. It has no upload screen, API endpoint,
-or visual correction workflow. It does not import a statement, infer financial
-roles, calculate a forecast, or make a budget.
+The local service is exposed through taxonomy, low-confidence-review, and explicit
+feedback API endpoints. It still has no visual correction workflow and does not
+import a statement, infer financial roles, calculate a forecast, or make a budget.
 
 ## Taxonomy and rule configuration
 

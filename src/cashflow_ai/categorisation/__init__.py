@@ -26,6 +26,7 @@ from cashflow_ai.categorisation.service import (
     CategorisationServiceError,
     CategorisationServiceErrorCode,
     categorise_verified_transactions,
+    list_categories,
 )
 
 __all__ = [
@@ -45,6 +46,7 @@ __all__ = [
     "create_unseen_merchant_split",
     "evaluate_categorisation_model",
     "hybrid_categorise_verified_transactions",
+    "list_categories",
     "list_low_confidence_reviews",
     "load_transaction_categoriser",
     "predict_transaction_categories",

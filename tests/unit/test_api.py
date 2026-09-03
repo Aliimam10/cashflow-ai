@@ -20,6 +20,7 @@ from sqlalchemy.exc import OperationalError
 from cashflow_ai.api import AppContainer, build_container, create_app
 from cashflow_ai.api import cli as api_cli
 from cashflow_ai.api import routes as api_routes
+from cashflow_ai.api.demo import main as api_demo_main
 from cashflow_ai.api.services import check_readiness
 from cashflow_ai.config import Environment, LogFormat, Settings
 from cashflow_ai.imports import OcrWord, PdfImportError, PdfImportErrorCode
@@ -261,7 +262,7 @@ def _scanned_pdf() -> bytes:
     return _finish_pdf(document)
 
 
-def test_health_readiness_and_openapi_are_scoped_to_commit_30(api: ApiHarness) -> None:
+def test_health_readiness_and_openapi_include_decision_support(api: ApiHarness) -> None:
     health = api.client.get("/health")
     ready = api.client.get("/ready")
     schema = api.client.get("/openapi.json").json()
@@ -279,7 +280,25 @@ def test_health_readiness_and_openapi_are_scoped_to_commit_30(api: ApiHarness) -
     assert "/api/v1/imports/csv/preview" in paths
     assert "/api/v1/imports/pdf/ocr/preview" in paths
     assert "/api/v1/accounts/{account_id}/transactions" in paths
-    assert not any("analytics" in path or "forecast" in path for path in paths)
+    assert "/api/v1/analytics/cash-flow" in paths
+    assert "/api/v1/forecasts/balance" in paths
+    assert "/api/v1/planning/evaluate" in paths
+    assert "/api/v1/anomalies/detect" in paths
+
+
+def test_synthetic_api_demo_exercises_role_analytics_and_pagination(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    api_demo_main()
+
+    output = capsys.readouterr().out
+    assert "verified transactions imported: 2" in output
+    assert "role-aware cash flow: income=1000.00 expenses=400.00 net=600.00" in output
+    assert "coverage status: complete" in output
+    assert "analytics freshness: current" in output
+    assert "pagination: returned=1 total=2" in output
+    assert "raw source payload returned: false" in output
+    assert "temporary database retained: false" in output
 
 
 def test_readiness_reports_missing_schema_and_connection_failure(
@@ -322,7 +341,8 @@ def test_profile_and_account_routes_enforce_single_local_owner(api: ApiHarness) 
     assert current.json()["profile_id"] == profile_id
     assert by_id.json()["timezone"] == "Europe/London"
     assert account.json()["institution_label"] == "Example Bank"
-    assert [item["account_id"] for item in accounts.json()] == [account_id]
+    assert accounts.json()["total"] == 1
+    assert [item["account_id"] for item in accounts.json()["items"]] == [account_id]
     assert (
         api.client.post("/api/v1/profiles", json={"timezone": "UTC"}).status_code == 409
     )
@@ -374,7 +394,8 @@ def test_csv_preview_confirmation_context_and_transaction_reads(
     batch_id = cast(str, imported["import_batch_id"])
     context = api.client.get(f"/api/v1/imports/{batch_id}/context")
     transactions = api.client.get(f"/api/v1/accounts/{account_id}/transactions")
-    transaction_id = transactions.json()[0]["transaction_id"]
+    assert transactions.json()["total"] == 2
+    transaction_id = transactions.json()["items"][0]["transaction_id"]
     transaction = api.client.get(f"/api/v1/transactions/{transaction_id}")
 
     assert context.status_code == 200
@@ -385,7 +406,7 @@ def test_csv_preview_confirmation_context_and_transaction_reads(
     }
     assert context.json()["context"]["note"] == "Fictional context only"
     assert transactions.status_code == transaction.status_code == 200
-    assert len(transactions.json()) == 2
+    assert len(transactions.json()["items"]) == 2
     assert transaction.json()["description"] == "SYNTHETIC SALARY"
     assert "raw_payload" not in transaction.json()
     assert "original_description" not in transaction.json()
@@ -496,7 +517,12 @@ def test_text_pdf_preview_review_and_confirmation_are_non_persistent(
     )
     assert mismatch.status_code == 409
     assert mismatch.json()["code"] == "file_changed"
-    assert api.client.get(f"/api/v1/accounts/{account_id}/transactions").json() == []
+    assert api.client.get(f"/api/v1/accounts/{account_id}/transactions").json() == {
+        "items": [],
+        "limit": 50,
+        "offset": 0,
+        "total": 0,
+    }
 
 
 def test_pdf_upload_errors_route_to_ocr_and_enforce_limits(api: ApiHarness) -> None:

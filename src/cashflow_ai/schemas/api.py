@@ -8,7 +8,14 @@ from enum import StrEnum
 from typing import Literal
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, field_validator
+from pydantic import (
+    AwareDatetime,
+    BaseModel,
+    ConfigDict,
+    Field,
+    field_validator,
+    model_validator,
+)
 
 from cashflow_ai.schemas.accounts import AccountType
 from cashflow_ai.schemas.imports import SourceType, VerificationStatus
@@ -56,6 +63,31 @@ class ApiProblem(_ApiContract):
     message: str = Field(min_length=1, max_length=500)
     page_numbers: tuple[int, ...] = ()
     validation_issues: tuple[ApiValidationIssue, ...] = ()
+
+
+class Pagination(_ApiContract):
+    """Bounded offset pagination accepted by collection endpoints."""
+
+    limit: int = Field(default=50, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
+
+
+class Page[PageItemT](_ApiContract):
+    """One stable collection slice and the size of the complete result."""
+
+    items: tuple[PageItemT, ...]
+    limit: int = Field(ge=1, le=100)
+    offset: int = Field(ge=0)
+    total: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def validate_slice(self) -> Page[PageItemT]:
+        """Keep the returned slice within its declared limit and total."""
+        if len(self.items) > self.limit or len(self.items) > max(
+            self.total - self.offset, 0
+        ):
+            raise ValueError("page items exceed the declared result window")
+        return self
 
 
 class UserProfileCreate(_ApiContract):
@@ -164,6 +196,8 @@ __all__ = [
     "HealthResponse",
     "ImportContextResponse",
     "OcrStatusResponse",
+    "Page",
+    "Pagination",
     "PdfSourceType",
     "ReadinessResponse",
     "TransactionResponse",

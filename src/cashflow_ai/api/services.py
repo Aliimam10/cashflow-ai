@@ -42,6 +42,8 @@ from cashflow_ai.schemas.api import (
     HealthResponse,
     ImportContextResponse,
     OcrStatusResponse,
+    Page,
+    Pagination,
     PdfSourceType,
     ReadinessResponse,
     TransactionResponse,
@@ -97,6 +99,8 @@ class ApiServiceErrorCode(StrEnum):
     TRANSACTION_NOT_FOUND = "transaction_not_found"
     IMPORT_NOT_FOUND = "import_not_found"
     IMPORT_CONTEXT_UNAVAILABLE = "import_context_unavailable"
+    MODEL_NOT_ACTIVE = "model_not_active"
+    INVALID_KNOWLEDGE_CUTOFF = "invalid_knowledge_cutoff"
     INVALID_FORM_JSON = "invalid_form_json"
 
 
@@ -107,6 +111,18 @@ class ApiServiceError(ValueError):
         """Retain a stable code without private financial values."""
         super().__init__(message)
         self.code = code
+
+
+def page_items[PageItemT](
+    items: tuple[PageItemT, ...], pagination: Pagination
+) -> Page[PageItemT]:
+    """Return one bounded slice while retaining the complete result count."""
+    return Page[PageItemT](
+        items=items[pagination.offset : pagination.offset + pagination.limit],
+        limit=pagination.limit,
+        offset=pagination.offset,
+        total=len(items),
+    )
 
 
 def _profile_response(record: UserProfileRecord) -> UserProfileResponse:
@@ -580,6 +596,7 @@ __all__ = [
     "get_transaction",
     "list_accounts",
     "list_transactions",
+    "page_items",
     "parse_csv_confirmation_form",
     "parse_form_contract",
     "prepare_pdf_statement_review",

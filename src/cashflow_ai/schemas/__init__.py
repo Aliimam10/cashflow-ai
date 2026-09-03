@@ -38,6 +38,7 @@ from cashflow_ai.schemas.anomalies import (
 )
 from cashflow_ai.schemas.categories import (
     CategoryDefinition,
+    CategorySummary,
     CategoryTaxonomy,
     load_taxonomy,
 )
@@ -347,6 +348,7 @@ __all__ = [
     "CategoryMetric",
     "CategoryRuleSet",
     "CategorySpending",
+    "CategorySummary",
     "CategorySupport",
     "CategoryTaxonomy",
     "ClassificationMetrics",

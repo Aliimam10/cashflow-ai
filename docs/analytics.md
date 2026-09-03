@@ -130,11 +130,9 @@ missing balances by summing transactions.
 
 - Version 1 analytics supports one shared account currency and currently validates
   GBP.
-- Commit 18 categorisation is deterministic only; evaluated ML categorisation and
-  the persistent correction/personal-rule workflow arrive in Commits 19 and 20.
-- Recurrence detection and confirmation arrive in Commit 21.
-- Budget planning now consumes these coverage indicators and verified breakdowns;
-  APIs and visual dashboards remain later stages.
+- The local API exposes analytics and its exact coverage evidence, but the visual
+  dashboard remains a later stage.
+- Budget planning consumes these coverage indicators and verified breakdowns.
 - Approved PDF rows are still review-only until their complete atomic persistence
   workflow is implemented.
 

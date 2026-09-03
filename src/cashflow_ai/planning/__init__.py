@@ -12,6 +12,8 @@ from cashflow_ai.planning.service import (
     create_budget,
     create_financial_goal,
     evaluate_financial_plan,
+    list_budgets,
+    list_financial_goals,
 )
 
 __all__ = [
@@ -23,5 +25,7 @@ __all__ = [
     "create_financial_goal",
     "evaluate_financial_plan",
     "evaluate_financial_scenario",
+    "list_budgets",
+    "list_financial_goals",
     "projection_from_balance_forecast",
 ]

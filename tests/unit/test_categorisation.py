@@ -18,6 +18,7 @@ from cashflow_ai.categorisation import (
     CategorisationServiceError,
     CategorisationServiceErrorCode,
     categorise_verified_transactions,
+    list_categories,
 )
 from cashflow_ai.persistence import (
     Base,
@@ -63,6 +64,20 @@ from cashflow_ai.schemas.categorisation import normalise_rule_text
 NOW = datetime(2026, 8, 12, 12, 0, tzinfo=UTC)
 TAXONOMY_PATH = Path("configs/categories.yaml")
 RULES_PATH = Path("configs/category_rules.yaml")
+
+
+def test_list_categories_returns_data_minimised_taxonomy(
+    factory: sessionmaker[Session],
+) -> None:
+    _seed_foundation(factory)
+
+    categories = list_categories(factory)
+
+    assert categories
+    assert tuple((item.parent_id or "", item.id) for item in categories) == tuple(
+        sorted((item.parent_id or "", item.id) for item in categories)
+    )
+    assert all(item.taxonomy_version == "1.0" for item in categories)
 
 
 def _required[T](value: T | None) -> T:

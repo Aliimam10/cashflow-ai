@@ -9,6 +9,7 @@ from fastapi import APIRouter, File, Form, Response, UploadFile, status
 from cashflow_ai.api.dependencies import (
     EngineDependency,
     OcrEngineFactoryDependency,
+    PaginationDependency,
     SessionFactoryDependency,
 )
 from cashflow_ai.api.services import (
@@ -25,6 +26,7 @@ from cashflow_ai.api.services import (
     get_transaction,
     list_accounts,
     list_transactions,
+    page_items,
     parse_csv_confirmation_form,
     parse_form_contract,
     prepare_pdf_statement_review,
@@ -45,6 +47,7 @@ from cashflow_ai.schemas.api import (
     HealthResponse,
     ImportContextResponse,
     OcrStatusResponse,
+    Page,
     PdfSourceType,
     ReadinessResponse,
     TransactionResponse,
@@ -161,15 +164,17 @@ def create_account_route(
 
 @router.get(
     "/api/v1/profiles/{profile_id}/accounts",
-    response_model=tuple[AccountResponse, ...],
+    response_model=Page[AccountResponse],
     tags=["accounts"],
     summary="List profile accounts",
 )
 def list_accounts_route(
-    profile_id: str, factory: SessionFactoryDependency
-) -> tuple[AccountResponse, ...]:
+    profile_id: str,
+    factory: SessionFactoryDependency,
+    pagination: PaginationDependency,
+) -> Page[AccountResponse]:
     """Return accounts in a deterministic order."""
-    return list_accounts(factory, profile_id=profile_id)
+    return page_items(list_accounts(factory, profile_id=profile_id), pagination)
 
 
 @router.get(
@@ -394,15 +399,17 @@ def get_import_context_route(
 
 @router.get(
     "/api/v1/accounts/{account_id}/transactions",
-    response_model=tuple[TransactionResponse, ...],
+    response_model=Page[TransactionResponse],
     tags=["transactions"],
     summary="List verified account transactions",
 )
 def list_transactions_route(
-    account_id: str, factory: SessionFactoryDependency
-) -> tuple[TransactionResponse, ...]:
+    account_id: str,
+    factory: SessionFactoryDependency,
+    pagination: PaginationDependency,
+) -> Page[TransactionResponse]:
     """Return verified transactions while excluding raw source payloads."""
-    return list_transactions(factory, account_id=account_id)
+    return page_items(list_transactions(factory, account_id=account_id), pagination)
 
 
 @router.get(

@@ -24,6 +24,18 @@ class CategoryDefinition(BaseModel):
     is_active: bool = True
 
 
+class CategorySummary(BaseModel):
+    """Persisted category metadata available to a local review interface."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    id: CategoryId
+    name: str = Field(min_length=1, max_length=100)
+    parent_id: CategoryId | None = None
+    taxonomy_version: str = Field(min_length=1, max_length=50)
+    is_active: bool
+
+
 class CategoryTaxonomy(BaseModel):
     """A validated versioned collection of financial categories."""
 

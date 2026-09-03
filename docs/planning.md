@@ -137,5 +137,6 @@ database and fictional records.
 - The safe amount consumes an existing forecast; it does not train or select a model.
 - Multiple savings goals share aggregate available capacity because priority is not
   part of the authoritative Commit 27 scope.
-- Commit 28 now compares these results under isolated financial scenarios; updates,
-  deletion, API routes, and UI controls remain later interface work.
+- Commit 28 compares these results under isolated financial scenarios. Create,
+  list, evaluate, and scenario API routes are available; update, deletion, and UI
+  controls remain later interface work.

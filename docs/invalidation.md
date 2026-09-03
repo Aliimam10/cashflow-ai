@@ -104,11 +104,12 @@ create a database file or import a statement.
 ## Current limitations
 
 - Recalculation is synchronous and caller-triggered; no background job queue exists.
-- The future API must wrap each newly calculated result in the recomputation boundary
-  before the UI may treat it as current.
+- The decision-support API wraps each newly calculated result in the synchronous
+  recomputation boundary before a later UI may treat it as current.
 - No import-delete, transaction-amount-edit, or OCR-correction persistence operation
   exists yet; only their invalidation types and atomic session boundary are ready.
 - Freshness metadata is account-scoped. Consolidated multi-account results must check
-  every participating account.
+  every participating account; the API validates and completes that token set in one
+  database transaction so partial current state is not committed.
 - Stale payload deletion is unnecessary because this stage does not persist derived
   financial payloads.

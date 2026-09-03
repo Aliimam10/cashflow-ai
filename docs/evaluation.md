@@ -192,10 +192,15 @@ downgrade, and preservation of source accounts.
 
 ## Local API verification
 
-Commit 30 verifies the application factory, dependency injection, OpenAPI contents,
-health/readiness distinction, profile/account ownership rules, CSV preview and atomic
-confirmation, digital-PDF review/approval, injected OCR behaviour, import-context
-reconstruction, and verified-transaction reads. Tests also exercise upload limits,
+Commits 30 and 31 verify the application factory, dependency injection, OpenAPI
+contents, health/readiness distinction, profile/account ownership rules, CSV preview
+and atomic confirmation, digital-PDF review/approval, injected OCR behaviour, import-context
+reconstruction, and paginated verified-transaction reads. Decision-support tests
+exercise thin route delegation, bounded pagination, request-scope alignment, future
+cutoff rejection, revision-safe orchestration, category/role review adapters,
+analytics/coverage/freshness adapters, forecast rebuilding and baseline evaluation,
+budget/goal listing, planning/scenario/anomaly coordination, and active-model absence.
+Tests also exercise upload limits,
 unsupported media, invalid multipart JSON, missing/inactive/currency-mismatched
 accounts, absent schema/dependencies, and sanitised framework, database, and
 unexpected errors.
@@ -203,7 +208,9 @@ unexpected errors.
 Privacy assertions ensure transaction routes omit raw source payloads, validation
 errors omit rejected values, and debug configuration cannot expose tracebacks. Both
 PDF extraction routes are checked with fictional generated documents, and no test
-uses a real statement. The synthetic manual demo verifies the public CSV path and
-proves its temporary database is removed. API tests remain correctness evidence, not
-proof of compatibility with every bank PDF layout, production security, scale, or
-network deployment.
+uses a real statement. The synthetic manual demo verifies the public CSV path,
+explicit financial-role actions, role-aware analytics, complete coverage, current
+derived freshness, pagination, and removal of its temporary database. API tests
+remain correctness evidence, not proof of compatibility with every bank PDF layout,
+forecast accuracy for a particular user, production security, scale, or network
+deployment.

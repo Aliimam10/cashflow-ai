@@ -5,12 +5,13 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Annotated, cast
 
-from fastapi import Depends, Request
+from fastapi import Depends, Query, Request
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
 
 from cashflow_ai.api.container import AppContainer
 from cashflow_ai.imports import OcrEngine
+from cashflow_ai.schemas.api import Pagination
 
 
 def get_container(request: Request) -> AppContainer:
@@ -40,6 +41,14 @@ def get_ocr_engine_factory(
     return container.ocr_engine_factory
 
 
+def get_pagination(
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> Pagination:
+    """Validate the shared bounded collection window."""
+    return Pagination(limit=limit, offset=offset)
+
+
 EngineDependency = Annotated[Engine, Depends(get_engine)]
 SessionFactoryDependency = Annotated[
     sessionmaker[Session], Depends(get_session_factory)
@@ -47,14 +56,17 @@ SessionFactoryDependency = Annotated[
 OcrEngineFactoryDependency = Annotated[
     Callable[[], OcrEngine], Depends(get_ocr_engine_factory)
 ]
+PaginationDependency = Annotated[Pagination, Depends(get_pagination)]
 
 __all__ = [
     "ContainerDependency",
     "EngineDependency",
     "OcrEngineFactoryDependency",
+    "PaginationDependency",
     "SessionFactoryDependency",
     "get_container",
     "get_engine",
     "get_ocr_engine_factory",
+    "get_pagination",
     "get_session_factory",
 ]

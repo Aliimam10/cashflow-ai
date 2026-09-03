@@ -697,9 +697,18 @@ payload.
 
 `schemas.api` defines frozen, extra-forbidden transport contracts for health,
 readiness, profile creation, account creation, verified transactions, import context,
-OCR status, and privacy-safe problems. API responses use the existing domain enums
-for currencies, directions, financial roles, account types, source types, and
-verification state instead of introducing transport-only spellings.
+OCR status, bounded pages, and privacy-safe problems. API responses use the existing
+domain enums for currencies, directions, financial roles, account types, source
+types, and verification state instead of introducing transport-only spellings.
+
+`Pagination` restricts collection windows to 1–100 items. `Page` binds the returned
+items to the requested limit/offset and includes the complete result count. Decision
+requests in `schemas.api_decisions` compose existing domain plans rather than
+duplicating them. They require aligned profile, account, cutoff, forecast-origin, and
+planning scope before an orchestration service can run. Financial-role suggestion
+generation is server-timestamped; explicit confirm/reject and transaction-role
+actions retain an aware caller observation time while the service records its
+authoritative receipt time.
 
 `TransactionResponse` deliberately omits the retained raw-import record. The
 canonical description and other verified fields remain available to the local
@@ -716,3 +725,9 @@ input; the service reconstructs those contracts from the exact uploaded source.
 `ApiProblem` contains a stable controlled code, a bounded safe message, optional PDF
 page numbers, and data-minimised validation issues. It cannot carry a rejected input
 value, traceback, raw row, SQL statement, or request body.
+
+Cash-flow, forecast, anomaly, planning, and scenario responses reuse their domain
+contracts. Their full monetary payloads remain transient; only account revision and
+derived-result freshness metadata is persisted. Model information responses expose
+aggregate registry metadata, never fitted estimators, artefact contents, merchant
+text, transaction examples, or raw features.

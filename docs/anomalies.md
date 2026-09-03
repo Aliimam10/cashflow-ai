@@ -103,6 +103,7 @@ database exists only in memory.
 
 Unsupervised outliers can be legitimate and ordinary-looking transactions can still
 be harmful. Synthetic tests prove logic, leakage boundaries, and failure behaviour;
-they do not establish a real-world detection rate. The service does not yet persist
-alerts, expose a review API/UI, learn from dismissals, or reconstruct a recurrence
-series state that was later overwritten in the current lightweight schema.
+they do not establish a real-world detection rate. The API can run detection but
+does not yet persist alerts, expose alert feedback/UI, learn from dismissals, or
+reconstruct a recurrence series state that was later overwritten in the current
+lightweight schema.

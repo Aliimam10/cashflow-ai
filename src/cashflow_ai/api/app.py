@@ -9,6 +9,7 @@ from fastapi import FastAPI
 
 from cashflow_ai import __version__
 from cashflow_ai.api.container import AppContainer, build_container
+from cashflow_ai.api.decision_routes import router as decision_router
 from cashflow_ai.api.errors import register_exception_handlers
 from cashflow_ai.api.routes import router
 
@@ -35,6 +36,42 @@ OPENAPI_TAGS = [
         "name": "transactions",
         "description": "Verified transaction reads without raw source payloads.",
     },
+    {
+        "name": "analytics",
+        "description": "Coverage, freshness, and role-aware cash-flow results.",
+    },
+    {
+        "name": "recurring",
+        "description": "Point-in-time recurring detection and explicit review.",
+    },
+    {
+        "name": "categorisation",
+        "description": "Category metadata, review queues, and explicit corrections.",
+    },
+    {
+        "name": "financial roles",
+        "description": "Advisory transfer/refund matching and explicit role decisions.",
+    },
+    {
+        "name": "forecasts",
+        "description": "Leakage-safe model evaluation and balance paths.",
+    },
+    {
+        "name": "planning",
+        "description": "Budgets, goals, and conservative safe-spending calculations.",
+    },
+    {
+        "name": "scenarios",
+        "description": "Read-only baseline-versus-hypothetical comparisons.",
+    },
+    {
+        "name": "anomalies",
+        "description": "Carefully worded unusual-transaction review signals.",
+    },
+    {
+        "name": "models",
+        "description": "Data-minimised evaluation and active-model information.",
+    },
 ]
 
 
@@ -53,7 +90,7 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
         version=__version__,
         description=(
             "Local-first API for profile/account setup and review-gated statement "
-            "ingestion. It does not expose analytics or forecasting routes yet."
+            "ingestion, analytics, forecasting, anomaly review, and planning."
         ),
         # Never return traceback text from a process handling financial inputs.
         debug=False,
@@ -64,6 +101,7 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
     app.state.container = resolved
     register_exception_handlers(app)
     app.include_router(router)
+    app.include_router(decision_router)
     return app
 
 

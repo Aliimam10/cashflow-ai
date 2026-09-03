@@ -2,13 +2,24 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from cashflow_ai.analytics import AnalyticsServiceError
+from cashflow_ai.anomalies import AnomalyDetectionError
 from cashflow_ai.api.services import ApiServiceError, ApiServiceErrorCode
+from cashflow_ai.balances import BalanceServiceError
+from cashflow_ai.categorisation import (
+    CategorisationServiceError,
+    HybridCategorisationError,
+)
+from cashflow_ai.financial_roles import FinancialRoleServiceError
+from cashflow_ai.forecasting import ForecastingDataError, ForecastPathError
 from cashflow_ai.imports import (
     CsvImportError,
     CsvImportErrorCode,
@@ -17,6 +28,10 @@ from cashflow_ai.imports import (
     StatementReviewError,
     StatementReviewErrorCode,
 )
+from cashflow_ai.invalidation import DerivedDataError
+from cashflow_ai.model_registry import ModelRegistryError
+from cashflow_ai.planning import PlanningServiceError, ScenarioPlanningError
+from cashflow_ai.recurrence import RecurrenceServiceError
 from cashflow_ai.schemas.api import ApiProblem, ApiValidationIssue
 
 
@@ -33,10 +48,13 @@ def _api_service_status(code: ApiServiceErrorCode) -> int:
         ApiServiceErrorCode.ACCOUNT_NOT_FOUND,
         ApiServiceErrorCode.TRANSACTION_NOT_FOUND,
         ApiServiceErrorCode.IMPORT_NOT_FOUND,
+        ApiServiceErrorCode.MODEL_NOT_ACTIVE,
     }:
         return 404
     if code is ApiServiceErrorCode.INVALID_FORM_JSON:
         return 422
+    if code is ApiServiceErrorCode.INVALID_KNOWLEDGE_CUTOFF:
+        return 400
     return 409
 
 
@@ -75,6 +93,30 @@ def _pdf_status(code: PdfImportErrorCode) -> int:
 def _review_status(code: StatementReviewErrorCode) -> int:
     del code
     return 409
+
+
+def _domain_status(code: str) -> int:
+    """Map controlled service states without exposing input or database details."""
+    if code == "invalid_stored_metadata":
+        return 500
+    if code.endswith("not_found") or code.endswith("unavailable"):
+        return 404
+    if any(
+        marker in code
+        for marker in (
+            "already",
+            "conflict",
+            "duplicate",
+            "mismatch",
+            "not_active",
+            "not_current",
+            "not_eligible",
+            "stale",
+            "changed_during",
+        )
+    ):
+        return 409
+    return 400
 
 
 def register_exception_handlers(app: FastAPI) -> None:
@@ -118,6 +160,27 @@ def register_exception_handlers(app: FastAPI) -> None:
         return _response(
             _review_status(error.code),
             ApiProblem(code=error.code.value, message=str(error)),
+        )
+
+    @app.exception_handler(AnalyticsServiceError)
+    @app.exception_handler(AnomalyDetectionError)
+    @app.exception_handler(BalanceServiceError)
+    @app.exception_handler(CategorisationServiceError)
+    @app.exception_handler(HybridCategorisationError)
+    @app.exception_handler(FinancialRoleServiceError)
+    @app.exception_handler(ForecastingDataError)
+    @app.exception_handler(ForecastPathError)
+    @app.exception_handler(DerivedDataError)
+    @app.exception_handler(ModelRegistryError)
+    @app.exception_handler(PlanningServiceError)
+    @app.exception_handler(ScenarioPlanningError)
+    @app.exception_handler(RecurrenceServiceError)
+    async def controlled_domain_error(request: Request, error: Any) -> JSONResponse:
+        del request
+        code = str(error.code.value)
+        return _response(
+            _domain_status(code),
+            ApiProblem(code=code, message=str(error)),
         )
 
     @app.exception_handler(RequestValidationError)

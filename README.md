@@ -23,9 +23,11 @@ Residual-bootstrap forecast intervals, confirmed recurring-flow composition, and
 daily balance paths are also implemented. Review-only financial rules and a
 coverage-gated Isolation Forest now identify unusual transactions without claiming
 fraud. A loopback-only FastAPI boundary now exposes profile/account setup, safe
-statement preview and confirmation, import context, and verified transaction reads.
-PDF persistence, user interfaces, alert persistence, analytics-facing APIs, and
-production model lifecycle management have not been implemented yet.
+statement preview and confirmation, verified transactions, categorisation and
+financial-role review, analytics, recurrence, forecasting, anomaly detection,
+budgets, goals, scenarios, data freshness, and model information. PDF persistence,
+the Streamlit user interface, alert persistence, and production model lifecycle
+management have not been implemented yet.
 
 ## Problem
 
@@ -63,9 +65,9 @@ Relational database
 ```
 
 Version 1 uses SQLite locally and in the Docker environment. PostgreSQL is
-postponed until the local single-user application is complete. The first FastAPI
-ingestion and transaction boundary is implemented; analytics-facing APIs and the
-Streamlit frontend remain later, separately reviewed stages.
+postponed until the local single-user application is complete. The FastAPI
+ingestion and decision-support boundary is implemented; the Streamlit frontend
+remains a later, separately reviewed stage.
 
 ### Planned statement import
 
@@ -425,11 +427,13 @@ baseline-versus-scenario comparisons for nine one-off and recurring financial
 changes. Account source revisions, selective derived-result invalidation, atomic
 mutation hooks, current/stale/unavailable states, and race-safe synchronous
 recomputation are also implemented without persisting private report payloads. A
-loopback-only FastAPI application now exposes the profile, account, CSV/PDF preview,
-confirmed CSV import, statement context, and verified-transaction boundaries with
-generated OpenAPI documentation. PDF approval is still returned only in memory. The
-next stage adds analytics, forecasting, anomaly, model-registry, planning, and
-scenario APIs; later stages add the frontend, deployment, and release documentation.
+loopback-only FastAPI application now exposes profile/account setup, CSV/PDF review,
+confirmed CSV imports, verified transactions, categorisation and financial-role
+decisions, coverage-aware analytics, recurrence, forecasting, anomaly detection,
+budgets, goals, scenario comparisons, derived-data freshness, and model information
+with bounded pagination and generated OpenAPI documentation. PDF approval is still
+returned only in memory. The next stage adds Streamlit navigation and its typed API
+client; later stages complete the interface, deployment, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

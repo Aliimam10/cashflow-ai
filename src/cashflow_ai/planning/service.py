@@ -196,6 +196,48 @@ def create_financial_goal(
         ) from exc
 
 
+def list_budgets(
+    factory: sessionmaker[Session],
+    *,
+    user_profile_id: str,
+    as_of_date: date,
+) -> tuple[Budget, ...]:
+    """Return budgets active on one date for an existing local profile."""
+    with session_scope(factory) as session:
+        if UserProfileRepository(session).get(user_profile_id) is None:
+            raise PlanningServiceError(
+                PlanningServiceErrorCode.PROFILE_NOT_FOUND,
+                "local user profile does not exist",
+            )
+        return tuple(
+            _budget_contract(record)
+            for record in PlanningRepository(session).list_budgets_on(
+                user_profile_id=user_profile_id,
+                as_of_date=as_of_date,
+            )
+        )
+
+
+def list_financial_goals(
+    factory: sessionmaker[Session],
+    *,
+    user_profile_id: str,
+) -> tuple[FinancialGoal, ...]:
+    """Return every financial goal owned by one existing local profile."""
+    with session_scope(factory) as session:
+        if UserProfileRepository(session).get(user_profile_id) is None:
+            raise PlanningServiceError(
+                PlanningServiceErrorCode.PROFILE_NOT_FOUND,
+                "local user profile does not exist",
+            )
+        return tuple(
+            _goal_contract(record, user_profile_id=account.user_profile_id)
+            for record, account in PlanningRepository(session).list_goals_for_profile(
+                user_profile_id
+            )
+        )
+
+
 def _money(value: Decimal, *, rounding: str = ROUND_HALF_UP) -> Decimal:
     return value.quantize(MONEY_QUANTUM, rounding=rounding)
 
@@ -575,4 +617,6 @@ __all__ = [
     "create_budget",
     "create_financial_goal",
     "evaluate_financial_plan",
+    "list_budgets",
+    "list_financial_goals",
 ]

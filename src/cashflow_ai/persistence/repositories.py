@@ -669,6 +669,14 @@ class CategorisationRepository:
         )
         return tuple(self._session.scalars(statement))
 
+    def list_all_categories(self) -> tuple[CategoryRecord, ...]:
+        """Return the complete taxonomy in stable hierarchy and ID order."""
+        statement = select(CategoryRecord).order_by(
+            CategoryRecord.parent_id,
+            CategoryRecord.id,
+        )
+        return tuple(self._session.scalars(statement))
+
     def assign_category(
         self,
         transaction: VerifiedTransactionRecord,
@@ -1279,6 +1287,25 @@ class PlanningRepository:
             select(SavingsGoalRecord, AccountRecord)
             .join(AccountRecord, AccountRecord.id == SavingsGoalRecord.account_id)
             .where(SavingsGoalRecord.account_id.in_(account_ids))
+            .order_by(
+                SavingsGoalRecord.goal_type,
+                SavingsGoalRecord.account_id,
+                SavingsGoalRecord.target_date,
+                SavingsGoalRecord.name,
+                SavingsGoalRecord.id,
+            )
+        )
+        return tuple(self._session.execute(statement).tuples())
+
+    def list_goals_for_profile(
+        self,
+        user_profile_id: str,
+    ) -> tuple[tuple[SavingsGoalRecord, AccountRecord], ...]:
+        """Return all goals with explicit profile-ownership evidence."""
+        statement = (
+            select(SavingsGoalRecord, AccountRecord)
+            .join(AccountRecord, AccountRecord.id == SavingsGoalRecord.account_id)
+            .where(AccountRecord.user_profile_id == user_profile_id)
             .order_by(
                 SavingsGoalRecord.goal_type,
                 SavingsGoalRecord.account_id,

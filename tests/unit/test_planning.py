@@ -35,6 +35,8 @@ from cashflow_ai.planning import (
     create_budget,
     create_financial_goal,
     evaluate_financial_plan,
+    list_budgets,
+    list_financial_goals,
 )
 from cashflow_ai.planning.demo import main as demo_main
 from cashflow_ai.schemas import (
@@ -407,6 +409,31 @@ def test_create_budgets_and_goals_persists_explicit_types(
         assert session.scalar(
             select(SavingsGoalRecord).where(SavingsGoalRecord.id == floor.goal_id)
         )
+
+
+def test_list_budgets_and_goals_enforces_profile_scope(
+    factory: sessionmaker[Session],
+) -> None:
+    budget = create_budget(factory, request=_budget_request())
+    goal = create_financial_goal(factory, request=_goal_request())
+
+    assert list_budgets(
+        factory,
+        user_profile_id="synthetic-profile",
+        as_of_date=AS_OF,
+    ) == (budget,)
+    assert list_financial_goals(factory, user_profile_id="synthetic-profile") == (goal,)
+
+    with pytest.raises(PlanningServiceError) as budget_error:
+        list_budgets(
+            factory,
+            user_profile_id="missing-profile",
+            as_of_date=AS_OF,
+        )
+    assert budget_error.value.code is PlanningServiceErrorCode.PROFILE_NOT_FOUND
+    with pytest.raises(PlanningServiceError) as goal_error:
+        list_financial_goals(factory, user_profile_id="missing-profile")
+    assert goal_error.value.code is PlanningServiceErrorCode.PROFILE_NOT_FOUND
 
 
 def test_create_budget_rejects_missing_profile_category_and_duplicates(

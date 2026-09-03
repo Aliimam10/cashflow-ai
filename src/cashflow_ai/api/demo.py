@@ -25,6 +25,7 @@ from cashflow_ai.schemas.statements import (
     StatementBalances,
     StatementCoverage,
 )
+from cashflow_ai.schemas.transactions import FinancialRole
 
 _CSV = (
     b"Date,Description,Amount,Balance\n"
@@ -54,7 +55,13 @@ def main() -> None:
         )
         Base.metadata.create_all(container.engine)
         with session_scope(container.session_factory) as session:
-            session.add(FinancialRoleRecord(id="unknown", name="Unknown"))
+            session.add_all(
+                FinancialRoleRecord(
+                    id=role.value,
+                    name=role.value.replace("_", " ").title(),
+                )
+                for role in FinancialRole
+            )
 
         with TestClient(create_app(container)) as client:
             health = client.get("/health")
@@ -117,6 +124,35 @@ def main() -> None:
                 },
             )
             transactions = client.get(f"/api/v1/accounts/{account_id}/transactions")
+            transaction_items = transactions.json()["items"]
+            role_reviews = tuple(
+                client.post(
+                    f"/api/v1/transactions/{item['transaction_id']}/financial-role",
+                    json={
+                        "action": (
+                            "income" if Decimal(str(item["amount"])) > 0 else "expense"
+                        ),
+                        "changed_at": utc_now().isoformat(),
+                    },
+                )
+                for item in transaction_items
+            )
+            analytics = client.post(
+                "/api/v1/analytics/cash-flow",
+                json={
+                    "user_profile_id": profile_id,
+                    "account_ids": [account_id],
+                    "period": {
+                        "start_date": "2026-08-01",
+                        "end_date": "2026-08-31",
+                    },
+                    "view": "account",
+                },
+            )
+            paginated = client.get(
+                f"/api/v1/accounts/{account_id}/transactions?limit=1&offset=1"
+            )
+            freshness = client.get(f"/api/v1/accounts/{account_id}/derived-freshness")
 
             health.raise_for_status()
             profile.raise_for_status()
@@ -124,13 +160,37 @@ def main() -> None:
             preview.raise_for_status()
             imported.raise_for_status()
             transactions.raise_for_status()
+            for role_review in role_reviews:
+                role_review.raise_for_status()
+            analytics.raise_for_status()
+            paginated.raise_for_status()
+            freshness.raise_for_status()
+            analytics_body = analytics.json()
+            analytics_state = next(
+                item
+                for item in freshness.json()["items"]
+                if item["output_type"] == "analytics"
+            )
             print("CashFlow AI synthetic API check")
             print(f"health: {health.json()['status']}")
             print(f"CSV preview rows: {preview_body['total_data_rows']}")
             print(
                 f"verified transactions imported: {imported.json()['new_transactions']}"
             )
-            print(f"verified transactions returned: {len(transactions.json())}")
+            print(f"verified transactions returned: {len(transaction_items)}")
+            print(
+                "role-aware cash flow: "
+                f"income={analytics_body['totals']['total_income']} "
+                f"expenses={analytics_body['totals']['total_expenses']} "
+                f"net={analytics_body['totals']['net_cash_flow']}"
+            )
+            print(f"coverage status: {analytics_body['coverage']['status']}")
+            print(f"analytics freshness: {analytics_state['status']}")
+            print(
+                "pagination: "
+                f"returned={len(paginated.json()['items'])} "
+                f"total={paginated.json()['total']}"
+            )
             print("raw source payload returned: false")
             print("temporary database retained: false")
 

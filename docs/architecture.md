@@ -560,5 +560,14 @@ persistence boundary can retain approved and rejected evidence together.
 
 The server is restricted to loopback configuration and disposes its database engine
 on shutdown. Exception translation is centralised and debug tracebacks are disabled
-at the financial-data boundary. The OpenAPI document describes only the routes
-actually available in Commit 30; financial calculation routes remain Commit 31 work.
+at the financial-data boundary.
+
+The Commit 31 decision API keeps HTTP routes thin and places orchestration in
+`api.decision_services`. Analytics and derived calculations capture source revisions
+before work and atomically complete every participating account's freshness record
+only after the complete token set remains stable. Forecasting and scenario requests supply policies and ownership/cutoff scope,
+not trusted fitted estimators or client-computed paths; those are rebuilt locally
+through the existing leakage-safe services. Planning aligns exactly one ordered
+forecast request with each selected account. Category and financial-role review
+routes preserve their distinct domain boundaries, and collection endpoints share a
+bounded pagination contract.

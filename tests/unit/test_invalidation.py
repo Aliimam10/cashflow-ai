@@ -14,6 +14,7 @@ from cashflow_ai.invalidation import (
     DerivedDataErrorCode,
     begin_derived_computation,
     complete_derived_computation,
+    complete_derived_computations,
     dependent_outputs,
     get_financial_data_revision,
     list_derived_result_freshness,
@@ -255,6 +256,52 @@ def test_failed_callback_leaves_existing_freshness_unchanged(
         list_derived_result_freshness(factory, account_id="synthetic-account")
     )[DerivedOutputType.BUDGETS]
     assert after == before
+
+
+def test_multi_account_completion_is_atomic(
+    factory: sessionmaker[Session],
+) -> None:
+    with session_scope(factory) as session:
+        session.add(
+            AccountRecord(
+                id="second-synthetic-account",
+                user_profile_id="synthetic-profile",
+                name="Second Fictional Account",
+                account_type="savings",
+                currency="GBP",
+            )
+        )
+    first = begin_derived_computation(
+        factory,
+        account_id="synthetic-account",
+        output_type=DerivedOutputType.ANALYTICS,
+    )
+    second = begin_derived_computation(
+        factory,
+        account_id="second-synthetic-account",
+        output_type=DerivedOutputType.ANALYTICS,
+    )
+    record_source_data_change(
+        factory,
+        account_id="second-synthetic-account",
+        change_type=SourceDataChangeType.STATEMENT_ADDED,
+    )
+
+    with pytest.raises(DerivedDataError) as changed:
+        complete_derived_computations(factory, tokens=(first, second))
+
+    assert (
+        changed.value.code is DerivedDataErrorCode.SOURCE_CHANGED_DURING_RECOMPUTATION
+    )
+    first_state = _by_output(
+        list_derived_result_freshness(factory, account_id="synthetic-account")
+    )[DerivedOutputType.ANALYTICS]
+    assert first_state.status is DerivedResultStatus.UNAVAILABLE
+    assert complete_derived_computations(factory, tokens=()) == ()
+
+    with pytest.raises(DerivedDataError) as duplicate:
+        complete_derived_computations(factory, tokens=(first, first))
+    assert duplicate.value.code is DerivedDataErrorCode.INVALID_COMPUTATION_TOKEN
 
 
 def test_current_guard_rejects_unavailable_then_accepts_recomputed_result(
