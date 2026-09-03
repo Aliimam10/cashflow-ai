@@ -17,7 +17,10 @@ boundary. It now provides:
   suggestions, and probable-duplicate decisions;
 - coverage and freshness indicators plus observed income, expense, savings,
   category, cadence, and gap-preserving balance charts; and
-- a stable navigation placeholder for the forecast interface.
+- recurring-series detection with explicit confirm/reject controls; and
+- on-demand balance forecasts with a selectable horizon, expected path,
+  uncertainty band, confirmed upcoming flows, balance source, cutoff, model, and
+  low-data/stale-data warnings.
 
 The import page does not reproduce parsing or financial logic. Typed form values go
 through the local API client to the existing backend contracts.
@@ -44,6 +47,11 @@ and amounts are necessarily visible in the local workspace, but raw import paylo
 are not returned by its transaction endpoints. Chart conversion from `Decimal` to
 floating point is a presentation-only copy; stored and API money remains fixed
 precision.
+
+Recurring candidates and forecasts are also requested again rather than stored in
+session state. The browser supplies identifiers, dates, horizon, and explicit review
+actions; the API rebuilds all evidence and models locally. Confirming or rejecting a
+series changes derived-data state through the existing backend invalidation rules.
 
 CSV confirmation persists an import atomically through the established service. PDF
 approval remains an in-memory result because atomic PDF persistence has not been
@@ -113,6 +121,31 @@ Open **Transactions & analytics** after that import. Under the transaction table
    `active forecasting` only when every displayed policy passes; missing dates break
    balance lines; headline values say `Observed` unless coverage is complete.
 
+Open **Forecast & planning** for the Commit 35 workflow:
+
+1. Set **Recurring evidence date** to the last completed UTC date covered by the
+   fictional import, then select **Refresh recurring patterns**.
+   Expected: repeated fictional merchants are listed with frequency, expected amount,
+   next-payment date, confidence, evidence count, and current review status.
+2. Confirm or reject one pending fictional pattern. Expected: the explicit status is
+   reported; detection alone never silently confirms it.
+3. Open **Forecast**, select the fictional account, use the same cutoff date, choose
+   `14`, `30`, `60`, or `90` days, choose the fictional profile's usual income days,
+   then select **Generate forecast**. Expected: either
+   a controlled insufficient-evidence message or a chart whose line is the expected
+   balance and whose shaded area is its empirical uncertainty range. The result also
+   names the verified opening-balance source, cutoff, selected model and best
+   baseline, selection reason, held-out errors when available, final range, upcoming
+   confirmed flows, and any low-data/stale-data warning.
+
+Safe parameters to vary are the four displayed horizons and dates inside synthetic
+verified coverage. A year of contiguous weekly evidence is the intended full model
+check; shorter data should fail safely or use a baseline, not claim false certainty.
+Today is deliberately unavailable because recurrence and forecast evidence requires
+a fully completed UTC calendar day; the default is yesterday in UTC.
+Income days are explicit because payday distance is a model feature; selecting a day
+does not invent or schedule income, and an empty selection cannot run a forecast.
+
 Safe values to vary are the fictional search text, category/role choice, dashboard
 accounts and statement-contained dates. Corrections are real local database writes,
 so regenerate a disposable local database if you want to repeat the test from a
@@ -149,8 +182,10 @@ reports.
   re-reviewed after that later boundary is implemented.
 - Bank PDF layouts are not standardised. Digital extraction and OCR support the
   tested conservative layouts, not every institution or scan quality.
-- Forecast/planning remains a staged placeholder. Transaction search currently
-  returns at most the first 100 matches and explicitly reports when more exist.
+- Budget, goal, scenario, and anomaly controls remain for Commit 36. Transaction and
+  recurring searches currently return at most the first 100 matches.
+- Forecast intervals are empirical estimates rather than guarantees, and recursive
+  errors can compound at longer horizons.
 - The client is synchronous; spinners make bounded extraction work visible, but
   background jobs and cancellation are not implemented.
 - Accessibility, browser compatibility, authentication, and deployment hardening

@@ -600,4 +600,9 @@ profile/account setup and review-gated CSV/PDF forms over typed API requests. CS
 confirmation delegates its atomic write to the backend. PDF review sends the exact
 document again and receives a non-persistent approved result; neither the page nor its
 session state becomes a source of trusted transaction data. Transactions/analytics
-and forecast/planning remain truthful empty states until their dedicated commits.
+is a review and presentation client over the transaction API. The recurring and
+forecasting page likewise builds only typed policy/scope requests: the backend detects
+series, trains/selects models, anchors verified balances, and simulates paths. The UI
+does not persist model objects, forecast paths, transaction evidence, or source rows.
+Its ordinary recurring-series read is side-effect free; only the explicit refresh
+control runs detection, and only confirm/reject controls change review state.

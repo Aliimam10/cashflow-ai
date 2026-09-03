@@ -518,6 +518,48 @@ def detect_recurring_payments(
         return tuple(results)
 
 
+def list_recurring_payment_candidates(
+    factory: sessionmaker[Session], *, user_profile_id: str
+) -> tuple[RecurringPaymentCandidate, ...]:
+    """List persisted review candidates without refreshing detection evidence."""
+    with session_scope(factory) as session:
+        if session.get(UserProfileRecord, user_profile_id) is None:
+            raise RecurrenceServiceError(
+                RecurrenceServiceErrorCode.PROFILE_NOT_FOUND,
+                "local user profile does not exist",
+            )
+        records = tuple(
+            session.scalars(
+                select(RecurringPaymentCandidateRecord)
+                .join(AccountRecord)
+                .where(AccountRecord.user_profile_id == user_profile_id)
+                .order_by(
+                    RecurringPaymentCandidateRecord.next_expected_date,
+                    RecurringPaymentCandidateRecord.id,
+                )
+            )
+        )
+        results: list[RecurringPaymentCandidate] = []
+        for record in records:
+            dates = tuple(
+                session.scalars(
+                    select(VerifiedTransactionRecord.transaction_date)
+                    .join(
+                        RecurringPaymentMemberRecord,
+                        RecurringPaymentMemberRecord.verified_transaction_id
+                        == VerifiedTransactionRecord.id,
+                    )
+                    .where(RecurringPaymentMemberRecord.candidate_id == record.id)
+                    .order_by(
+                        VerifiedTransactionRecord.transaction_date,
+                        VerifiedTransactionRecord.id,
+                    )
+                )
+            )
+            results.append(_project(record, dates))
+        return tuple(results)
+
+
 def review_recurring_payment(
     factory: sessionmaker[Session], *, review: RecurrenceReview
 ) -> RecurrenceReviewResult:

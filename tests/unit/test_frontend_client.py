@@ -19,6 +19,7 @@ from cashflow_ai.frontend.client import (
     UploadedDocument,
     api_base_url,
 )
+from cashflow_ai.frontend.forecast_workflow import forecast_request, recurrence_request
 from cashflow_ai.schemas.accounts import AccountType
 from cashflow_ai.schemas.analytics import AnalyticsScope, AnalyticsView
 from cashflow_ai.schemas.api import (
@@ -50,6 +51,7 @@ from cashflow_ai.schemas.hybrid_categorisation import (
     CategoryFeedbackAction,
 )
 from cashflow_ai.schemas.reconciliation import StatementApproval
+from cashflow_ai.schemas.recurrence import RecurrenceReview, RecurrenceReviewAction
 from cashflow_ai.schemas.statements import (
     CoverageStatus,
     DateRange,
@@ -440,6 +442,23 @@ def test_client_exposes_typed_transaction_review_and_dashboard_requests(
             minimum_contiguous_coverage_days=60,
         ),
     )
+    recurring = recurrence_request(
+        profile_id="synthetic-profile",
+        as_of_date=date(2026, 8, 31),
+    )
+    recurrence_review = RecurrenceReview(
+        user_profile_id="synthetic-profile",
+        candidate_id="synthetic-candidate",
+        action=RecurrenceReviewAction.CONFIRM,
+        reviewed_at=observed,
+    )
+    forecast = forecast_request(
+        profile_id="synthetic-profile",
+        account_id="synthetic-account",
+        as_of_date=date(2026, 8, 30),
+        horizon_days=30,
+        payday_days=(1, 15),
+    )
 
     client.search_transactions(search)
     client.list_categories()
@@ -453,6 +472,11 @@ def test_client_exposes_typed_transaction_review_and_dashboard_requests(
     client.decide_duplicate("synthetic-profile", "synthetic-raw", duplicate)
     client.cash_flow(scope)
     client.freshness(freshness)
+    client.detect_recurring(recurring)
+    client.list_recurring("synthetic-profile")
+    client.review_recurring(recurrence_review)
+    client.evaluate_forecast(forecast)
+    client.balance_forecast(forecast)
     client.close()
 
     paths = [call.args[1] for call in request.call_args_list]
@@ -469,6 +493,11 @@ def test_client_exposes_typed_transaction_review_and_dashboard_requests(
         "/api/v1/profiles/synthetic-profile/duplicates/synthetic-raw/review",
         "/api/v1/analytics/cash-flow",
         "/api/v1/coverage/freshness",
+        "/api/v1/recurring/detect",
+        "/api/v1/profiles/synthetic-profile/recurring",
+        "/api/v1/recurring/reviews",
+        "/api/v1/forecasts/evaluate",
+        "/api/v1/forecasts/balance",
     ]
 
 

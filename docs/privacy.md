@@ -351,3 +351,10 @@ endpoints never return the complete raw payload. Probable-duplicate candidate
 snapshots are private local database evidence, never logs or telemetry, and exist only
 so an explicit keep decision does not guess financial fields from source-specific
 columns.
+
+The recurring and forecast interface keeps the same boundary. It sends only profile
+and account identifiers, explicit cutoff dates, review actions, and documented policy
+values to the local API. Candidate evidence and forecast results are rendered for the
+current run but never copied into application-managed session state, files, telemetry,
+or logs. Chart floats are presentation-only copies; fixed-precision source and API
+money remains unchanged.

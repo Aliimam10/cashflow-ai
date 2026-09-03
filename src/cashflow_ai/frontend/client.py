@@ -28,8 +28,11 @@ from cashflow_ai.schemas.api import (
     UserProfileResponse,
 )
 from cashflow_ai.schemas.api_decisions import (
+    BalanceForecastRequest,
     FinancialDataFreshnessRequest,
     FinancialRoleSuggestionRequest,
+    ForecastEvaluationRequest,
+    RecurrenceDetectionRequest,
     RoleDecisionRequest,
     TransactionRoleReviewRequest,
 )
@@ -50,6 +53,8 @@ from cashflow_ai.schemas.financial_roles import (
     RoleDecisionResult,
     RoleReviewItem,
 )
+from cashflow_ai.schemas.forecast_models import ForecastTrainingResult
+from cashflow_ai.schemas.forecast_paths import BalanceForecastPath
 from cashflow_ai.schemas.freshness import FinancialDataFreshness
 from cashflow_ai.schemas.hybrid_categorisation import (
     CategoryFeedback,
@@ -59,6 +64,11 @@ from cashflow_ai.schemas.reconciliation import (
     ApprovedStatement,
     StatementApproval,
     StatementReview,
+)
+from cashflow_ai.schemas.recurrence import (
+    RecurrenceReview,
+    RecurrenceReviewResult,
+    RecurringPaymentCandidate,
 )
 from cashflow_ai.schemas.transactions import Currency
 
@@ -530,6 +540,56 @@ class ApiClient:
             "/api/v1/coverage/freshness",
             request,
             FinancialDataFreshness,
+        )
+
+    def detect_recurring(
+        self,
+        request: RecurrenceDetectionRequest,
+    ) -> Page[RecurringPaymentCandidate]:
+        """Refresh point-in-time recurring candidates for explicit user review."""
+        return self._request(
+            "POST",
+            "/api/v1/recurring/detect",
+            Page[RecurringPaymentCandidate],
+            params={"limit": 100, "offset": 0},
+            body=request,
+        )
+
+    def list_recurring(self, profile_id: str) -> Page[RecurringPaymentCandidate]:
+        """List persisted recurring review state without rerunning detection."""
+        return self.get(
+            f"/api/v1/profiles/{_path_segment(profile_id)}/recurring",
+            Page[RecurringPaymentCandidate],
+            params={"limit": 100, "offset": 0},
+        )
+
+    def review_recurring(
+        self,
+        request: RecurrenceReview,
+    ) -> RecurrenceReviewResult:
+        """Confirm or cancel one detected recurring candidate."""
+        return self.post(
+            "/api/v1/recurring/reviews",
+            request,
+            RecurrenceReviewResult,
+        )
+
+    def balance_forecast(self, request: BalanceForecastRequest) -> BalanceForecastPath:
+        """Calculate one uncertainty-aware future balance path locally."""
+        return self.post(
+            "/api/v1/forecasts/balance",
+            request,
+            BalanceForecastPath,
+        )
+
+    def evaluate_forecast(
+        self, request: ForecastEvaluationRequest
+    ) -> ForecastTrainingResult:
+        """Return chronological candidate-versus-baseline evaluation evidence."""
+        return self.post(
+            "/api/v1/forecasts/evaluate",
+            request,
+            ForecastTrainingResult,
         )
 
 

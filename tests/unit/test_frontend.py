@@ -222,11 +222,13 @@ def test_page_dispatch_opens_api_for_implemented_pages(
     transaction_page = MagicMock(
         return_value=FrontendSessionState(account_id="account-2")
     )
+    forecast_page = MagicMock(return_value=FrontendSessionState(account_id="account-3"))
     placeholder = MagicMock()
     monkeypatch.setattr(app, "ApiClient", client_factory)
     monkeypatch.setattr(app, "render_home", home)
     monkeypatch.setattr(app, "render_import_page", import_page)
     monkeypatch.setattr(app, "render_transaction_page", transaction_page)
+    monkeypatch.setattr(app, "render_forecast_page", forecast_page)
     monkeypatch.setattr(app, "render_placeholder", placeholder)
     session = FrontendSessionState()
 
@@ -246,21 +248,22 @@ def test_page_dispatch_opens_api_for_implemented_pages(
         session=session,
     )
 
-    placeholder_result = app.render_application_page(
+    forecast_result = app.render_application_page(
         navigation_item(PageId.FORECAST_AND_PLANNING),
         base_url="http://127.0.0.1:8765",
         session=session,
     )
 
-    assert client_factory.call_count == 3
+    assert client_factory.call_count == 4
     home.assert_called_once_with(client)
     import_page.assert_called_once_with(client, session)
     transaction_page.assert_called_once_with(client, session)
-    placeholder.assert_called_once_with(navigation_item(PageId.FORECAST_AND_PLANNING))
+    forecast_page.assert_called_once_with(client, session)
+    placeholder.assert_not_called()
     assert home_result == session
     assert import_result.account_id == "account-1"
     assert transaction_result.account_id == "account-2"
-    assert placeholder_result == session
+    assert forecast_result.account_id == "account-3"
 
 
 def test_application_main_restores_and_saves_navigation(

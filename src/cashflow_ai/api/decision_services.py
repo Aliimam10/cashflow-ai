@@ -48,7 +48,11 @@ from cashflow_ai.planning import (
     list_financial_goals,
     projection_from_balance_forecast,
 )
-from cashflow_ai.recurrence import detect_recurring_payments, review_recurring_payment
+from cashflow_ai.recurrence import (
+    detect_recurring_payments,
+    list_recurring_payment_candidates,
+    review_recurring_payment,
+)
 from cashflow_ai.schemas.analytics import (
     AnalyticsScope,
     CashFlowAnalytics,
@@ -196,6 +200,19 @@ def refresh_recurring_payments(
         ),
     )
     return page_items(candidates, pagination)
+
+
+def page_recurring_payments(
+    factory: sessionmaker[Session], *, user_profile_id: str, pagination: Pagination
+) -> Page[RecurringPaymentCandidate]:
+    """Return persisted recurrence review state without running detection."""
+    return page_items(
+        list_recurring_payment_candidates(
+            factory,
+            user_profile_id=user_profile_id,
+        ),
+        pagination,
+    )
 
 
 def review_recurrence(
@@ -538,6 +555,7 @@ __all__ = [
     "page_financial_role_audits",
     "page_financial_role_reviews",
     "page_models",
+    "page_recurring_payments",
     "refresh_recurring_payments",
     "reject_role_suggestion",
     "review_recurrence",

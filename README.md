@@ -380,8 +380,9 @@ make ui
 ```
 
 The home page reports local API/database readiness. **Import statements** provides
-account setup and review-gated CSV/PDF workflows; the transaction and forecast
-destinations remain deliberate placeholders. See
+account setup and review-gated CSV/PDF workflows; **Transactions & analytics** adds
+correction and observed-data dashboards; and **Forecast & planning** now exposes
+review-gated recurrence plus uncertainty-aware balance forecasts. See
 [`docs/frontend.md`](docs/frontend.md) for the exact manual check and privacy boundary.
 
 ## Privacy
