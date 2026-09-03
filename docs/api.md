@@ -6,9 +6,10 @@ domain code: routes validate HTTP input, resolve dependencies, call a service, a
 return a typed response. They do not reimplement parsing, reconciliation,
 categorisation, analytics, forecasting, anomaly detection, or planning.
 
-The first Streamlit shell now calls these endpoints through its typed local client
-instead of accessing the database or domain services directly. Most end-user
-workflows remain staged placeholders.
+The Streamlit frontend calls these endpoints through its typed local client instead
+of accessing the database or domain services directly. Profile/account onboarding
+and statement preview/review are interactive; transaction and forecast workflows
+remain staged placeholders.
 Forecast, planning, scenario, recurrence, and anomaly calculations are rebuilt
 server-side from owned, cutoff-bound inputs; a caller cannot submit a fabricated
 model result or balance path as trusted evidence.

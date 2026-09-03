@@ -332,6 +332,14 @@ identifiers, and whether the privacy notice was shown. It must not hold upload b
 raw or verified transaction text, amounts, balances, API payloads, model features, or
 forecast results. Common errors render only controlled client messages and stable
 codes; untrusted API bodies, URLs, source descriptions, and local paths are discarded.
-The home page keeps both the privacy notice and forecast disclaimer visible. The
-current placeholders do not read financial records or imply that unfinished screens
-work.
+The home page keeps both the privacy notice and forecast disclaimer visible.
+
+The import page reads bytes only from the current upload widget and sends them to the
+loopback API. It creates no application-managed upload file or preview cache. Raw
+transaction text and extracted values are intentionally visible in the local review
+screen but must not be copied into normal logs, screenshots, bug reports, or committed
+fixtures. Profile/account setup requests descriptive local metadata only—not bank
+credentials or account numbers. PDF approval is explicitly shown as non-persistent;
+CSV persistence still occurs only after exact-file confirmation. Committed manual
+fixtures are generated from fixed fictional statements under the ignored demo-data
+directory.

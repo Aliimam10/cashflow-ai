@@ -215,7 +215,7 @@ remain correctness evidence, not proof of compatibility with every bank PDF layo
 forecast accuracy for a particular user, production security, scale, or network
 deployment.
 
-## Streamlit foundation verification
+## Streamlit workflow verification
 
 Commit 32 tests navigation metadata, corrupt-session recovery, data-minimised state,
 the loopback-only typed client, request timeouts, connection failures, controlled API
@@ -224,8 +224,17 @@ error/empty states, the forecast disclaimer, home and placeholder rendering, pag
 dispatch, and packaged launcher arguments. These tests use no statements or financial
 rows.
 
-The manual verification starts a migrated empty SQLite database, the FastAPI server,
-and Streamlit on loopback. It checks the home title, privacy notice, forecast warning,
-API/database readiness, navigation, and truthful placeholders. This demonstrates the
-transport shell only; it does not establish browser security, statement compatibility,
-forecast quality, accessibility conformance, or a completed user workflow.
+Commit 33 adds complete statement/branch coverage for typed multipart client calls,
+profile and account forms, CSV mapping/context/confirmation, PDF evidence rendering,
+every required approval gate, OCR availability and controlled errors, safe session
+updates, and generated fictional digital/scanned PDFs. Contract tests verify that
+uploads are multipart, responses are validated, and private bytes are absent from
+object representations.
+
+The manual verification starts a migrated SQLite database, FastAPI, and Streamlit on
+loopback. It creates fictional metadata, persistently imports a generated CSV,
+approves a generated digital PDF without claiming persistence, and exercises the
+local OCR review path when Tesseract is installed. This establishes the tested
+workflow for the supported synthetic layouts; it does not establish universal
+bank-statement compatibility, browser security, accessibility conformance,
+authentication, or forecast quality.

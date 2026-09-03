@@ -15,6 +15,7 @@ from cashflow_ai.frontend.components import (
     render_forecast_disclaimer,
     render_privacy_notice,
 )
+from cashflow_ai.frontend.import_page import render_import_page
 from cashflow_ai.frontend.navigation import NAVIGATION_ITEMS, NavigationItem, PageId
 from cashflow_ai.frontend.session import (
     FrontendSessionState,
@@ -62,9 +63,9 @@ def render_home(client: StatusApi) -> None:
 
     st.subheader("Foundation status")
     st.write(
-        "Navigation and the typed API connection are ready. Statement onboarding, "
-        "transaction dashboards, and forecasting controls are introduced in the "
-        "next staged commits."
+        "Navigation, the typed API connection, and review-gated statement onboarding "
+        "are ready. Transaction dashboards and forecasting controls are introduced "
+        "in the next staged commits."
     )
 
 
@@ -81,13 +82,22 @@ def selected_navigation_item(title: str) -> NavigationItem:
     return next(item for item in NAVIGATION_ITEMS if item.title == title)
 
 
-def render_application_page(item: NavigationItem, *, base_url: str) -> None:
+def render_application_page(
+    item: NavigationItem,
+    *,
+    base_url: str,
+    session: FrontendSessionState,
+) -> FrontendSessionState:
     """Render the selected shell page while opening the API only when required."""
     if item.page_id is PageId.HOME:
         with ApiClient(base_url) as client:
             render_home(client)
-        return
+        return session
+    if item.page_id is PageId.IMPORT:
+        with ApiClient(base_url) as client:
+            return render_import_page(client, session)
     render_placeholder(item)
+    return session
 
 
 def main() -> None:
@@ -114,16 +124,18 @@ def main() -> None:
     )
     st.sidebar.caption("Private, local and single-user by design.")
     selected = selected_navigation_item(selected_title)
-    save_session_state(
-        st.session_state,
-        FrontendSessionState(
-            selected_page=selected.page_id,
-            user_profile_id=current.user_profile_id,
-            account_id=current.account_id,
-            privacy_notice_seen=True,
-        ),
+    selected_state = FrontendSessionState(
+        selected_page=selected.page_id,
+        user_profile_id=current.user_profile_id,
+        account_id=current.account_id,
+        privacy_notice_seen=True,
     )
-    render_application_page(selected, base_url=api_base_url(settings))
+    updated = render_application_page(
+        selected,
+        base_url=api_base_url(settings),
+        session=selected_state,
+    )
+    save_session_state(st.session_state, updated)
 
 
 if __name__ == "__main__":  # pragma: no cover - Streamlit script entry point

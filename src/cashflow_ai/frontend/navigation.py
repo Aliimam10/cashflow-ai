@@ -36,7 +36,7 @@ NAVIGATION_ITEMS = (
         page_id=PageId.IMPORT,
         title="Import statements",
         icon="📄",
-        summary="Account setup and review-gated CSV/PDF import arrive in Commit 33.",
+        summary="Set up local accounts and review CSV, digital-PDF, or OCR extraction.",
     ),
     NavigationItem(
         page_id=PageId.TRANSACTIONS,

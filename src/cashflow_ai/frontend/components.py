@@ -19,7 +19,10 @@ def loading_state(message: str) -> Iterator[None]:
 
 def render_error(error: ApiClientError) -> None:
     """Display only the client's controlled message and error identity."""
-    st.error(f"{error} · code: `{error.code.value}`")
+    identity = error.code.value
+    if error.problem_code is not None:
+        identity = f"{identity}/{error.problem_code}"
+    st.error(f"{error} · code: `{identity}`")
 
 
 def render_empty_state(title: str, guidance: str) -> None:

@@ -26,10 +26,10 @@ fraud. A loopback-only FastAPI boundary now exposes profile/account setup, safe
 statement preview and confirmation, verified transactions, categorisation and
 financial-role review, analytics, recurrence, forecasting, anomaly detection,
 budgets, goals, scenarios, data freshness, and model information. PDF persistence
-remains absent; a first Streamlit navigation shell and typed local API client are now
-implemented.
-Statement setup/import screens, transaction dashboards, forecast/planning screens,
-alert persistence, and production model lifecycle management are not implemented yet.
+remains absent. The Streamlit frontend now provides local profile and account setup
+plus review-gated CSV, digital-PDF, and scanned-PDF workflows over its typed API
+client. Transaction dashboards, forecast/planning screens, alert persistence, and
+production model lifecycle management are not implemented yet.
 
 ## Problem
 
@@ -69,8 +69,9 @@ Relational database
 Version 1 uses SQLite locally and in the Docker environment. PostgreSQL is
 postponed until the local single-user application is complete. The FastAPI
 ingestion and decision-support boundary is implemented. The Streamlit frontend now
-provides local navigation, shared display states, and backend readiness information;
-later staged commits will add its workflows without moving business logic into pages.
+provides local navigation, shared display states, backend readiness, account
+onboarding, and statement review/confirmation without moving business logic into
+pages.
 
 ### Planned statement import
 
@@ -369,15 +370,16 @@ To inspect the local API interactively, run `make db-upgrade`, then `make api`,
 and open `http://127.0.0.1:8000/docs`. See
 [`docs/api.md`](docs/api.md) for the route contracts and current limitations.
 
-To inspect the first user-facing shell, keep `make api` running in one terminal,
+To inspect the local interface, keep `make api` running in one terminal,
 then run the following in a second terminal and open `http://127.0.0.1:8501`:
 
 ```bash
 make ui
 ```
 
-The home page reports local API/database readiness. The other navigation entries are
-deliberately labelled placeholders for the next interface commits. See
+The home page reports local API/database readiness. **Import statements** provides
+account setup and review-gated CSV/PDF workflows; the transaction and forecast
+destinations remain deliberate placeholders. See
 [`docs/frontend.md`](docs/frontend.md) for the exact manual check and privacy boundary.
 
 ## Privacy
@@ -447,11 +449,10 @@ confirmed CSV imports, verified transactions, categorisation and financial-role
 decisions, coverage-aware analytics, recurrence, forecasting, anomaly detection,
 budgets, goals, scenario comparisons, derived-data freshness, and model information
 with bounded pagination and generated OpenAPI documentation. PDF approval is still
-returned only in memory. Streamlit navigation, its typed API client, a home/status
-page, data-minimised session state, common loading/error/empty states, the privacy
-notice, and forecast disclaimer are now implemented. The next stage adds account
-setup and review-gated statement import; later stages complete the transaction,
-forecast, planning, deployment, and release interfaces.
+returned only in memory. Streamlit navigation, its typed API client, home/status,
+data-minimised session state, profile/account setup, and review-gated CSV/PDF import
+are now implemented. The next stage adds transaction review and the first dashboard;
+later stages complete forecast, planning, deployment, and release interfaces.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

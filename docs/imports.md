@@ -142,11 +142,10 @@ before this boundary. Their original values and verified `balance_after` values
 remain preserved; silently manufacturing new historical records during a read
 would break auditability.
 
-Any unexpected database error rolls back the complete import. There is still no
-upload interface or row-review screen; those presentation layers will call this
-service later. The PDF confirmation/persistence workflow remains a future stage
-and must reuse the confirmation and preservation safeguards rather than
-bypassing them.
+Any unexpected database error rolls back the complete import. The Streamlit import
+page now calls this boundary after a preview, mapping, statement-context review, and
+explicit exact-file confirmation. PDF persistence remains a future stage and must
+reuse the confirmation and preservation safeguards rather than bypassing them.
 
 ## Implemented embedded-text PDF extraction
 
@@ -289,5 +288,23 @@ absence of PDF persistence into an implicit database write.
 
 This stateless design costs repeated extraction, especially for OCR, but avoids a
 private server-side upload cache and prevents client-edited preview JSON from becoming
-trusted source evidence. A later UI may keep its own visible preview state, but trust
-still comes from the exact document and explicit approval checked by the backend.
+trusted source evidence. The Streamlit page renders the returned review for the
+current interaction without copying it into application session state. Trust still
+comes from the exact document and explicit approval checked by the backend.
+
+## Implemented Streamlit import workflow
+
+The import page creates or selects local profile/account metadata, then routes CSV,
+digital PDF, or scanned/camera PDF bytes through the typed API client. CSV users can
+inspect preserved preview rows, correct the proposed column mapping, describe
+complete, gapped, partial, or unknown coverage, supply optional reported balances,
+add structured flags and an inert note, and explicitly confirm the exact file before
+persistence.
+
+PDF users see coverage, extracted balances, reconciliation state, document issues,
+and confidence/reason fields. Every targeted uncertain row must be confirmed or
+rejected; editable canonical fields remain separate from original extraction values.
+Statement-level gates cover date interpretation, debit/credit signs, balance evidence,
+coverage, reconciliation mismatch, and final approval. The result truthfully reports
+that approval is in memory and not saved. The page does not add a PDF persistence
+shortcut or present OCR confidence as proof of correctness.

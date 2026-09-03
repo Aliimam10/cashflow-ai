@@ -3,20 +3,39 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from enum import StrEnum
 from types import TracebackType
-from urllib.parse import urlsplit
+from urllib.parse import quote, urlsplit
 
 import httpx2
 from pydantic import BaseModel
 
 from cashflow_ai.config import Settings
 from cashflow_ai.schemas.api import (
+    AccountCreate,
+    AccountResponse,
     ApiProblem,
     HealthResponse,
+    OcrStatusResponse,
+    Page,
+    PdfSourceType,
     ReadinessResponse,
+    UserProfileCreate,
     UserProfileResponse,
 )
+from cashflow_ai.schemas.csv_imports import (
+    CsvImportConfirmation,
+    CsvImportPlan,
+    CsvImportSummary,
+    CsvPreview,
+)
+from cashflow_ai.schemas.reconciliation import (
+    ApprovedStatement,
+    StatementApproval,
+    StatementReview,
+)
+from cashflow_ai.schemas.transactions import Currency
 
 
 class ApiClientErrorCode(StrEnum):
@@ -46,6 +65,15 @@ class ApiClientError(RuntimeError):
         self.code = code
         self.status_code = status_code
         self.problem_code = problem_code
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class UploadedDocument:
+    """Ephemeral upload bytes that must never be placed in session state or logs."""
+
+    filename: str
+    content: bytes
+    mime_type: str
 
 
 def api_base_url(settings: Settings) -> str:
@@ -97,6 +125,15 @@ def _validate_path(path: str) -> None:
         )
 
 
+def _path_segment(value: str) -> str:
+    if not value or len(value) > 255:
+        raise ApiClientError(
+            ApiClientErrorCode.INVALID_REQUEST_PATH,
+            "the API record identifier is invalid",
+        )
+    return quote(value, safe="")
+
+
 class ApiClient:
     """Synchronous typed client for the loopback-only Version 1 API."""
 
@@ -146,15 +183,36 @@ class ApiClient:
         *,
         params: Mapping[str, str | int] | None = None,
         body: BaseModel | None = None,
+        form: Mapping[str, str] | None = None,
+        document: UploadedDocument | None = None,
+        request_timeout_seconds: float | None = None,
         accepted_statuses: frozenset[int] = frozenset(),
     ) -> ResponseT:
         _validate_path(path)
+        files = (
+            None
+            if document is None
+            else {
+                "file": (
+                    document.filename,
+                    document.content,
+                    document.mime_type,
+                )
+            }
+        )
         try:
             response = self._client.request(
                 method,
                 path,
                 params=params,
                 json=None if body is None else body.model_dump(mode="json"),
+                data=form,
+                files=files,
+                timeout=(
+                    httpx2.USE_CLIENT_DEFAULT
+                    if request_timeout_seconds is None
+                    else request_timeout_seconds
+                ),
             )
         except httpx2.TimeoutException as error:
             raise ApiClientError(
@@ -223,10 +281,119 @@ class ApiClient:
         """Read the current local profile without exposing raw financial data."""
         return self.get("/api/v1/profiles/current", UserProfileResponse)
 
+    def create_profile(self, request: UserProfileCreate) -> UserProfileResponse:
+        """Create the single local profile."""
+        return self.post("/api/v1/profiles", request, UserProfileResponse)
+
+    def list_accounts(self, profile_id: str) -> Page[AccountResponse]:
+        """List local accounts owned by one profile."""
+        return self.get(
+            f"/api/v1/profiles/{_path_segment(profile_id)}/accounts",
+            Page[AccountResponse],
+            params={"limit": 100, "offset": 0},
+        )
+
+    def create_account(
+        self,
+        profile_id: str,
+        request: AccountCreate,
+    ) -> AccountResponse:
+        """Create current/checking or savings account metadata."""
+        return self.post(
+            f"/api/v1/profiles/{_path_segment(profile_id)}/accounts",
+            request,
+            AccountResponse,
+        )
+
+    def ocr_status(self) -> OcrStatusResponse:
+        """Report whether local Tesseract OCR is available."""
+        return self.get("/api/v1/ocr/status", OcrStatusResponse)
+
+    def preview_csv(self, document: UploadedDocument) -> CsvPreview:
+        """Return a bounded structural preview without persistence."""
+        return self._request(
+            "POST",
+            "/api/v1/imports/csv/preview",
+            CsvPreview,
+            document=document,
+            request_timeout_seconds=30.0,
+        )
+
+    def confirm_csv(
+        self,
+        document: UploadedDocument,
+        *,
+        plan: CsvImportPlan,
+        confirmation: CsvImportConfirmation,
+    ) -> CsvImportSummary:
+        """Re-send exact bytes with explicit mapping and confirmation."""
+        return self._request(
+            "POST",
+            "/api/v1/imports/csv/confirm",
+            CsvImportSummary,
+            form={
+                "plan_json": plan.model_dump_json(),
+                "confirmation_json": confirmation.model_dump_json(),
+            },
+            document=document,
+            request_timeout_seconds=30.0,
+        )
+
+    def prepare_pdf_review(
+        self,
+        document: UploadedDocument,
+        *,
+        source_type: PdfSourceType,
+        account_id: str,
+        account_currency: Currency,
+        ocr_confidence_threshold: float,
+    ) -> StatementReview:
+        """Re-extract one PDF into a targeted, non-persistent review."""
+        return self._request(
+            "POST",
+            "/api/v1/imports/pdf/review",
+            StatementReview,
+            form={
+                "source_type": source_type.value,
+                "account_id": account_id,
+                "account_currency": account_currency.value,
+                "ocr_confidence_threshold": str(ocr_confidence_threshold),
+            },
+            document=document,
+            request_timeout_seconds=120.0,
+        )
+
+    def confirm_pdf(
+        self,
+        document: UploadedDocument,
+        *,
+        source_type: PdfSourceType,
+        account_id: str,
+        account_currency: Currency,
+        ocr_confidence_threshold: float,
+        approval: StatementApproval,
+    ) -> ApprovedStatement:
+        """Apply explicit approval after server-side re-extraction."""
+        return self._request(
+            "POST",
+            "/api/v1/imports/pdf/confirm",
+            ApprovedStatement,
+            form={
+                "source_type": source_type.value,
+                "account_id": account_id,
+                "account_currency": account_currency.value,
+                "ocr_confidence_threshold": str(ocr_confidence_threshold),
+                "approval_json": approval.model_dump_json(),
+            },
+            document=document,
+            request_timeout_seconds=120.0,
+        )
+
 
 __all__ = [
     "ApiClient",
     "ApiClientError",
     "ApiClientErrorCode",
+    "UploadedDocument",
     "api_base_url",
 ]

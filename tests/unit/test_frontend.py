@@ -8,8 +8,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import cashflow_ai.frontend.app as app
+import cashflow_ai.frontend.cli as cli
+import cashflow_ai.frontend.components as components
 from cashflow_ai.config import Environment, LogFormat, Settings
-from cashflow_ai.frontend import app, cli, components
 from cashflow_ai.frontend.client import ApiClientError, ApiClientErrorCode
 from cashflow_ai.frontend.navigation import (
     NAVIGATION_ITEMS,
@@ -102,14 +104,25 @@ def test_common_display_states_use_only_controlled_copy(
     with components.loading_state("Checking synthetic service…"):
         pass
     components.render_error(error)
+    components.render_error(
+        ApiClientError(
+            ApiClientErrorCode.API_REJECTED_REQUEST,
+            "the local API rejected the request",
+            problem_code="synthetic_problem",
+        )
+    )
     components.render_empty_state("No fictional rows", "Import synthetic data.")
     components.render_privacy_notice()
     components.render_forecast_disclaimer()
 
     ui.spinner.assert_called_once_with("Checking synthetic service…")
-    ui.error.assert_called_once_with(
+    assert ui.error.call_args_list[0].args == (
         "the local API is unavailable; start it and try again · "
-        "code: `connection_failed`"
+        "code: `connection_failed`",
+    )
+    assert ui.error.call_args_list[1].args == (
+        "the local API rejected the request · "
+        "code: `api_rejected_request/synthetic_problem`",
     )
     assert ui.info.call_count == 2
     ui.warning.assert_called_once()
@@ -197,7 +210,7 @@ def test_placeholder_is_truthful_and_forecast_warning_stays_visible(
     assert disclaimer.called is expects_disclaimer
 
 
-def test_page_dispatch_opens_api_only_for_home(
+def test_page_dispatch_opens_api_for_home_and_import(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = MagicMock()
@@ -205,21 +218,37 @@ def test_page_dispatch_opens_api_only_for_home(
     context.__enter__.return_value = client
     client_factory = MagicMock(return_value=context)
     home = MagicMock()
+    import_page = MagicMock(return_value=FrontendSessionState(account_id="account-1"))
     placeholder = MagicMock()
     monkeypatch.setattr(app, "ApiClient", client_factory)
     monkeypatch.setattr(app, "render_home", home)
+    monkeypatch.setattr(app, "render_import_page", import_page)
     monkeypatch.setattr(app, "render_placeholder", placeholder)
+    session = FrontendSessionState()
 
-    app.render_application_page(
-        navigation_item(PageId.HOME), base_url="http://127.0.0.1:8765"
+    home_result = app.render_application_page(
+        navigation_item(PageId.HOME),
+        base_url="http://127.0.0.1:8765",
+        session=session,
     )
-    app.render_application_page(
-        navigation_item(PageId.TRANSACTIONS), base_url="http://127.0.0.1:8765"
+    import_result = app.render_application_page(
+        navigation_item(PageId.IMPORT),
+        base_url="http://127.0.0.1:8765",
+        session=session,
+    )
+    placeholder_result = app.render_application_page(
+        navigation_item(PageId.TRANSACTIONS),
+        base_url="http://127.0.0.1:8765",
+        session=session,
     )
 
-    client_factory.assert_called_once_with("http://127.0.0.1:8765")
+    assert client_factory.call_count == 2
     home.assert_called_once_with(client)
+    import_page.assert_called_once_with(client, session)
     placeholder.assert_called_once_with(navigation_item(PageId.TRANSACTIONS))
+    assert home_result == session
+    assert import_result.account_id == "account-1"
+    assert placeholder_result == session
 
 
 def test_application_main_restores_and_saves_navigation(
@@ -228,7 +257,11 @@ def test_application_main_restores_and_saves_navigation(
     ui = MagicMock()
     ui.session_state = {}
     ui.sidebar.radio.return_value = "Import statements"
-    rendered = MagicMock()
+    rendered = MagicMock(
+        side_effect=lambda item, base_url, session: session.model_copy(
+            update={"account_id": "account-1"}
+        )
+    )
     monkeypatch.setattr(app, "st", ui)
     monkeypatch.setattr(app, "load_settings", _settings)
     monkeypatch.setattr(app, "render_application_page", rendered)
@@ -242,9 +275,15 @@ def test_application_main_restores_and_saves_navigation(
         index=0,
     )
     assert ui.session_state[SESSION_KEY]["selected_page"] == "import"
+    assert ui.session_state[SESSION_KEY]["account_id"] == "account-1"
     assert ui.session_state[SESSION_KEY]["privacy_notice_seen"] is True
     rendered.assert_called_once_with(
-        navigation_item(PageId.IMPORT), base_url="http://127.0.0.1:8765"
+        navigation_item(PageId.IMPORT),
+        base_url="http://127.0.0.1:8765",
+        session=FrontendSessionState(
+            selected_page=PageId.IMPORT,
+            privacy_notice_seen=True,
+        ),
     )
 
 

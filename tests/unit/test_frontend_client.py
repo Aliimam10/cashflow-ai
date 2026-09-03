@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import UTC, date, datetime
+from decimal import Decimal
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -14,9 +16,27 @@ from cashflow_ai.frontend.client import (
     ApiClient,
     ApiClientError,
     ApiClientErrorCode,
+    UploadedDocument,
     api_base_url,
 )
-from cashflow_ai.schemas.api import HealthResponse
+from cashflow_ai.schemas.accounts import AccountType
+from cashflow_ai.schemas.api import (
+    AccountCreate,
+    HealthResponse,
+    PdfSourceType,
+    UserProfileCreate,
+)
+from cashflow_ai.schemas.csv_imports import (
+    CsvColumnMapping,
+    CsvImportConfirmation,
+    CsvImportPlan,
+)
+from cashflow_ai.schemas.reconciliation import StatementApproval
+from cashflow_ai.schemas.statements import (
+    CoverageStatus,
+    ImportContext,
+    StatementCoverage,
+)
 
 
 class ExampleRequest(BaseModel):
@@ -93,6 +113,278 @@ def test_client_reads_typed_status_profile_and_json_post() -> None:
     assert queried.status == "ok"
     assert requests[-1].url.query == b"limit=1"
     assert b"fictional" in requests[-2].content
+
+
+def test_client_supports_onboarding_and_review_gated_upload_contracts() -> None:
+    requests: list[httpx2.Request] = []
+    profile = {
+        "profile_id": "synthetic-profile",
+        "display_name": "Fictional User",
+        "base_currency": "GBP",
+        "timezone": "UTC",
+        "created_at": "2026-08-01T12:00:00Z",
+        "updated_at": "2026-08-01T12:00:00Z",
+    }
+    account = {
+        "account_id": "synthetic-account",
+        "user_profile_id": "synthetic-profile",
+        "name": "Fictional Current",
+        "account_type": "current",
+        "currency": "GBP",
+        "institution_label": "Example Bank",
+        "is_active": True,
+        "created_at": "2026-08-01T12:00:00Z",
+    }
+    review = {
+        "file_hash": "a" * 64,
+        "source_type": "digital_pdf",
+        "statement_coverage": None,
+        "balances": None,
+        "balance_evidence": [],
+        "document_issues": [],
+        "rows": [
+            {
+                "source_identity": {
+                    "source_type": "digital_pdf",
+                    "source_document_hash": "a" * 64,
+                    "source_row_number": None,
+                    "page_number": 1,
+                    "page_record_number": 1,
+                },
+                "source_fingerprint": "b" * 64,
+                "original": {
+                    "transaction_date_text": "2026-08-01",
+                    "description_text": "SYNTHETIC SHOP",
+                    "signed_amount_text": "-10.00",
+                    "debit_amount_text": None,
+                    "credit_amount_text": None,
+                    "posting_date_text": None,
+                    "running_balance_text": None,
+                    "currency_text": None,
+                    "external_id_text": None,
+                    "transaction_type_text": None,
+                    "raw_fields": [{"column": "Date", "value": "2026-08-01"}],
+                },
+                "extracted_draft": {
+                    "transaction_date": "2026-08-01",
+                    "description": "SYNTHETIC SHOP",
+                    "amount": "-10.00",
+                    "currency": "GBP",
+                    "account_id": "synthetic-account",
+                    "direction": "outflow",
+                },
+                "working_draft": {
+                    "transaction_date": "2026-08-01",
+                    "description": "SYNTHETIC SHOP",
+                    "amount": "-10.00",
+                    "currency": "GBP",
+                    "account_id": "synthetic-account",
+                    "direction": "outflow",
+                },
+                "provenance": {
+                    "source_type": "digital_pdf",
+                    "method": "pdf_text",
+                    "page_number": 1,
+                },
+                "source_line_numbers": [],
+                "field_confidences": [],
+                "issues": [],
+                "review_reasons": [],
+            }
+        ],
+        "reconciliation": {
+            "status": "unavailable",
+            "opening_balance": None,
+            "signed_transaction_total": "-10.00",
+            "expected_closing_balance": None,
+            "closing_balance": None,
+            "unexplained_difference": None,
+            "tolerance": "0.01",
+            "unusable_transaction_count": 0,
+        },
+        "ocr_confidence_threshold": 0.85,
+        "requires_date_format_confirmation": False,
+        "requires_debit_credit_sign_confirmation": False,
+        "requires_statement_approval": True,
+    }
+    approved = {
+        "file_hash": "a" * 64,
+        "source_type": "digital_pdf",
+        "approved_at": "2026-08-02T12:00:00Z",
+        "date_format": None,
+        "sign_convention": None,
+        "statement_coverage": None,
+        "coverage_was_edited": False,
+        "balances": None,
+        "balance_evidence": [],
+        "balance_was_edited": False,
+        "document_issues": [],
+        "rows": [],
+        "rejected_rows": [],
+        "rejected_source_fingerprints": [],
+        "reconciliation": review["reconciliation"],
+    }
+
+    def handler(request: httpx2.Request) -> httpx2.Response:
+        requests.append(request)
+        path = request.url.path
+        if path == "/api/v1/profiles":
+            return httpx2.Response(201, json=profile)
+        if path.endswith("/accounts") and request.method == "GET":
+            return httpx2.Response(
+                200,
+                json={"items": [account], "limit": 100, "offset": 0, "total": 1},
+            )
+        if path.endswith("/accounts"):
+            return httpx2.Response(201, json=account)
+        if path == "/api/v1/ocr/status":
+            return httpx2.Response(
+                200,
+                json={
+                    "engine": "tesseract",
+                    "execution": "local_only",
+                    "available": True,
+                    "message": "local Tesseract OCR is available",
+                },
+            )
+        if path.endswith("/csv/preview"):
+            return httpx2.Response(
+                200,
+                json={
+                    "source_filename": "synthetic.csv",
+                    "byte_size": 40,
+                    "file_hash": "a" * 64,
+                    "encoding": "utf-8",
+                    "delimiter": ",",
+                    "columns": ["Date", "Description", "Amount"],
+                    "rows": [
+                        {
+                            "source_row_number": 2,
+                            "values": ["2026-08-01", "SYNTHETIC SHOP", "-10.00"],
+                        }
+                    ],
+                    "total_data_rows": 1,
+                    "truncated": False,
+                    "suggestions": {
+                        "transaction_date": ["Date"],
+                        "description": ["Description"],
+                        "signed_amount": ["Amount"],
+                    },
+                },
+            )
+        if path.endswith("/csv/confirm"):
+            return httpx2.Response(
+                200,
+                json={
+                    "import_batch_id": "synthetic-batch",
+                    "file_hash": "a" * 64,
+                    "rows_read": 1,
+                    "new_transactions": 1,
+                    "exact_duplicates_skipped": 0,
+                    "probable_duplicates": 0,
+                    "rejected_rows": 0,
+                    "coverage": {"previous_statement_count": 0},
+                },
+            )
+        if path.endswith("/pdf/review"):
+            return httpx2.Response(200, json=review)
+        assert path.endswith("/pdf/confirm")
+        return httpx2.Response(200, json=approved)
+
+    document = UploadedDocument(
+        filename="synthetic.csv",
+        content=b"Date,Description,Amount\n2026-08-01,SYNTHETIC SHOP,-10.00\n",
+        mime_type="text/csv",
+    )
+    client = ApiClient(
+        "http://127.0.0.1:8765",
+        transport=httpx2.MockTransport(handler),
+    )
+    created_profile = client.create_profile(UserProfileCreate(timezone="UTC"))
+    accounts = client.list_accounts("synthetic-profile")
+    created_account = client.create_account(
+        "synthetic-profile",
+        AccountCreate(name="Fictional Current", account_type=AccountType.CURRENT),
+    )
+    ocr = client.ocr_status()
+    preview = client.preview_csv(document)
+    plan = CsvImportPlan(
+        account_id="synthetic-account",
+        statement_context=ImportContext(
+            account_id="synthetic-account",
+            coverage=StatementCoverage(
+                statement_start_date=date(2026, 8, 1),
+                statement_end_date=date(2026, 8, 31),
+                status=CoverageStatus.COMPLETE,
+            ),
+        ),
+        mapping=CsvColumnMapping(
+            transaction_date_column="Date",
+            description_column="Description",
+            signed_amount_column="Amount",
+        ),
+    )
+    summary = client.confirm_csv(
+        document,
+        plan=plan,
+        confirmation=CsvImportConfirmation(
+            preview_file_hash="a" * 64,
+            user_confirmed=True,
+            confirmed_at=datetime(2026, 8, 2, tzinfo=UTC),
+        ),
+    )
+    pdf_document = UploadedDocument(
+        filename="synthetic.pdf",
+        content=b"%PDF-synthetic",
+        mime_type="application/pdf",
+    )
+    prepared = client.prepare_pdf_review(
+        pdf_document,
+        source_type=PdfSourceType.DIGITAL_PDF,
+        account_id="synthetic-account",
+        account_currency=created_account.currency,
+        ocr_confidence_threshold=0.85,
+    )
+    confirmed = client.confirm_pdf(
+        pdf_document,
+        source_type=PdfSourceType.DIGITAL_PDF,
+        account_id="synthetic-account",
+        account_currency=created_account.currency,
+        ocr_confidence_threshold=0.85,
+        approval=StatementApproval(
+            file_hash="a" * 64,
+            approved_at=datetime(2026, 8, 2, tzinfo=UTC),
+            statement_approved=True,
+        ),
+    )
+    client.close()
+
+    assert created_profile.profile_id == "synthetic-profile"
+    assert accounts.items == (created_account,)
+    assert ocr.available is True
+    assert preview.rows[0].values[1] == "SYNTHETIC SHOP"
+    assert summary.new_transactions == 1
+    assert prepared.rows[0].working_draft.amount == Decimal("-10.00")
+    assert confirmed.rows == ()
+    assert all(
+        "multipart/form-data" in request.headers["content-type"]
+        for request in requests[4:]
+    )
+    assert "SYNTHETIC SHOP" not in repr(document)
+
+
+def test_client_rejects_empty_or_oversized_record_identifiers() -> None:
+    client = ApiClient(
+        "http://127.0.0.1:8000",
+        transport=httpx2.MockTransport(
+            lambda request: httpx2.Response(200, json={}, request=request)
+        ),
+    )
+    for value in ("", "x" * 256):
+        with pytest.raises(ApiClientError) as error:
+            client.list_accounts(value)
+        assert error.value.code is ApiClientErrorCode.INVALID_REQUEST_PATH
+    client.close()
 
 
 def test_client_context_manager_closes_connections(

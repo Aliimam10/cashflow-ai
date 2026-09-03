@@ -1,4 +1,4 @@
-.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import check-ocr api ui demo-api demo-data demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade
+.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import check-ocr api ui demo-api demo-data demo-statements demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade
 
 setup:
 	uv sync --dev
@@ -43,6 +43,9 @@ demo-api:
 
 demo-data:
 	uv run python scripts/generate_demo_data.py --profile all
+
+demo-statements:
+	uv run python scripts/generate_demo_statements.py
 
 demo-recurrence:
 	uv run python scripts/demo_recurrence.py

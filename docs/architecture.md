@@ -589,6 +589,9 @@ schema failures into controlled display-safe errors without echoing URLs, respon
 bodies, raw statements, or local paths.
 
 The home page owns no financial calculation. It displays API and database readiness,
-the local privacy boundary, and the forecast disclaimer. Navigation destinations for
-statement import, transactions/analytics, and forecast/planning are truthful empty
-states until their dedicated commits add thin pages over the existing API.
+the local privacy boundary, and the forecast disclaimer. The import page now composes
+profile/account setup and review-gated CSV/PDF forms over typed API requests. CSV
+confirmation delegates its atomic write to the backend. PDF review sends the exact
+document again and receives a non-persistent approved result; neither the page nor its
+session state becomes a source of trusted transaction data. Transactions/analytics
+and forecast/planning remain truthful empty states until their dedicated commits.
