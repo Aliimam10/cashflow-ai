@@ -70,6 +70,7 @@ digital-PDF use must not fail merely because Tesseract is absent.
 | `GET /api/v1/accounts/{account_id}/financial-revision` | Read the source-data revision | None |
 | `GET /api/v1/accounts/{account_id}/derived-freshness` | Read current, stale, or unavailable derived states | None |
 | `POST /api/v1/recurring/detect` | Refresh cutoff-safe recurring candidates | Candidates and freshness metadata |
+| `GET /api/v1/profiles/{profile_id}/recurring` | List persisted candidates without rerunning detection | None |
 | `POST /api/v1/recurring/reviews` | Confirm or cancel one recurring candidate | Explicit review state |
 | `GET /api/v1/categories` | List the persisted category taxonomy | None |
 | `GET /api/v1/profiles/{profile_id}/categorisation/reviews` | List low-confidence category decisions | None |

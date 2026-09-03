@@ -30,6 +30,7 @@ from cashflow_ai.recurrence import (
     RecurrenceServiceError,
     RecurrenceServiceErrorCode,
     detect_recurring_payments,
+    list_recurring_payment_candidates,
     review_recurring_payment,
 )
 from cashflow_ai.schemas import (
@@ -119,6 +120,34 @@ def _coverage(
                 missing_periods_json=missing or [],
             )
         )
+
+
+def test_lists_persisted_candidates_without_refreshing_and_checks_ownership(
+    factory: sessionmaker[Session],
+) -> None:
+    assert list_recurring_payment_candidates(factory, user_profile_id="profile-1") == ()
+    _series(
+        factory,
+        "Synthetic Listed Series",
+        (date(2026, 6, 1), date(2026, 7, 1), date(2026, 8, 1)),
+    )
+    detected = detect_recurring_payments(
+        factory,
+        user_profile_id="profile-1",
+        as_of_date=date(2026, 8, 2),
+        knowledge_cutoff_at=NOW,
+        policy=POLICY,
+    )
+
+    listed = list_recurring_payment_candidates(
+        factory,
+        user_profile_id="profile-1",
+    )
+
+    assert listed == detected
+    with pytest.raises(RecurrenceServiceError) as error:
+        list_recurring_payment_candidates(factory, user_profile_id="missing-profile")
+    assert error.value.code is RecurrenceServiceErrorCode.PROFILE_NOT_FOUND
 
 
 @pytest.mark.parametrize(

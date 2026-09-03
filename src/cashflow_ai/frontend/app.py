@@ -15,6 +15,7 @@ from cashflow_ai.frontend.components import (
     render_forecast_disclaimer,
     render_privacy_notice,
 )
+from cashflow_ai.frontend.forecast_page import render_forecast_page
 from cashflow_ai.frontend.import_page import render_import_page
 from cashflow_ai.frontend.navigation import NAVIGATION_ITEMS, NavigationItem, PageId
 from cashflow_ai.frontend.session import (
@@ -66,7 +67,7 @@ def render_home(client: StatusApi) -> None:
     st.write(
         "Review-gated statement onboarding, transaction corrections, duplicate and "
         "financial-role review, and coverage-aware dashboards are ready. Forecasting "
-        "controls are introduced in the next staged commit."
+        "and uncertainty-aware recurring and forecasting controls are ready."
     )
 
 
@@ -100,8 +101,8 @@ def render_application_page(
     if item.page_id is PageId.TRANSACTIONS:
         with ApiClient(base_url) as client:
             return render_transaction_page(client, session)
-    render_placeholder(item)
-    return session
+    with ApiClient(base_url) as client:
+        return render_forecast_page(client, session)
 
 
 def main() -> None:

@@ -95,6 +95,7 @@ def test_all_decision_routes_delegate_to_application_services(
         "financial_revision",
         "page_derived_freshness",
         "refresh_recurring_payments",
+        "page_recurring_payments",
         "review_recurrence",
         "page_categories",
         "page_category_reviews",
@@ -127,6 +128,7 @@ def test_all_decision_routes_delegate_to_application_services(
         routes.financial_revision_route("account", factory),
         routes.derived_freshness_route("account", factory, pagination),
         routes.detect_recurring_route(request, factory, pagination),
+        routes.recurring_candidates_route("profile", factory, pagination),
         routes.review_recurring_route(request, factory),
         routes.categories_route(factory, pagination),
         routes.category_reviews_route("profile", factory, pagination),
@@ -228,6 +230,16 @@ def test_decision_services_delegate_and_preserve_revision_boundaries(
     )
     assert cast(Any, recurring).items == ("first",)
     assert recurring.total == 2
+    monkeypatch.setattr(
+        services,
+        "list_recurring_payment_candidates",
+        MagicMock(return_value=(result,)),
+    )
+    assert services.page_recurring_payments(
+        factory,
+        user_profile_id="synthetic-profile",
+        pagination=pagination,
+    ).items == (result,)
     monkeypatch.setattr(
         services, "review_recurring_payment", MagicMock(return_value=result)
     )

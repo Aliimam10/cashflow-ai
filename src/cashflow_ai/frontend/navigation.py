@@ -51,9 +51,7 @@ NAVIGATION_ITEMS = (
         page_id=PageId.FORECAST_AND_PLANNING,
         title="Forecast & planning",
         icon="📈",
-        summary=(
-            "Forecasts, budgets, goals, scenarios, and anomalies arrive in Commit 35."
-        ),
+        summary=("Review recurring payments and inspect uncertainty-aware forecasts."),
     ),
 )
 

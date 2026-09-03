@@ -30,6 +30,7 @@ from cashflow_ai.api.decision_services import (
     page_financial_role_audits,
     page_financial_role_reviews,
     page_models,
+    page_recurring_payments,
     refresh_recurring_payments,
     reject_role_suggestion,
     review_recurrence,
@@ -174,6 +175,25 @@ def detect_recurring_route(
 ) -> Page[RecurringPaymentCandidate]:
     """Detect point-in-time candidates without inferring user confirmation."""
     return refresh_recurring_payments(factory, request=request, pagination=pagination)
+
+
+@router.get(
+    "/profiles/{profile_id}/recurring",
+    response_model=Page[RecurringPaymentCandidate],
+    tags=["recurring"],
+    summary="List recurring payment candidates",
+)
+def recurring_candidates_route(
+    profile_id: str,
+    factory: SessionFactoryDependency,
+    pagination: PaginationDependency,
+) -> Page[RecurringPaymentCandidate]:
+    """List persisted recurrence state without an implicit detection refresh."""
+    return page_recurring_payments(
+        factory,
+        user_profile_id=profile_id,
+        pagination=pagination,
+    )
 
 
 @router.post(
