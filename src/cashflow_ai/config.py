@@ -83,6 +83,8 @@ class _SettingsInput(BaseSettings):
     database_url: str = "sqlite:///data/cashflow.db"
     api_host: str = "127.0.0.1"
     api_port: int = 8000
+    ui_host: str = "127.0.0.1"
+    ui_port: int = 8501
 
 
 class Settings(BaseModel):
@@ -99,6 +101,8 @@ class Settings(BaseModel):
     database_url: str = "sqlite:///data/cashflow.db"
     api_host: str = "127.0.0.1"
     api_port: int = Field(default=8000, ge=1, le=65_535)
+    ui_host: str = "127.0.0.1"
+    ui_port: int = Field(default=8501, ge=1, le=65_535)
 
     @field_validator("log_level")
     @classmethod
@@ -131,12 +135,12 @@ class Settings(BaseModel):
             raise ValueError(msg)
         return value
 
-    @field_validator("api_host")
+    @field_validator("api_host", "ui_host")
     @classmethod
-    def validate_api_host(cls, value: str) -> str:
-        """Keep the unauthenticated Version 1 API bound to the local machine."""
+    def validate_loopback_host(cls, value: str) -> str:
+        """Keep unauthenticated Version 1 services bound to the local machine."""
         if value not in {"127.0.0.1", "localhost", "::1"}:
-            msg = "Version 1 API host must be a loopback address"
+            msg = "Version 1 service host must be a loopback address"
             raise ValueError(msg)
         return value
 
@@ -182,4 +186,6 @@ def load_settings(
         database_url=raw.database_url,
         api_host=raw.api_host,
         api_port=raw.api_port,
+        ui_host=raw.ui_host,
+        ui_port=raw.ui_port,
     )

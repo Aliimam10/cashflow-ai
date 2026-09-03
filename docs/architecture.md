@@ -571,3 +571,24 @@ through the existing leakage-safe services. Planning aligns exactly one ordered
 forecast request with each selected account. Category and financial-role review
 routes preserve their distinct domain boundaries, and collection endpoints share a
 bounded pagination contract.
+
+## Streamlit frontend boundary
+
+`cashflow_ai.frontend` is the first end-user transport shell. The packaged launcher
+binds Streamlit only to a validated loopback host and disables Streamlit usage-stat
+collection. Its navigation metadata and data-minimised session model retain only a
+page selection plus optional profile/account identifiers; uploaded bytes,
+transaction descriptions, financial values, forecasts, and API responses are not
+stored in session state.
+
+Pages do not import repositories or domain services. The synchronous typed API
+client accepts only explicit loopback HTTP addresses and relative paths, ignores
+environment proxy settings, applies a bounded timeout, and validates successful and
+readiness responses against the public API schemas. It translates network, HTTP, and
+schema failures into controlled display-safe errors without echoing URLs, response
+bodies, raw statements, or local paths.
+
+The home page owns no financial calculation. It displays API and database readiness,
+the local privacy boundary, and the forecast disclaimer. Navigation destinations for
+statement import, transactions/analytics, and forecast/planning are truthful empty
+states until their dedicated commits add thin pages over the existing API.

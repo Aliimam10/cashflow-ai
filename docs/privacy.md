@@ -318,3 +318,20 @@ balance paths as trusted client evidence. Only revision/freshness metadata is st
 for calculated responses. Category and financial-role review endpoints return the
 minimum context needed for a local user decision; model-information endpoints expose
 aggregate registry metadata rather than artefacts, feature values, or training rows.
+
+## Local frontend privacy boundary
+
+The Streamlit launcher and API client accept only `127.0.0.1`, `localhost`, or `::1`
+with explicit ports. The client uses plain HTTP only inside that same-machine boundary,
+does not inherit proxy configuration, and never sends requests to an absolute path
+provided by a page. Loopback binding reduces exposure but is not authentication; the
+UI and API must not be published to a local network or the internet.
+
+Streamlit session state stores only the selected page, optional local profile/account
+identifiers, and whether the privacy notice was shown. It must not hold upload bytes,
+raw or verified transaction text, amounts, balances, API payloads, model features, or
+forecast results. Common errors render only controlled client messages and stable
+codes; untrusted API bodies, URLs, source descriptions, and local paths are discarded.
+The home page keeps both the privacy notice and forecast disclaimer visible. The
+current placeholders do not read financial records or imply that unfinished screens
+work.

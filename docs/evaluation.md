@@ -214,3 +214,18 @@ derived freshness, pagination, and removal of its temporary database. API tests
 remain correctness evidence, not proof of compatibility with every bank PDF layout,
 forecast accuracy for a particular user, production security, scale, or network
 deployment.
+
+## Streamlit foundation verification
+
+Commit 32 tests navigation metadata, corrupt-session recovery, data-minimised state,
+the loopback-only typed client, request timeouts, connection failures, controlled API
+errors, malformed successful responses, database-not-ready handling, common loading/
+error/empty states, the forecast disclaimer, home and placeholder rendering, page
+dispatch, and packaged launcher arguments. These tests use no statements or financial
+rows.
+
+The manual verification starts a migrated empty SQLite database, the FastAPI server,
+and Streamlit on loopback. It checks the home title, privacy notice, forecast warning,
+API/database readiness, navigation, and truthful placeholders. This demonstrates the
+transport shell only; it does not establish browser security, statement compatibility,
+forecast quality, accessibility conformance, or a completed user workflow.

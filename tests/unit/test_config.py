@@ -16,6 +16,8 @@ CONFIG_ENVIRONMENT_VARIABLES = (
     "CASHFLOW_DATABASE_URL",
     "CASHFLOW_API_HOST",
     "CASHFLOW_API_PORT",
+    "CASHFLOW_UI_HOST",
+    "CASHFLOW_UI_PORT",
 )
 
 
@@ -39,6 +41,8 @@ def test_development_profile_is_the_default(tmp_path: Path) -> None:
     assert settings.database_url == "sqlite:///data/cashflow.db"
     assert settings.api_host == "127.0.0.1"
     assert settings.api_port == 8000
+    assert settings.ui_host == "127.0.0.1"
+    assert settings.ui_port == 8501
 
 
 @pytest.mark.parametrize(
@@ -78,6 +82,8 @@ def test_environment_variables_override_profile_defaults(
     monkeypatch.setenv("CASHFLOW_DATABASE_URL", "sqlite:///data/test.db")
     monkeypatch.setenv("CASHFLOW_API_HOST", "::1")
     monkeypatch.setenv("CASHFLOW_API_PORT", "8765")
+    monkeypatch.setenv("CASHFLOW_UI_HOST", "localhost")
+    monkeypatch.setenv("CASHFLOW_UI_PORT", "8766")
 
     settings = load_settings(env_file=tmp_path / "missing.env")
 
@@ -89,6 +95,8 @@ def test_environment_variables_override_profile_defaults(
     assert settings.database_url == "sqlite:///data/test.db"
     assert settings.api_host == "::1"
     assert settings.api_port == 8765
+    assert settings.ui_host == "localhost"
+    assert settings.ui_port == 8766
 
 
 def test_explicit_environment_takes_precedence(
@@ -182,6 +190,9 @@ def test_non_sqlite_database_url_is_rejected(
         ("CASHFLOW_API_HOST", "0.0.0.0", "must be a loopback address"),
         ("CASHFLOW_API_PORT", "0", "greater than or equal to 1"),
         ("CASHFLOW_API_PORT", "65536", "less than or equal to 65535"),
+        ("CASHFLOW_UI_HOST", "example.com", "must be a loopback address"),
+        ("CASHFLOW_UI_PORT", "0", "greater than or equal to 1"),
+        ("CASHFLOW_UI_PORT", "65536", "less than or equal to 65535"),
     ],
 )
 def test_unsafe_or_invalid_api_binding_is_rejected(

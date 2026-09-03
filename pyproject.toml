@@ -21,6 +21,7 @@ classifiers = [
 dependencies = [
     "alembic>=1.16,<2",
     "fastapi>=0.141,<1",
+    "httpx2>=2.12,<3",
     "joblib>=1.5,<2",
     "pdfplumber>=0.11,<1",
     "pillow>=11,<13",
@@ -31,10 +32,12 @@ dependencies = [
     "pyyaml>=6,<7",
     "scikit-learn>=1.7,<2",
     "sqlalchemy>=2.0,<3",
+    "streamlit>=1.49,<2",
     "uvicorn>=0.52,<1",
 ]
 
 [project.scripts]
+cashflow-ui = "cashflow_ai.frontend.cli:main"
 cashflow-anomaly-demo = "cashflow_ai.anomalies.demo:main"
 cashflow-forecast-demo = "cashflow_ai.forecasting.demo:main"
 cashflow-forecast-model-demo = "cashflow_ai.forecasting.model_demo:main"
@@ -48,7 +51,6 @@ cashflow-api-demo = "cashflow_ai.api.demo:main"
 
 [dependency-groups]
 dev = [
-    "httpx2>=2.12,<3",
     "mypy>=1.15,<2",
     "pre-commit>=4,<5",
     "pytest>=8.3,<9",

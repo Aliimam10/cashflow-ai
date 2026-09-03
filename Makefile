@@ -1,4 +1,4 @@
-.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import check-ocr api demo-api demo-data demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade
+.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import check-ocr api ui demo-api demo-data demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade
 
 setup:
 	uv sync --dev
@@ -34,6 +34,9 @@ check-ocr:
 
 api:
 	uv run cashflow-api
+
+ui:
+	uv run cashflow-ui
 
 demo-api:
 	uv run cashflow-api-demo
