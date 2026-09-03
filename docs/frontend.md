@@ -12,7 +12,12 @@ boundary. It now provides:
 - digital-PDF extraction and local scanned/camera-PDF OCR review;
 - targeted correction or rejection of uncertain PDF rows, balance and coverage
   confirmation, reconciliation warnings, and final statement approval; and
-- stable navigation placeholders for the transaction and forecast interfaces.
+- a transaction workspace with local search, account/date/category/role filters,
+  explicit category and financial-role corrections, transfer/refund/reimbursement
+  suggestions, and probable-duplicate decisions;
+- coverage and freshness indicators plus observed income, expense, savings,
+  category, cadence, and gap-preserving balance charts; and
+- a stable navigation placeholder for the forecast interface.
 
 The import page does not reproduce parsing or financial logic. Typed form values go
 through the local API client to the existing backend contracts.
@@ -32,6 +37,13 @@ transaction text, amounts, balances, API responses, or forecasts into that state
 an application-managed file cache. Streamlit's upload widget supplies the current
 file to a request; stateless confirmation deliberately sends the exact bytes again
 so the backend can re-extract and verify them.
+
+Transaction searches and dashboard results are requested again on each Streamlit
+rerun; they are not copied into the application-managed session model. Descriptions
+and amounts are necessarily visible in the local workspace, but raw import payloads
+are not returned by its transaction endpoints. Chart conversion from `Decimal` to
+floating point is a presentation-only copy; stored and API money remains fixed
+precision.
 
 CSV confirmation persists an import atomically through the established service. PDF
 approval remains an in-memory result because atomic PDF persistence has not been
@@ -79,6 +91,33 @@ behaviour is a preserved preview followed by an import summary that separately
 counts imported, exact-duplicate, probable-duplicate, and rejected rows. Repeating
 the same file reports a repeated file rather than adding a second import.
 
+Open **Transactions & analytics** after that import. Under the transaction table:
+
+1. Search for a fictional merchant such as `RENT`, then clear it and vary the
+   account, category, financial-role, and date filters. Expected: only matching
+   verified rows appear; raw source payloads never appear.
+2. Choose one row, change its category to another visible category, and save. Then
+   set its financial role to `expense` or `income` as appropriate and save. Expected:
+   both changes survive refresh, the role change has an audit trail in the backend,
+   and the preserved raw import row is unchanged.
+3. In **Review suggestions**, refresh role suggestions. Confirm or reject only a
+   clearly fictional transfer/refund/reimbursement. Expected: scanning alone changes
+   no role; only confirmation applies the suggested role.
+4. Review a probable duplicate from the generated data when one is listed. Choose
+   **Keep as a separate transaction** only when the dates represent two real
+   fictional purchases, or **Reject as duplicate** otherwise. Expected: the queue
+   removes the decision while the source row stays preserved. A legacy row without a
+   retained candidate can be rejected but must be re-imported before it can be kept.
+5. In **Dashboard**, select the imported account and its exact statement dates.
+   Expected: a coverage timeline labels known and missing dates; freshness reports
+   `active forecasting` only when every displayed policy passes; missing dates break
+   balance lines; headline values say `Observed` unless coverage is complete.
+
+Safe values to vary are the fictional search text, category/role choice, dashboard
+accounts and statement-contained dates. Corrections are real local database writes,
+so regenerate a disposable local database if you want to repeat the test from a
+known state.
+
 For the digital-PDF workflow, choose **Digital PDF** and upload
 `data/demo/generated/statements/fictional_digital_statement.pdf`. Expected values
 are a period of August 2026, opening balance `1000.00`, closing balance `1600.00`,
@@ -110,8 +149,8 @@ reports.
   re-reviewed after that later boundary is implemented.
 - Bank PDF layouts are not standardised. Digital extraction and OCR support the
   tested conservative layouts, not every institution or scan quality.
-- Transaction review/dashboard and forecast/planning screens remain staged
-  placeholders.
+- Forecast/planning remains a staged placeholder. Transaction search currently
+  returns at most the first 100 matches and explicitly reports when more exist.
 - The client is synchronous; spinners make bounded extraction work visible, but
   background jobs and cancellation are not implemented.
 - Accessibility, browser compatibility, authentication, and deployment hardening

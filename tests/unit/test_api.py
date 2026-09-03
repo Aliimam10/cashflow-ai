@@ -32,6 +32,7 @@ from cashflow_ai.persistence.models import (
     FinancialRoleRecord,
     ImportBatchRecord,
     ImportContextRecord,
+    RawTransactionRecord,
     StatementCoverageRecord,
 )
 from cashflow_ai.persistence.repositories import AccountRepository
@@ -280,6 +281,8 @@ def test_health_readiness_and_openapi_include_decision_support(api: ApiHarness) 
     assert "/api/v1/imports/csv/preview" in paths
     assert "/api/v1/imports/pdf/ocr/preview" in paths
     assert "/api/v1/accounts/{account_id}/transactions" in paths
+    assert "/api/v1/transactions/search" in paths
+    assert "/api/v1/profiles/{profile_id}/duplicates/reviews" in paths
     assert "/api/v1/analytics/cash-flow" in paths
     assert "/api/v1/forecasts/balance" in paths
     assert "/api/v1/planning/evaluate" in paths
@@ -410,6 +413,123 @@ def test_csv_preview_confirmation_context_and_transaction_reads(
     assert transaction.json()["description"] == "SYNTHETIC SALARY"
     assert "raw_payload" not in transaction.json()
     assert "original_description" not in transaction.json()
+
+
+def test_transaction_search_and_probable_duplicate_review_routes(
+    api: ApiHarness,
+) -> None:
+    profile_id, account_id = _profile_and_account(api.client)
+    content = (
+        b"Date,Description,Amount,Balance\n"
+        b"2026-08-01,SYNTHETIC SHOP,-10.00,990.00\n"
+        b"2026-08-02,SYNTHETIC SHOP,-10.00,980.00\n"
+    )
+    preview = api.client.post(
+        "/api/v1/imports/csv/preview",
+        files={"file": ("synthetic-duplicates.csv", content, "text/csv")},
+    )
+    assert preview.status_code == 200
+    confirmation = CsvImportConfirmation(
+        preview_file_hash=preview.json()["file_hash"],
+        user_confirmed=True,
+        confirmed_at=datetime.now(UTC) - timedelta(seconds=1),
+    )
+    imported = api.client.post(
+        "/api/v1/imports/csv/confirm",
+        files={"file": ("synthetic-duplicates.csv", content, "text/csv")},
+        data={
+            "plan_json": _csv_plan(account_id).model_dump_json(),
+            "confirmation_json": confirmation.model_dump_json(),
+        },
+    )
+    assert imported.status_code == 200
+    assert imported.json()["probable_duplicates"] == 1
+
+    search = api.client.post(
+        "/api/v1/transactions/search?limit=1&offset=0",
+        json={
+            "user_profile_id": profile_id,
+            "account_ids": [account_id],
+            "search_text": "synthetic shop",
+        },
+    )
+    reviews = api.client.get(f"/api/v1/profiles/{profile_id}/duplicates/reviews")
+    assert search.status_code == 200
+    assert search.json()["total"] == 1
+    assert reviews.status_code == 200
+    assert reviews.json()["total"] == 1
+    item = reviews.json()["items"][0]
+    assert item["can_keep"] is True
+    assert item["candidate"]["description"] == "SYNTHETIC SHOP"
+    assert "raw_payload" not in reviews.text
+
+    future = api.client.post(
+        f"/api/v1/profiles/{profile_id}/duplicates/{item['raw_transaction_id']}/review",
+        json={"decision": "reject", "decided_at": "2999-01-01T00:00:00Z"},
+    )
+    rejected = api.client.post(
+        f"/api/v1/profiles/{profile_id}/duplicates/{item['raw_transaction_id']}/review",
+        json={"decision": "reject", "decided_at": datetime.now(UTC).isoformat()},
+    )
+    assert future.status_code == 400
+    assert future.json()["code"] == "invalid_duplicate_review_time"
+    assert rejected.status_code == 200
+    assert rejected.json()["review_status"] == "rejected"
+    assert rejected.json()["kept_transaction_id"] is None
+    assert (
+        api.client.get(f"/api/v1/profiles/{profile_id}/duplicates/reviews").json()[
+            "total"
+        ]
+        == 0
+    )
+
+
+def test_corrupt_duplicate_metadata_returns_private_internal_error(
+    api: ApiHarness,
+) -> None:
+    profile_id, account_id = _profile_and_account(api.client)
+    batch_id = new_id()
+    with session_scope(api.container.session_factory) as session:
+        session.add(
+            ImportBatchRecord(
+                id=batch_id,
+                account_id=account_id,
+                source_type="csv",
+                source_filename="synthetic.csv",
+                file_hash="9" * 64,
+                mime_type="text/csv",
+                byte_size=1,
+                verification_status="needs_review",
+                imported_at=datetime.now(UTC),
+            )
+        )
+        session.add(
+            RawTransactionRecord(
+                id=new_id(),
+                import_batch_id=batch_id,
+                source_type="csv",
+                source_row_number=2,
+                page_number=None,
+                page_record_number=None,
+                raw_payload={"Description": "PRIVATE SYNTHETIC"},
+                original_date_text="2026-08-01",
+                original_description="PRIVATE SYNTHETIC",
+                original_amount_text="-1.00",
+                parser_name="synthetic",
+                parser_version="1.0",
+                source_fingerprint="8" * 64,
+                canonical_fingerprint="7" * 64,
+                candidate_json=None,
+                issues_json=[{"code": "probable_duplicate", "score": "PRIVATE"}],
+                review_status="needs_review",
+                created_at=datetime.now(UTC),
+            )
+        )
+
+    response = api.client.get(f"/api/v1/profiles/{profile_id}/duplicates/reviews")
+    assert response.status_code == 500
+    assert response.json()["code"] == "invalid_stored_metadata"
+    assert "PRIVATE" not in response.text
 
 
 def test_csv_errors_have_stable_http_statuses_and_no_body_echo(api: ApiHarness) -> None:

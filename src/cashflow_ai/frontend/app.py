@@ -22,6 +22,7 @@ from cashflow_ai.frontend.session import (
     load_session_state,
     save_session_state,
 )
+from cashflow_ai.frontend.transaction_page import render_transaction_page
 from cashflow_ai.schemas.api import HealthResponse, ReadinessResponse
 
 
@@ -63,9 +64,9 @@ def render_home(client: StatusApi) -> None:
 
     st.subheader("Foundation status")
     st.write(
-        "Navigation, the typed API connection, and review-gated statement onboarding "
-        "are ready. Transaction dashboards and forecasting controls are introduced "
-        "in the next staged commits."
+        "Review-gated statement onboarding, transaction corrections, duplicate and "
+        "financial-role review, and coverage-aware dashboards are ready. Forecasting "
+        "controls are introduced in the next staged commit."
     )
 
 
@@ -96,6 +97,9 @@ def render_application_page(
     if item.page_id is PageId.IMPORT:
         with ApiClient(base_url) as client:
             return render_import_page(client, session)
+    if item.page_id is PageId.TRANSACTIONS:
+        with ApiClient(base_url) as client:
+            return render_transaction_page(client, session)
     render_placeholder(item)
     return session
 

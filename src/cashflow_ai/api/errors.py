@@ -49,12 +49,18 @@ def _api_service_status(code: ApiServiceErrorCode) -> int:
         ApiServiceErrorCode.TRANSACTION_NOT_FOUND,
         ApiServiceErrorCode.IMPORT_NOT_FOUND,
         ApiServiceErrorCode.MODEL_NOT_ACTIVE,
+        ApiServiceErrorCode.DUPLICATE_REVIEW_NOT_FOUND,
     }:
         return 404
     if code is ApiServiceErrorCode.INVALID_FORM_JSON:
         return 422
-    if code is ApiServiceErrorCode.INVALID_KNOWLEDGE_CUTOFF:
+    if code in {
+        ApiServiceErrorCode.INVALID_KNOWLEDGE_CUTOFF,
+        ApiServiceErrorCode.INVALID_DUPLICATE_REVIEW_TIME,
+    }:
         return 400
+    if code is ApiServiceErrorCode.INVALID_STORED_METADATA:
+        return 500
     return 409
 
 

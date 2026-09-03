@@ -37,6 +37,10 @@ OPENAPI_TAGS = [
         "description": "Verified transaction reads without raw source payloads.",
     },
     {
+        "name": "duplicates",
+        "description": "Probable source-row comparison and explicit resolution.",
+    },
+    {
         "name": "analytics",
         "description": "Coverage, freshness, and role-aware cash-flow results.",
     },

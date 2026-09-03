@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime
+from decimal import Decimal
 from enum import StrEnum
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from cashflow_ai.schemas.imports import ReviewStatus, VerificationStatus
 from cashflow_ai.schemas.money import Money
 from cashflow_ai.schemas.normalisation import Sha256Digest
 from cashflow_ai.schemas.statements import DateRange, StatementCoverage
-from cashflow_ai.schemas.transactions import Identifier
+from cashflow_ai.schemas.transactions import Currency, Identifier, TransactionDraft
 
 
 class DuplicateStatus(StrEnum):
@@ -27,6 +30,13 @@ class DuplicateAction(StrEnum):
     KEEP = "keep"
     REVIEW = "review"
     SKIP = "skip"
+
+
+class DuplicateReviewDecision(StrEnum):
+    """Explicit resolution choices for a probable duplicate candidate."""
+
+    KEEP = "keep"
+    REJECT = "reject"
 
 
 class DuplicateReason(StrEnum):
@@ -81,6 +91,96 @@ class DuplicateAssessment(BaseModel):
         if self.action is not expected[self.status]:
             msg = "duplicate action does not match duplicate status"
             raise ValueError(msg)
+        return self
+
+
+class DuplicateCandidateSnapshot(BaseModel):
+    """Versioned canonical draft retained only to resolve a probable candidate."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal["1.0"] = "1.0"
+    draft: TransactionDraft
+
+
+class DuplicateTransactionSummary(BaseModel):
+    """Minimal canonical transaction values needed for side-by-side review."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    transaction_id: Identifier | None = None
+    account_id: Identifier
+    transaction_date: date
+    description: str = Field(min_length=1, max_length=500)
+    amount: Decimal
+    currency: Currency
+
+
+class ProbableDuplicateReviewItem(BaseModel):
+    """One unresolved raw candidate and the existing row it may duplicate."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, str_strip_whitespace=True)
+
+    raw_transaction_id: Identifier
+    import_batch_id: Identifier
+    account_id: Identifier
+    source_row_number: int | None = Field(default=None, ge=1)
+    original_date_text: str
+    original_description: str = Field(min_length=1, max_length=500)
+    original_amount_text: str | None
+    candidate: DuplicateTransactionSummary | None
+    existing_transaction: DuplicateTransactionSummary | None
+    score: float = Field(ge=0, le=1)
+    reasons: tuple[DuplicateReason, ...] = Field(min_length=1)
+    can_keep: bool
+
+    @model_validator(mode="after")
+    def validate_keep_readiness(self) -> ProbableDuplicateReviewItem:
+        """Allow keeping only a complete retained candidate with a comparison row."""
+        ready = self.candidate is not None and self.existing_transaction is not None
+        if self.can_keep != ready:
+            raise ValueError(
+                "duplicate keep readiness does not match retained evidence"
+            )
+        return self
+
+
+class DuplicateReviewRequest(BaseModel):
+    """One explicit decision and its caller-observed aware time."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    decision: DuplicateReviewDecision
+    decided_at: datetime
+
+    @model_validator(mode="after")
+    def validate_aware_time(self) -> DuplicateReviewRequest:
+        """Reject ambiguous local timestamps at the API boundary."""
+        if self.decided_at.tzinfo is None or self.decided_at.utcoffset() is None:
+            raise ValueError("duplicate review time must be timezone-aware")
+        return self
+
+
+class DuplicateReviewResult(BaseModel):
+    """Result of resolving one probable raw row without changing source evidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    raw_transaction_id: Identifier
+    decision: DuplicateReviewDecision
+    review_status: ReviewStatus
+    kept_transaction_id: Identifier | None = None
+    import_verification_status: VerificationStatus
+
+    @model_validator(mode="after")
+    def validate_result(self) -> DuplicateReviewResult:
+        """Bind keeping to a confirmed raw row and a verified transaction ID."""
+        kept = self.decision is DuplicateReviewDecision.KEEP
+        if kept != (self.kept_transaction_id is not None):
+            raise ValueError("only a kept duplicate candidate has a transaction ID")
+        expected = ReviewStatus.CONFIRMED if kept else ReviewStatus.REJECTED
+        if self.review_status is not expected:
+            raise ValueError("duplicate decision does not match raw review status")
         return self
 
 

@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from datetime import UTC, datetime
 from enum import StrEnum
+from typing import Any
 
 from pydantic import BaseModel, ValidationError
 from sqlalchemy import Engine, inspect, text
@@ -20,10 +22,14 @@ from cashflow_ai.imports import (
     extract_text_pdf,
     prepare_statement_review,
 )
-from cashflow_ai.persistence.base import new_id
+from cashflow_ai.invalidation import invalidate_derived_results_in_session
+from cashflow_ai.persistence.base import new_id, utc_now
 from cashflow_ai.persistence.database import session_scope
 from cashflow_ai.persistence.models import (
     AccountRecord,
+    BalanceSnapshotRecord,
+    ImportBatchRecord,
+    RawTransactionRecord,
     UserProfileRecord,
     VerifiedTransactionRecord,
 )
@@ -47,11 +53,22 @@ from cashflow_ai.schemas.api import (
     PdfSourceType,
     ReadinessResponse,
     TransactionResponse,
+    TransactionSearchRequest,
     UserProfileCreate,
     UserProfileResponse,
 )
 from cashflow_ai.schemas.csv_imports import CsvImportConfirmation, CsvImportPlan
-from cashflow_ai.schemas.imports import SourceType, VerificationStatus
+from cashflow_ai.schemas.duplicates import (
+    DuplicateCandidateSnapshot,
+    DuplicateReason,
+    DuplicateReviewDecision,
+    DuplicateReviewRequest,
+    DuplicateReviewResult,
+    DuplicateTransactionSummary,
+    ProbableDuplicateReviewItem,
+)
+from cashflow_ai.schemas.imports import ReviewStatus, SourceType, VerificationStatus
+from cashflow_ai.schemas.invalidation import SourceDataChangeType
 from cashflow_ai.schemas.ocr_imports import OcrPdfPreview
 from cashflow_ai.schemas.pdf_imports import TextPdfPreview
 from cashflow_ai.schemas.reconciliation import (
@@ -68,7 +85,12 @@ from cashflow_ai.schemas.statements import (
     StatementCoverage,
     StatementFlag,
 )
-from cashflow_ai.schemas.transactions import Currency, Direction, FinancialRole
+from cashflow_ai.schemas.transactions import (
+    CanonicalTransaction,
+    Currency,
+    Direction,
+    FinancialRole,
+)
 
 _REQUIRED_API_TABLES = frozenset(
     {
@@ -102,6 +124,11 @@ class ApiServiceErrorCode(StrEnum):
     MODEL_NOT_ACTIVE = "model_not_active"
     INVALID_KNOWLEDGE_CUTOFF = "invalid_knowledge_cutoff"
     INVALID_FORM_JSON = "invalid_form_json"
+    DUPLICATE_REVIEW_NOT_FOUND = "duplicate_review_not_found"
+    DUPLICATE_ALREADY_REVIEWED = "duplicate_already_reviewed"
+    DUPLICATE_CANDIDATE_UNAVAILABLE = "duplicate_candidate_unavailable"
+    INVALID_DUPLICATE_REVIEW_TIME = "invalid_duplicate_review_time"
+    INVALID_STORED_METADATA = "invalid_stored_metadata"
 
 
 class ApiServiceError(ValueError):
@@ -477,6 +504,315 @@ def _transaction_response(record: VerifiedTransactionRecord) -> TransactionRespo
     )
 
 
+def search_transactions(
+    factory: sessionmaker[Session], request: TransactionSearchRequest
+) -> tuple[TransactionResponse, ...]:
+    """Filter one profile's verified rows without exposing preserved raw payloads."""
+    with session_scope(factory) as session:
+        if UserProfileRepository(session).get(request.user_profile_id) is None:
+            raise ApiServiceError(
+                ApiServiceErrorCode.PROFILE_NOT_FOUND,
+                "the requested profile does not exist",
+            )
+        accounts = AccountRepository(session).list_for_user(request.user_profile_id)
+        owned_ids = {item.id for item in accounts}
+        if request.account_ids is not None and not set(request.account_ids).issubset(
+            owned_ids
+        ):
+            raise ApiServiceError(
+                ApiServiceErrorCode.ACCOUNT_NOT_FOUND,
+                "one or more selected accounts do not exist",
+            )
+        records = TransactionRepository(session).search_verified_for_profile(
+            request.user_profile_id,
+            account_ids=request.account_ids,
+            start_date=request.start_date,
+            end_date=request.end_date,
+            search_text=request.search_text,
+            category_ids=request.category_ids,
+            financial_roles=(
+                None
+                if request.financial_roles is None
+                else tuple(item.value for item in request.financial_roles)
+            ),
+        )
+        return tuple(_transaction_response(item) for item in records)
+
+
+def _probable_issue(raw: RawTransactionRecord) -> dict[str, Any] | None:
+    return next(
+        (
+            issue
+            for issue in raw.issues_json
+            if isinstance(issue, dict) and issue.get("code") == "probable_duplicate"
+        ),
+        None,
+    )
+
+
+def _candidate_snapshot(raw: RawTransactionRecord) -> DuplicateCandidateSnapshot | None:
+    if raw.candidate_json is None:
+        return None
+    try:
+        return DuplicateCandidateSnapshot.model_validate(raw.candidate_json)
+    except (TypeError, ValueError) as error:
+        raise ApiServiceError(
+            ApiServiceErrorCode.INVALID_STORED_METADATA,
+            "stored duplicate candidate metadata is invalid",
+        ) from error
+
+
+def _summary_from_canonical(
+    transaction: CanonicalTransaction,
+    *,
+    transaction_id: str | None,
+) -> DuplicateTransactionSummary:
+    return DuplicateTransactionSummary(
+        transaction_id=transaction_id,
+        account_id=transaction.account_id,
+        transaction_date=transaction.transaction_date,
+        description=transaction.description,
+        amount=transaction.amount,
+        currency=transaction.currency,
+    )
+
+
+def _summary_from_record(
+    record: VerifiedTransactionRecord,
+) -> DuplicateTransactionSummary:
+    return DuplicateTransactionSummary(
+        transaction_id=record.id,
+        account_id=record.account_id,
+        transaction_date=record.transaction_date,
+        description=record.description,
+        amount=record.amount,
+        currency=Currency(record.currency),
+    )
+
+
+def _existing_duplicate(
+    repository: TransactionRepository,
+    issue: dict[str, Any],
+) -> VerifiedTransactionRecord | None:
+    source_fingerprint = issue.get("existing_source_fingerprint")
+    if not isinstance(source_fingerprint, str):
+        return None
+    existing_raw = repository.get_raw_by_source_fingerprint(source_fingerprint)
+    if existing_raw is None:
+        return None
+    return repository.get_verified_for_raw(existing_raw.id)
+
+
+def _duplicate_evidence(
+    raw: RawTransactionRecord,
+    batch: ImportBatchRecord,
+    repository: TransactionRepository,
+) -> ProbableDuplicateReviewItem | None:
+    issue = _probable_issue(raw)
+    if issue is None:
+        return None
+    snapshot = _candidate_snapshot(raw)
+    try:
+        score = float(issue["score"])
+        reasons = tuple(DuplicateReason(item) for item in issue["reasons"])
+        candidate = (
+            None
+            if snapshot is None
+            else _summary_from_canonical(
+                CanonicalTransaction.model_validate(snapshot.draft.model_dump()),
+                transaction_id=None,
+            )
+        )
+        existing_record = _existing_duplicate(repository, issue)
+        existing = (
+            None if existing_record is None else _summary_from_record(existing_record)
+        )
+        return ProbableDuplicateReviewItem(
+            raw_transaction_id=raw.id,
+            import_batch_id=batch.id,
+            account_id=batch.account_id,
+            source_row_number=raw.source_row_number,
+            original_date_text=raw.original_date_text,
+            original_description=raw.original_description,
+            original_amount_text=raw.original_amount_text,
+            candidate=candidate,
+            existing_transaction=existing,
+            score=score,
+            reasons=reasons,
+            can_keep=candidate is not None and existing is not None,
+        )
+    except (KeyError, TypeError, ValueError) as error:
+        raise ApiServiceError(
+            ApiServiceErrorCode.INVALID_STORED_METADATA,
+            "stored duplicate review evidence is invalid",
+        ) from error
+
+
+def list_probable_duplicate_reviews(
+    factory: sessionmaker[Session], *, user_profile_id: str
+) -> tuple[ProbableDuplicateReviewItem, ...]:
+    """List only unresolved probable rows owned by the selected local profile."""
+    with session_scope(factory) as session:
+        if UserProfileRepository(session).get(user_profile_id) is None:
+            raise ApiServiceError(
+                ApiServiceErrorCode.PROFILE_NOT_FOUND,
+                "the requested profile does not exist",
+            )
+        repository = TransactionRepository(session)
+        items = (
+            _duplicate_evidence(raw, batch, repository)
+            for raw, batch in repository.list_raw_needing_review_for_profile(
+                user_profile_id
+            )
+        )
+        return tuple(item for item in items if item is not None)
+
+
+def _verified_from_candidate(
+    transaction: CanonicalTransaction,
+    *,
+    raw_transaction_id: str,
+    verified_at: datetime,
+) -> VerifiedTransactionRecord:
+    return VerifiedTransactionRecord(
+        id=new_id(),
+        raw_transaction_id=raw_transaction_id,
+        account_id=transaction.account_id,
+        transaction_date=transaction.transaction_date,
+        posting_date=transaction.posting_date,
+        description=transaction.description,
+        merchant=transaction.merchant,
+        amount=transaction.amount,
+        balance_after=transaction.balance_after,
+        currency=transaction.currency.value,
+        external_id=transaction.external_id,
+        transaction_type=transaction.transaction_type,
+        direction=transaction.direction.value,
+        category_id=transaction.category_id,
+        financial_role_id=transaction.financial_role.value,
+        verified_at=verified_at,
+    )
+
+
+def review_probable_duplicate(
+    factory: sessionmaker[Session],
+    *,
+    user_profile_id: str,
+    raw_transaction_id: str,
+    request: DuplicateReviewRequest,
+) -> DuplicateReviewResult:
+    """Keep or reject one probable row without changing its preserved source data."""
+    received_at = utc_now()
+    observed_at = request.decided_at.astimezone(UTC)
+    if observed_at > received_at:
+        raise ApiServiceError(
+            ApiServiceErrorCode.INVALID_DUPLICATE_REVIEW_TIME,
+            "duplicate review time cannot be in the future",
+        )
+    with session_scope(factory) as session:
+        repository = TransactionRepository(session)
+        raw = repository.get_raw(raw_transaction_id)
+        issue = None if raw is None else _probable_issue(raw)
+        if raw is None or issue is None:
+            raise ApiServiceError(
+                ApiServiceErrorCode.DUPLICATE_REVIEW_NOT_FOUND,
+                "the probable duplicate review does not exist",
+            )
+        batch = ImportBatchRepository(session).get(raw.import_batch_id)
+        assert batch is not None
+        account = AccountRepository(session).get(batch.account_id)
+        assert account is not None
+        if account.user_profile_id != user_profile_id:
+            raise ApiServiceError(
+                ApiServiceErrorCode.DUPLICATE_REVIEW_NOT_FOUND,
+                "the probable duplicate review does not exist",
+            )
+        if raw.review_status != "needs_review":
+            raise ApiServiceError(
+                ApiServiceErrorCode.DUPLICATE_ALREADY_REVIEWED,
+                "the probable duplicate has already been reviewed",
+            )
+        if observed_at < raw.created_at.astimezone(UTC):
+            raise ApiServiceError(
+                ApiServiceErrorCode.INVALID_DUPLICATE_REVIEW_TIME,
+                "duplicate review time cannot predate the imported evidence",
+            )
+
+        kept: VerifiedTransactionRecord | None = None
+        if request.decision is DuplicateReviewDecision.KEEP:
+            snapshot = _candidate_snapshot(raw)
+            existing = _existing_duplicate(repository, issue)
+            if snapshot is None or existing is None:
+                raise ApiServiceError(
+                    ApiServiceErrorCode.DUPLICATE_CANDIDATE_UNAVAILABLE,
+                    "this legacy probable row must be re-imported before it can be "
+                    "kept",
+                )
+            try:
+                canonical = CanonicalTransaction.model_validate(
+                    snapshot.draft.model_dump()
+                )
+            except (TypeError, ValueError) as error:
+                raise ApiServiceError(
+                    ApiServiceErrorCode.INVALID_STORED_METADATA,
+                    "stored duplicate candidate values are invalid",
+                ) from error
+            if (
+                canonical.account_id != batch.account_id
+                or canonical.currency.value != account.currency
+            ):
+                raise ApiServiceError(
+                    ApiServiceErrorCode.INVALID_STORED_METADATA,
+                    "stored duplicate candidate ownership is invalid",
+                )
+            kept = repository.add_verified(
+                _verified_from_candidate(
+                    canonical,
+                    raw_transaction_id=raw.id,
+                    verified_at=received_at,
+                )
+            )
+            if kept.balance_after is not None:
+                BalanceSnapshotRepository(session).add(
+                    BalanceSnapshotRecord(
+                        account_id=kept.account_id,
+                        import_batch_id=batch.id,
+                        balance=kept.balance_after,
+                        currency=kept.currency,
+                        as_of_date=kept.posting_date or kept.transaction_date,
+                        recorded_at=received_at,
+                        source=BalanceSnapshotSource.RUNNING_BALANCE.value,
+                        verification_status=VerificationStatus.VERIFIED.value,
+                    )
+                )
+            raw.review_status = "confirmed"
+        else:
+            raw.review_status = "rejected"
+
+        was_verified = batch.verification_status == VerificationStatus.VERIFIED.value
+        session.flush()
+        if not repository.batch_has_unresolved_rows(batch.id):
+            batch.verification_status = VerificationStatus.VERIFIED.value
+        became_verified = (
+            not was_verified
+            and batch.verification_status == VerificationStatus.VERIFIED.value
+        )
+        if kept is not None or became_verified:
+            invalidate_derived_results_in_session(
+                session,
+                account_id=batch.account_id,
+                change_type=SourceDataChangeType.STATEMENT_ADDED,
+                changed_at=received_at,
+            )
+        return DuplicateReviewResult(
+            raw_transaction_id=raw.id,
+            decision=request.decision,
+            review_status=ReviewStatus(raw.review_status),
+            kept_transaction_id=None if kept is None else kept.id,
+            import_verification_status=VerificationStatus(batch.verification_status),
+        )
+
+
 def list_transactions(
     factory: sessionmaker[Session], *, account_id: str
 ) -> tuple[TransactionResponse, ...]:
@@ -595,6 +931,7 @@ __all__ = [
     "get_profile",
     "get_transaction",
     "list_accounts",
+    "list_probable_duplicate_reviews",
     "list_transactions",
     "page_items",
     "parse_csv_confirmation_form",
@@ -602,4 +939,6 @@ __all__ = [
     "prepare_pdf_statement_review",
     "preview_ocr_statement",
     "preview_text_statement",
+    "review_probable_duplicate",
+    "search_transactions",
 ]

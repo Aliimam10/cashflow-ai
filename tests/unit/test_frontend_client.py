@@ -20,20 +20,39 @@ from cashflow_ai.frontend.client import (
     api_base_url,
 )
 from cashflow_ai.schemas.accounts import AccountType
+from cashflow_ai.schemas.analytics import AnalyticsScope, AnalyticsView
 from cashflow_ai.schemas.api import (
     AccountCreate,
     HealthResponse,
     PdfSourceType,
+    TransactionSearchRequest,
     UserProfileCreate,
+)
+from cashflow_ai.schemas.api_decisions import (
+    FinancialDataFreshnessRequest,
+    FinancialRoleSuggestionRequest,
+    RoleDecisionRequest,
+    TransactionRoleReviewRequest,
 )
 from cashflow_ai.schemas.csv_imports import (
     CsvColumnMapping,
     CsvImportConfirmation,
     CsvImportPlan,
 )
+from cashflow_ai.schemas.duplicates import (
+    DuplicateReviewDecision,
+    DuplicateReviewRequest,
+)
+from cashflow_ai.schemas.financial_roles import TransactionReviewAction
+from cashflow_ai.schemas.freshness import FreshnessPolicy
+from cashflow_ai.schemas.hybrid_categorisation import (
+    CategoryFeedback,
+    CategoryFeedbackAction,
+)
 from cashflow_ai.schemas.reconciliation import StatementApproval
 from cashflow_ai.schemas.statements import (
     CoverageStatus,
+    DateRange,
     ImportContext,
     StatementCoverage,
 )
@@ -371,6 +390,86 @@ def test_client_supports_onboarding_and_review_gated_upload_contracts() -> None:
         for request in requests[4:]
     )
     assert "SYNTHETIC SHOP" not in repr(document)
+
+
+def test_client_exposes_typed_transaction_review_and_dashboard_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = ApiClient(
+        "http://127.0.0.1:8765",
+        transport=httpx2.MockTransport(
+            lambda request: httpx2.Response(500, request=request)
+        ),
+    )
+    request = MagicMock(return_value=MagicMock())
+    monkeypatch.setattr(client, "_request", request)
+    observed = datetime(2026, 9, 1, tzinfo=UTC)
+    search = TransactionSearchRequest(user_profile_id="synthetic-profile")
+    category = CategoryFeedback(
+        user_profile_id="synthetic-profile",
+        transaction_id="synthetic-transaction",
+        category_id="food",
+        action=CategoryFeedbackAction.TRANSACTION_ONLY,
+        corrected_at=observed,
+    )
+    role_suggestion = FinancialRoleSuggestionRequest(
+        user_profile_id="synthetic-profile"
+    )
+    role_decision = RoleDecisionRequest(reviewed_at=observed)
+    role_correction = TransactionRoleReviewRequest(
+        action=TransactionReviewAction.EXPENSE,
+        changed_at=observed,
+    )
+    duplicate = DuplicateReviewRequest(
+        decision=DuplicateReviewDecision.REJECT,
+        decided_at=observed,
+    )
+    scope = AnalyticsScope(
+        user_profile_id="synthetic-profile",
+        account_ids=("synthetic-account",),
+        period=DateRange(start_date=date(2026, 8, 1), end_date=date(2026, 8, 31)),
+        view=AnalyticsView.ACCOUNT,
+    )
+    freshness = FinancialDataFreshnessRequest(
+        account_id="synthetic-account",
+        as_of_date=date(2026, 8, 31),
+        policy=FreshnessPolicy(
+            max_transaction_age_days=45,
+            max_balance_age_days=45,
+            max_coverage_age_days=45,
+            minimum_contiguous_coverage_days=60,
+        ),
+    )
+
+    client.search_transactions(search)
+    client.list_categories()
+    client.correct_category(category)
+    client.generate_role_suggestions(role_suggestion)
+    client.list_role_reviews("synthetic-profile")
+    client.decide_role_suggestion("synthetic-suggestion", role_decision, confirm=True)
+    client.decide_role_suggestion("synthetic-suggestion", role_decision, confirm=False)
+    client.correct_financial_role("synthetic-transaction", role_correction)
+    client.list_duplicate_reviews("synthetic-profile")
+    client.decide_duplicate("synthetic-profile", "synthetic-raw", duplicate)
+    client.cash_flow(scope)
+    client.freshness(freshness)
+    client.close()
+
+    paths = [call.args[1] for call in request.call_args_list]
+    assert paths == [
+        "/api/v1/transactions/search",
+        "/api/v1/categories",
+        "/api/v1/categorisation/feedback",
+        "/api/v1/financial-roles/suggestions",
+        "/api/v1/profiles/synthetic-profile/financial-roles/reviews",
+        "/api/v1/financial-role-suggestions/synthetic-suggestion/confirm",
+        "/api/v1/financial-role-suggestions/synthetic-suggestion/reject",
+        "/api/v1/transactions/synthetic-transaction/financial-role",
+        "/api/v1/profiles/synthetic-profile/duplicates/reviews",
+        "/api/v1/profiles/synthetic-profile/duplicates/synthetic-raw/review",
+        "/api/v1/analytics/cash-flow",
+        "/api/v1/coverage/freshness",
+    ]
 
 
 def test_client_rejects_empty_or_oversized_record_identifiers() -> None:

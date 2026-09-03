@@ -104,6 +104,81 @@ def test_migration_matches_model_metadata_and_downgrades_cleanly(
     assert set(inspect(engine).get_table_names()) >= EXPECTED_TABLES
 
 
+def test_probable_duplicate_snapshot_migration_is_additive_and_guarded(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "duplicate-snapshots.db"
+    config = migration_config(database_path)
+    command.upgrade(config, "0009")
+    engine = migrated_engine(database_path)
+    assert "candidate_json" not in {
+        item["name"] for item in inspect(engine).get_columns("raw_transactions")
+    }
+
+    command.upgrade(config, "head")
+    assert "candidate_json" in {
+        item["name"] for item in inspect(engine).get_columns("raw_transactions")
+    }
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO user_profiles "
+                "(id, display_name, base_currency, timezone, created_at, updated_at) "
+                "VALUES ('snapshot-user', NULL, 'GBP', 'UTC', "
+                "'2026-09-01 00:00:00', '2026-09-01 00:00:00')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO accounts "
+                "(id, user_profile_id, name, account_type, currency, "
+                "institution_label, is_active, created_at) VALUES "
+                "('snapshot-account', 'snapshot-user', 'Synthetic', 'current', "
+                "'GBP', NULL, 1, '2026-09-01 00:00:00')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO import_batches "
+                "(id, account_id, source_type, source_filename, file_hash, mime_type, "
+                "byte_size, verification_status, imported_at) VALUES "
+                "('snapshot-batch', 'snapshot-account', 'csv', 'synthetic.csv', "
+                f"'{('a' * 64)}', 'text/csv', 1, 'needs_review', "
+                "'2026-09-01 00:00:00')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO raw_transactions "
+                "(id, import_batch_id, source_type, source_row_number, page_number, "
+                "page_record_number, raw_payload, original_date_text, "
+                "original_description, original_amount_text, parser_name, "
+                "parser_version, source_fingerprint, canonical_fingerprint, "
+                "candidate_json, issues_json, review_status, created_at) VALUES "
+                "('snapshot-raw', 'snapshot-batch', 'csv', 2, NULL, NULL, '{}', "
+                "'2026-08-01', 'SYNTHETIC', '-1.00', 'synthetic', '1.0', "
+                f"'{('b' * 64)}', '{('c' * 64)}', '{{\"schema_version\":\"1.0\"}}', "
+                "'[]', 'needs_review', '2026-09-01 00:00:00')"
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="probable duplicate candidates need review"):
+        command.downgrade(config, "0009")
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "UPDATE raw_transactions SET review_status = 'rejected' "
+                "WHERE id = 'snapshot-raw'"
+            )
+        )
+    command.downgrade(config, "0009")
+    assert "candidate_json" not in {
+        item["name"] for item in inspect(engine).get_columns("raw_transactions")
+    }
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT COUNT(*) FROM raw_transactions")) == 1
+
+
 def test_fresh_recurrence_hardening_upgrade_adds_no_synthetic_evidence(
     tmp_path: Path,
 ) -> None:

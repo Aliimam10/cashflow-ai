@@ -240,6 +240,7 @@ class RawTransactionRecord(Base):
     canonical_fingerprint: Mapped[str | None] = mapped_column(
         String(HASH_LENGTH), index=True
     )
+    candidate_json: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     issues_json: Mapped[list[dict[str, Any]]] = mapped_column(JSON, default=list)
     review_status: Mapped[str] = mapped_column(String(20), default="pending")
     created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)

@@ -343,3 +343,11 @@ credentials or account numbers. PDF approval is explicitly shown as non-persiste
 CSV persistence still occurs only after exact-file confirmation. Committed manual
 fixtures are generated from fixed fictional statements under the ignored demo-data
 directory.
+
+The transaction workspace necessarily shows verified descriptions and fixed-precision
+amounts on the same machine. It does not put search results, review items, dashboard
+responses, or charts into the application-managed session record. Search and review
+endpoints never return the complete raw payload. Probable-duplicate candidate
+snapshots are private local database evidence, never logs or telemetry, and exist only
+so an explicit keep decision does not guess financial fields from source-specific
+columns.

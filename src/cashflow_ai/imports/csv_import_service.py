@@ -54,6 +54,7 @@ from cashflow_ai.schemas.csv_imports import (
 )
 from cashflow_ai.schemas.duplicates import (
     DuplicateAssessment,
+    DuplicateCandidateSnapshot,
     DuplicateFacts,
     DuplicateStatus,
 )
@@ -120,6 +121,7 @@ def _raw_record(
     review_status: ReviewStatus,
     issues: list[dict[str, Any]],
     received_at: datetime,
+    candidate: NormalisedTransaction | None = None,
 ) -> RawTransactionRecord:
     return RawTransactionRecord(
         import_batch_id=import_batch_id,
@@ -135,6 +137,13 @@ def _raw_record(
         parser_version=NORMALISER_IDENTITY.version,
         source_fingerprint=source_fingerprint,
         canonical_fingerprint=canonical_fingerprint,
+        candidate_json=(
+            None
+            if candidate is None
+            else DuplicateCandidateSnapshot(draft=candidate.draft).model_dump(
+                mode="json"
+            )
+        ),
         issues_json=issues,
         review_status=review_status.value,
         created_at=received_at,
@@ -439,6 +448,7 @@ def _persist_document(
                         )
                     ],
                     received_at=received_at,
+                    candidate=None if is_exact else transaction,
                 )
             )
             continue

@@ -173,6 +173,19 @@ class TransactionRepository:
         """Return one verified transaction by its public identifier."""
         return self._session.get(VerifiedTransactionRecord, transaction_id)
 
+    def get_raw(self, raw_transaction_id: str) -> RawTransactionRecord | None:
+        """Return one preserved source row by its identifier."""
+        return self._session.get(RawTransactionRecord, raw_transaction_id)
+
+    def get_verified_for_raw(
+        self, raw_transaction_id: str
+    ) -> VerifiedTransactionRecord | None:
+        """Return the verified interpretation linked to one preserved source row."""
+        statement = select(VerifiedTransactionRecord).where(
+            VerifiedTransactionRecord.raw_transaction_id == raw_transaction_id
+        )
+        return self._session.scalar(statement)
+
     def get_raw_by_source_fingerprint(
         self,
         source_fingerprint: str,
@@ -195,6 +208,63 @@ class TransactionRepository:
                 VerifiedTransactionRecord.transaction_date,
                 VerifiedTransactionRecord.id,
             )
+        )
+        return tuple(self._session.scalars(statement))
+
+    def search_verified_for_profile(
+        self,
+        user_profile_id: str,
+        *,
+        account_ids: tuple[str, ...] | None = None,
+        start_date: date | None = None,
+        end_date: date | None = None,
+        search_text: str | None = None,
+        category_ids: tuple[str, ...] | None = None,
+        financial_roles: tuple[str, ...] | None = None,
+    ) -> tuple[VerifiedTransactionRecord, ...]:
+        """Filter owned verified rows without loading auditable raw payloads."""
+        statement = (
+            select(VerifiedTransactionRecord)
+            .join(
+                AccountRecord, AccountRecord.id == VerifiedTransactionRecord.account_id
+            )
+            .where(AccountRecord.user_profile_id == user_profile_id)
+        )
+        if account_ids is not None:
+            statement = statement.where(
+                VerifiedTransactionRecord.account_id.in_(account_ids)
+            )
+        if start_date is not None:
+            statement = statement.where(
+                VerifiedTransactionRecord.transaction_date >= start_date
+            )
+        if end_date is not None:
+            statement = statement.where(
+                VerifiedTransactionRecord.transaction_date <= end_date
+            )
+        if search_text is not None:
+            needle = search_text.casefold()
+            statement = statement.where(
+                or_(
+                    func.lower(VerifiedTransactionRecord.description).contains(
+                        needle, autoescape=True
+                    ),
+                    func.lower(
+                        func.coalesce(VerifiedTransactionRecord.merchant, "")
+                    ).contains(needle, autoescape=True),
+                )
+            )
+        if category_ids is not None:
+            statement = statement.where(
+                VerifiedTransactionRecord.category_id.in_(category_ids)
+            )
+        if financial_roles is not None:
+            statement = statement.where(
+                VerifiedTransactionRecord.financial_role_id.in_(financial_roles)
+            )
+        statement = statement.order_by(
+            desc(VerifiedTransactionRecord.transaction_date),
+            desc(VerifiedTransactionRecord.id),
         )
         return tuple(self._session.scalars(statement))
 
@@ -222,6 +292,39 @@ class TransactionRepository:
             .order_by(RawTransactionRecord.source_row_number, RawTransactionRecord.id)
         )
         return tuple(self._session.scalars(statement))
+
+    def list_raw_needing_review_for_profile(
+        self,
+        user_profile_id: str,
+    ) -> tuple[tuple[RawTransactionRecord, ImportBatchRecord], ...]:
+        """Return unresolved raw rows for accounts owned by one local profile."""
+        statement = (
+            select(RawTransactionRecord, ImportBatchRecord)
+            .join(
+                ImportBatchRecord,
+                ImportBatchRecord.id == RawTransactionRecord.import_batch_id,
+            )
+            .join(AccountRecord, AccountRecord.id == ImportBatchRecord.account_id)
+            .where(
+                AccountRecord.user_profile_id == user_profile_id,
+                RawTransactionRecord.review_status == "needs_review",
+            )
+            .order_by(
+                RawTransactionRecord.created_at,
+                RawTransactionRecord.id,
+            )
+        )
+        return tuple(self._session.execute(statement).tuples())
+
+    def batch_has_unresolved_rows(self, import_batch_id: str) -> bool:
+        """Return whether a document still contains an unresolved raw candidate."""
+        statement = select(
+            exists().where(
+                RawTransactionRecord.import_batch_id == import_batch_id,
+                RawTransactionRecord.review_status == "needs_review",
+            )
+        )
+        return bool(self._session.scalar(statement))
 
     def list_duplicate_candidates(
         self,

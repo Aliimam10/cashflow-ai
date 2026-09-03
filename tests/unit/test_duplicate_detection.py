@@ -1,6 +1,7 @@
 """Tests for conservative duplicate and statement-overlap detection."""
 
-from datetime import date
+from datetime import UTC, date, datetime
+from decimal import Decimal
 
 import pytest
 from pydantic import ValidationError
@@ -20,7 +21,11 @@ from cashflow_ai.schemas import (
     DuplicateAction,
     DuplicateAssessment,
     DuplicateReason,
+    DuplicateReviewDecision,
+    DuplicateReviewRequest,
+    DuplicateReviewResult,
     DuplicateStatus,
+    DuplicateTransactionSummary,
     NormalisedTransaction,
     OriginalTransactionValues,
     SourceFieldValue,
@@ -30,7 +35,11 @@ from cashflow_ai.schemas import (
     StatementOverlapAssessment,
     StatementOverlapStatus,
     StatementRecord,
+    TransactionDraft,
 )
+from cashflow_ai.schemas.duplicates import ProbableDuplicateReviewItem
+from cashflow_ai.schemas.imports import ReviewStatus, VerificationStatus
+from cashflow_ai.schemas.transactions import Direction
 
 HASH_A = "a" * 64
 HASH_B = "b" * 64
@@ -305,3 +314,78 @@ def test_overlap_contract_requires_coherent_range_and_duration(
                 **payload,
             }
         )
+
+
+def test_duplicate_review_contracts_require_complete_coherent_decisions() -> None:
+    transaction = DuplicateTransactionSummary(
+        account_id="account-1",
+        transaction_date=date(2026, 8, 1),
+        description="Synthetic shop",
+        amount=Decimal("-1.00"),
+        currency=Currency.GBP,
+    )
+    with pytest.raises(ValidationError, match="keep readiness"):
+        ProbableDuplicateReviewItem(
+            raw_transaction_id="raw-1",
+            import_batch_id="batch-1",
+            account_id="account-1",
+            original_date_text="2026-08-01",
+            original_description="Synthetic shop",
+            original_amount_text="-1.00",
+            candidate=transaction,
+            existing_transaction=transaction,
+            score=0.9,
+            reasons=(DuplicateReason.SAME_AMOUNT,),
+            can_keep=False,
+        )
+    with pytest.raises(ValidationError, match="timezone-aware"):
+        DuplicateReviewRequest(
+            decision=DuplicateReviewDecision.REJECT,
+            decided_at=datetime(2026, 8, 2),
+        )
+    valid = DuplicateReviewResult(
+        raw_transaction_id="raw-1",
+        decision=DuplicateReviewDecision.KEEP,
+        review_status=ReviewStatus.CONFIRMED,
+        kept_transaction_id="transaction-1",
+        import_verification_status=VerificationStatus.VERIFIED,
+    )
+    assert valid.kept_transaction_id == "transaction-1"
+    for payload in (
+        {
+            "decision": DuplicateReviewDecision.KEEP,
+            "review_status": ReviewStatus.CONFIRMED,
+            "kept_transaction_id": None,
+        },
+        {
+            "decision": DuplicateReviewDecision.REJECT,
+            "review_status": ReviewStatus.CONFIRMED,
+            "kept_transaction_id": None,
+        },
+    ):
+        with pytest.raises(ValidationError):
+            DuplicateReviewResult.model_validate(
+                {
+                    "raw_transaction_id": "raw-1",
+                    "import_verification_status": VerificationStatus.VERIFIED,
+                    **payload,
+                }
+            )
+
+
+def test_duplicate_candidate_snapshot_retains_only_a_canonical_draft() -> None:
+    request = DuplicateReviewRequest(
+        decision=DuplicateReviewDecision.REJECT,
+        decided_at=datetime(2026, 8, 2, tzinfo=UTC),
+    )
+    draft = TransactionDraft(
+        transaction_date=date(2026, 8, 1),
+        description="Synthetic shop",
+        amount=Decimal("-1.00"),
+        currency=Currency.GBP,
+        account_id="account-1",
+        direction=Direction.OUTFLOW,
+    )
+
+    assert request.decision is DuplicateReviewDecision.REJECT
+    assert draft.description == "Synthetic shop"

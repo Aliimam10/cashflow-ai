@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -11,6 +11,13 @@ from pydantic import ValidationError
 from sqlalchemy import Engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 
+from cashflow_ai.api.services import (
+    ApiServiceError,
+    ApiServiceErrorCode,
+    list_probable_duplicate_reviews,
+    review_probable_duplicate,
+    search_transactions,
+)
 from cashflow_ai.imports import (
     CsvImportError,
     CsvImportErrorCode,
@@ -45,12 +52,19 @@ from cashflow_ai.schemas import (
     CsvColumnMapping,
     CsvImportConfirmation,
     CsvImportPlan,
+    CsvImportSummary,
     DateRange,
     ImportContext,
     StatementBalances,
     StatementCoverage,
     StatementFlag,
 )
+from cashflow_ai.schemas.api import TransactionSearchRequest
+from cashflow_ai.schemas.duplicates import (
+    DuplicateReviewDecision,
+    DuplicateReviewRequest,
+)
+from cashflow_ai.schemas.transactions import FinancialRole
 
 CSV_CONTENT = (
     b"Date,Description,Amount,Balance,Transaction ID\n"
@@ -144,7 +158,7 @@ def confirmation(content: bytes = CSV_CONTENT) -> CsvImportConfirmation:
 def import_csv(
     factory: sessionmaker[Session],
     content: bytes = CSV_CONTENT,
-) -> object:
+) -> CsvImportSummary:
     return persist_confirmed_csv(
         factory,
         content,
@@ -244,6 +258,25 @@ def test_confirmed_import_preserves_and_classifies_every_row(
         ]
         assert raw_rows[1].issues_json[0]["code"] == "exact_duplicate"
         assert raw_rows[2].issues_json[0]["code"] == "probable_duplicate"
+        assert raw_rows[2].candidate_json == {
+            "schema_version": "1.0",
+            "draft": {
+                "transaction_date": "2026-07-03",
+                "posting_date": None,
+                "description": "Coffee",
+                "merchant": "Coffee",
+                "amount": "-4.50",
+                "balance_after": "986.50",
+                "currency": "GBP",
+                "account_id": "account-1",
+                "external_id": None,
+                "transaction_type": None,
+                "direction": "outflow",
+                "category_id": None,
+                "financial_role": "unknown",
+            },
+        }
+        assert all(raw.candidate_json is None for raw in (*raw_rows[:2], *raw_rows[3:]))
         assert raw_rows[4].issues_json[0]["code"] == "invalid_date"
         assert raw_rows[-1].canonical_fingerprint is None
         assert raw_rows[-1].raw_payload["Date"] == "31/02/2026"
@@ -252,6 +285,470 @@ def test_confirmed_import_preserves_and_classifies_every_row(
         assert {item.verified_at for item in verified} == {RECEIVED_AT}
         assert verified[0].amount == Decimal("-4.50")
         assert verified[0].financial_role_id == "unknown"
+
+
+def test_transaction_search_and_duplicate_keep_are_profile_scoped(
+    factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed_account(factory)
+    monkeypatch.setattr(
+        "cashflow_ai.imports.csv_import_service.utc_now", lambda: RECEIVED_AT
+    )
+    summary = import_csv(factory)
+    review_time = RECEIVED_AT + timedelta(hours=1)
+    monkeypatch.setattr("cashflow_ai.api.services.utc_now", lambda: review_time)
+
+    reviews = list_probable_duplicate_reviews(factory, user_profile_id="profile-1")
+
+    assert len(reviews) == 1
+    review = reviews[0]
+    assert review.import_batch_id == summary.import_batch_id
+    assert review.source_row_number == 4
+    assert review.can_keep is True
+    assert review.candidate is not None
+    assert review.candidate.description == "Coffee"
+    assert review.existing_transaction is not None
+    assert review.existing_transaction.transaction_id is not None
+    assert review.score >= 0.75
+
+    matches = search_transactions(
+        factory,
+        TransactionSearchRequest(
+            user_profile_id="profile-1",
+            account_ids=("account-1",),
+            start_date=date(2026, 7, 1),
+            end_date=date(2026, 7, 2),
+            search_text="COFF",
+            financial_roles=(FinancialRole.UNKNOWN,),
+        ),
+    )
+    assert len(matches) == 1
+    assert matches[0].transaction_date == date(2026, 7, 1)
+    assert (
+        len(
+            search_transactions(
+                factory, TransactionSearchRequest(user_profile_id="profile-1")
+            )
+        )
+        == 2
+    )
+    assert (
+        search_transactions(
+            factory,
+            TransactionSearchRequest(
+                user_profile_id="profile-1", category_ids=("not_assigned",)
+            ),
+        )
+        == ()
+    )
+
+    result = review_probable_duplicate(
+        factory,
+        user_profile_id="profile-1",
+        raw_transaction_id=review.raw_transaction_id,
+        request=DuplicateReviewRequest(
+            decision=DuplicateReviewDecision.KEEP,
+            decided_at=review_time,
+        ),
+    )
+
+    assert result.kept_transaction_id is not None
+    assert result.review_status.value == "confirmed"
+    assert result.import_verification_status.value == "verified"
+    assert list_probable_duplicate_reviews(factory, user_profile_id="profile-1") == ()
+    with session_scope(factory) as session:
+        assert (
+            session.scalar(select(func.count()).select_from(VerifiedTransactionRecord))
+            == 3
+        )
+        assert (
+            session.scalar(
+                select(func.count())
+                .select_from(BalanceSnapshotRecord)
+                .where(BalanceSnapshotRecord.source == "running_balance")
+            )
+            == 3
+        )
+        batch = session.get(ImportBatchRecord, summary.import_batch_id)
+        assert batch is not None
+        assert batch.verification_status == "verified"
+
+    with pytest.raises(ApiServiceError) as repeated:
+        review_probable_duplicate(
+            factory,
+            user_profile_id="profile-1",
+            raw_transaction_id=review.raw_transaction_id,
+            request=DuplicateReviewRequest(
+                decision=DuplicateReviewDecision.KEEP,
+                decided_at=review_time,
+            ),
+        )
+    assert repeated.value.code is ApiServiceErrorCode.DUPLICATE_ALREADY_REVIEWED
+
+
+def test_duplicate_reject_and_legacy_keep_failure_preserve_raw_evidence(
+    factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed_account(factory)
+    monkeypatch.setattr(
+        "cashflow_ai.imports.csv_import_service.utc_now", lambda: RECEIVED_AT
+    )
+    import_csv(factory)
+    raw_id = list_probable_duplicate_reviews(factory, user_profile_id="profile-1")[
+        0
+    ].raw_transaction_id
+    with session_scope(factory) as session:
+        raw = session.get(RawTransactionRecord, raw_id)
+        assert raw is not None
+        preserved_payload = raw.raw_payload.copy()
+        raw.candidate_json = None
+
+    review_time = RECEIVED_AT + timedelta(hours=1)
+    monkeypatch.setattr("cashflow_ai.api.services.utc_now", lambda: review_time)
+    legacy = list_probable_duplicate_reviews(factory, user_profile_id="profile-1")[0]
+    assert legacy.can_keep is False
+    assert legacy.candidate is None
+
+    with pytest.raises(ApiServiceError) as unavailable:
+        review_probable_duplicate(
+            factory,
+            user_profile_id="profile-1",
+            raw_transaction_id=raw_id,
+            request=DuplicateReviewRequest(
+                decision=DuplicateReviewDecision.KEEP,
+                decided_at=review_time,
+            ),
+        )
+    assert unavailable.value.code is ApiServiceErrorCode.DUPLICATE_CANDIDATE_UNAVAILABLE
+
+    rejected = review_probable_duplicate(
+        factory,
+        user_profile_id="profile-1",
+        raw_transaction_id=raw_id,
+        request=DuplicateReviewRequest(
+            decision=DuplicateReviewDecision.REJECT,
+            decided_at=review_time,
+        ),
+    )
+    assert rejected.kept_transaction_id is None
+    assert rejected.review_status.value == "rejected"
+    assert rejected.import_verification_status.value == "verified"
+    with session_scope(factory) as session:
+        raw = session.get(RawTransactionRecord, raw_id)
+        assert raw is not None
+        assert raw.raw_payload == preserved_payload
+
+
+def test_transaction_search_and_duplicate_review_failures_are_controlled(
+    factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed_account(factory)
+    monkeypatch.setattr(
+        "cashflow_ai.imports.csv_import_service.utc_now", lambda: RECEIVED_AT
+    )
+    import_csv(factory)
+    raw_id = list_probable_duplicate_reviews(factory, user_profile_id="profile-1")[
+        0
+    ].raw_transaction_id
+
+    for request, code in (
+        (
+            TransactionSearchRequest(user_profile_id="missing"),
+            ApiServiceErrorCode.PROFILE_NOT_FOUND,
+        ),
+        (
+            TransactionSearchRequest(
+                user_profile_id="profile-1", account_ids=("missing",)
+            ),
+            ApiServiceErrorCode.ACCOUNT_NOT_FOUND,
+        ),
+    ):
+        with pytest.raises(ApiServiceError) as error:
+            search_transactions(factory, request)
+        assert error.value.code is code
+    with pytest.raises(ApiServiceError) as missing_profile:
+        list_probable_duplicate_reviews(factory, user_profile_id="missing")
+    assert missing_profile.value.code is ApiServiceErrorCode.PROFILE_NOT_FOUND
+
+    received = RECEIVED_AT + timedelta(hours=1)
+    monkeypatch.setattr("cashflow_ai.api.services.utc_now", lambda: received)
+    for user_profile_id, candidate_id, decided_at, code in (
+        (
+            "profile-1",
+            "missing",
+            received,
+            ApiServiceErrorCode.DUPLICATE_REVIEW_NOT_FOUND,
+        ),
+        (
+            "profile-1",
+            raw_id,
+            received + timedelta(seconds=1),
+            ApiServiceErrorCode.INVALID_DUPLICATE_REVIEW_TIME,
+        ),
+        (
+            "profile-1",
+            raw_id,
+            RECEIVED_AT - timedelta(seconds=1),
+            ApiServiceErrorCode.INVALID_DUPLICATE_REVIEW_TIME,
+        ),
+    ):
+        with pytest.raises(ApiServiceError) as error:
+            review_probable_duplicate(
+                factory,
+                user_profile_id=user_profile_id,
+                raw_transaction_id=candidate_id,
+                request=DuplicateReviewRequest(
+                    decision=DuplicateReviewDecision.REJECT,
+                    decided_at=decided_at,
+                ),
+            )
+        assert error.value.code is code
+
+
+def test_corrupt_duplicate_metadata_never_leaks_private_values(
+    factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed_account(factory)
+    monkeypatch.setattr(
+        "cashflow_ai.imports.csv_import_service.utc_now", lambda: RECEIVED_AT
+    )
+    import_csv(factory)
+    raw_id = list_probable_duplicate_reviews(factory, user_profile_id="profile-1")[
+        0
+    ].raw_transaction_id
+    with session_scope(factory) as session:
+        raw = session.get(RawTransactionRecord, raw_id)
+        assert raw is not None
+        raw.issues_json = [{"code": "probable_duplicate", "score": "PRIVATE"}]
+
+    with pytest.raises(ApiServiceError) as error:
+        list_probable_duplicate_reviews(factory, user_profile_id="profile-1")
+    assert error.value.code is ApiServiceErrorCode.INVALID_STORED_METADATA
+    assert "PRIVATE" not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    ["candidate_shape", "missing_fingerprint", "unknown_fingerprint", "not_probable"],
+)
+def test_duplicate_review_listing_handles_incomplete_local_evidence(
+    factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+    corruption: str,
+) -> None:
+    seed_account(factory)
+    monkeypatch.setattr(
+        "cashflow_ai.imports.csv_import_service.utc_now", lambda: RECEIVED_AT
+    )
+    import_csv(factory)
+    with session_scope(factory) as session:
+        raw = session.scalar(
+            select(RawTransactionRecord).where(
+                RawTransactionRecord.review_status == "needs_review"
+            )
+        )
+        assert raw is not None
+        if corruption == "candidate_shape":
+            raw.candidate_json = {"private": "invalid"}
+        elif corruption == "missing_fingerprint":
+            issue = raw.issues_json[0].copy()
+            issue.pop("existing_source_fingerprint")
+            raw.issues_json = [issue]
+        elif corruption == "unknown_fingerprint":
+            issue = raw.issues_json[0].copy()
+            issue["existing_source_fingerprint"] = "f" * 64
+            raw.issues_json = [issue]
+        else:
+            raw.issues_json = [{"code": "other_review"}]
+
+    if corruption == "candidate_shape":
+        with pytest.raises(ApiServiceError) as error:
+            list_probable_duplicate_reviews(factory, user_profile_id="profile-1")
+        assert error.value.code is ApiServiceErrorCode.INVALID_STORED_METADATA
+    else:
+        items = list_probable_duplicate_reviews(factory, user_profile_id="profile-1")
+        if corruption == "not_probable":
+            assert items == ()
+        else:
+            assert items[0].can_keep is False
+            assert items[0].existing_transaction is None
+
+
+def test_invalid_candidate_values_and_ownership_are_rejected_before_writes(
+    factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed_account(factory)
+    monkeypatch.setattr(
+        "cashflow_ai.imports.csv_import_service.utc_now", lambda: RECEIVED_AT
+    )
+    import_csv(factory)
+    with session_scope(factory) as session:
+        raw = session.scalar(
+            select(RawTransactionRecord).where(
+                RawTransactionRecord.review_status == "needs_review"
+            )
+        )
+        assert raw is not None
+        raw_id = raw.id
+        assert raw.candidate_json is not None
+        candidate = raw.candidate_json.copy()
+        draft = candidate["draft"].copy()
+        draft["amount"] = "0.00"
+        candidate["draft"] = draft
+        raw.candidate_json = candidate
+
+    with pytest.raises(ApiServiceError) as listed:
+        list_probable_duplicate_reviews(factory, user_profile_id="profile-1")
+    assert listed.value.code is ApiServiceErrorCode.INVALID_STORED_METADATA
+    decision_time = RECEIVED_AT + timedelta(hours=1)
+    monkeypatch.setattr("cashflow_ai.api.services.utc_now", lambda: decision_time)
+    with pytest.raises(ApiServiceError) as invalid_values:
+        review_probable_duplicate(
+            factory,
+            user_profile_id="profile-1",
+            raw_transaction_id=raw_id,
+            request=DuplicateReviewRequest(
+                decision=DuplicateReviewDecision.KEEP,
+                decided_at=decision_time,
+            ),
+        )
+    assert invalid_values.value.code is ApiServiceErrorCode.INVALID_STORED_METADATA
+
+    with session_scope(factory) as session:
+        raw = session.get(RawTransactionRecord, raw_id)
+        assert raw is not None
+        assert raw.candidate_json is not None
+        candidate = raw.candidate_json.copy()
+        draft = candidate["draft"].copy()
+        draft["amount"] = "-4.50"
+        draft["account_id"] = "other-account"
+        candidate["draft"] = draft
+        raw.candidate_json = candidate
+    with pytest.raises(ApiServiceError) as wrong_owner:
+        review_probable_duplicate(
+            factory,
+            user_profile_id="profile-1",
+            raw_transaction_id=raw_id,
+            request=DuplicateReviewRequest(
+                decision=DuplicateReviewDecision.KEEP,
+                decided_at=decision_time,
+            ),
+        )
+    assert wrong_owner.value.code is ApiServiceErrorCode.INVALID_STORED_METADATA
+
+    with pytest.raises(ApiServiceError) as hidden:
+        review_probable_duplicate(
+            factory,
+            user_profile_id="another-profile",
+            raw_transaction_id=raw_id,
+            request=DuplicateReviewRequest(
+                decision=DuplicateReviewDecision.REJECT,
+                decided_at=decision_time,
+            ),
+        )
+    assert hidden.value.code is ApiServiceErrorCode.DUPLICATE_REVIEW_NOT_FOUND
+
+
+def test_duplicate_keep_without_balance_and_partial_batch_resolution(
+    factory: sessionmaker[Session],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    seed_account(factory)
+    monkeypatch.setattr(
+        "cashflow_ai.imports.csv_import_service.utc_now", lambda: RECEIVED_AT
+    )
+    import_csv(factory)
+    with session_scope(factory) as session:
+        raw = session.scalar(
+            select(RawTransactionRecord).where(
+                RawTransactionRecord.review_status == "needs_review"
+            )
+        )
+        assert raw is not None
+        raw_id = raw.id
+        assert raw.candidate_json is not None
+        candidate = raw.candidate_json.copy()
+        draft = candidate["draft"].copy()
+        draft["balance_after"] = None
+        candidate["draft"] = draft
+        raw.candidate_json = candidate
+    decision_time = RECEIVED_AT + timedelta(hours=1)
+    monkeypatch.setattr("cashflow_ai.api.services.utc_now", lambda: decision_time)
+    before = 4
+    result = review_probable_duplicate(
+        factory,
+        user_profile_id="profile-1",
+        raw_transaction_id=raw_id,
+        request=DuplicateReviewRequest(
+            decision=DuplicateReviewDecision.KEEP,
+            decided_at=decision_time,
+        ),
+    )
+    assert result.kept_transaction_id is not None
+    with session_scope(factory) as session:
+        assert (
+            session.scalar(select(func.count()).select_from(BalanceSnapshotRecord))
+            == before
+        )
+
+    second_engine = create_sqlite_engine("sqlite+pysqlite:///:memory:")
+    second_factory = create_session_factory(second_engine)
+    Base.metadata.create_all(second_engine)
+    seed_account(second_factory)
+    monkeypatch.setattr(
+        "cashflow_ai.imports.csv_import_service.utc_now", lambda: RECEIVED_AT
+    )
+    second_summary = import_csv(second_factory)
+    with session_scope(second_factory) as session:
+        raws = tuple(
+            session.scalars(
+                select(RawTransactionRecord).where(
+                    RawTransactionRecord.import_batch_id
+                    == second_summary.import_batch_id
+                )
+            )
+        )
+        probable = next(item for item in raws if item.review_status == "needs_review")
+        extra = next(item for item in raws if item.review_status == "rejected")
+        extra.review_status = "needs_review"
+        extra.issues_json = [{"code": "manual_review"}]
+        probable_id = probable.id
+    rejected = review_probable_duplicate(
+        second_factory,
+        user_profile_id="profile-1",
+        raw_transaction_id=probable_id,
+        request=DuplicateReviewRequest(
+            decision=DuplicateReviewDecision.REJECT,
+            decided_at=decision_time,
+        ),
+    )
+    assert rejected.import_verification_status.value == "needs_review"
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {
+            "user_profile_id": "profile-1",
+            "start_date": "2026-08-02",
+            "end_date": "2026-08-01",
+        },
+        {
+            "user_profile_id": "profile-1",
+            "account_ids": ["account-1", "account-1"],
+        },
+    ],
+)
+def test_transaction_search_contract_rejects_ambiguous_filters(
+    payload: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        TransactionSearchRequest.model_validate(payload)
 
 
 def test_client_confirmation_time_cannot_backdate_import_evidence(
