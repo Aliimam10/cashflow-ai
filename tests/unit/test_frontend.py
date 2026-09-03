@@ -210,7 +210,7 @@ def test_placeholder_is_truthful_and_forecast_warning_stays_visible(
     assert disclaimer.called is expects_disclaimer
 
 
-def test_page_dispatch_opens_api_for_home_and_import(
+def test_page_dispatch_opens_api_for_implemented_pages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = MagicMock()
@@ -219,10 +219,14 @@ def test_page_dispatch_opens_api_for_home_and_import(
     client_factory = MagicMock(return_value=context)
     home = MagicMock()
     import_page = MagicMock(return_value=FrontendSessionState(account_id="account-1"))
+    transaction_page = MagicMock(
+        return_value=FrontendSessionState(account_id="account-2")
+    )
     placeholder = MagicMock()
     monkeypatch.setattr(app, "ApiClient", client_factory)
     monkeypatch.setattr(app, "render_home", home)
     monkeypatch.setattr(app, "render_import_page", import_page)
+    monkeypatch.setattr(app, "render_transaction_page", transaction_page)
     monkeypatch.setattr(app, "render_placeholder", placeholder)
     session = FrontendSessionState()
 
@@ -236,18 +240,26 @@ def test_page_dispatch_opens_api_for_home_and_import(
         base_url="http://127.0.0.1:8765",
         session=session,
     )
-    placeholder_result = app.render_application_page(
+    transaction_result = app.render_application_page(
         navigation_item(PageId.TRANSACTIONS),
         base_url="http://127.0.0.1:8765",
         session=session,
     )
 
-    assert client_factory.call_count == 2
+    placeholder_result = app.render_application_page(
+        navigation_item(PageId.FORECAST_AND_PLANNING),
+        base_url="http://127.0.0.1:8765",
+        session=session,
+    )
+
+    assert client_factory.call_count == 3
     home.assert_called_once_with(client)
     import_page.assert_called_once_with(client, session)
-    placeholder.assert_called_once_with(navigation_item(PageId.TRANSACTIONS))
+    transaction_page.assert_called_once_with(client, session)
+    placeholder.assert_called_once_with(navigation_item(PageId.FORECAST_AND_PLANNING))
     assert home_result == session
     assert import_result.account_id == "account-1"
+    assert transaction_result.account_id == "account-2"
     assert placeholder_result == session
 
 

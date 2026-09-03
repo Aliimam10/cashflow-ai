@@ -28,8 +28,10 @@ financial-role review, analytics, recurrence, forecasting, anomaly detection,
 budgets, goals, scenarios, data freshness, and model information. PDF persistence
 remains absent. The Streamlit frontend now provides local profile and account setup
 plus review-gated CSV, digital-PDF, and scanned-PDF workflows over its typed API
-client. Transaction dashboards, forecast/planning screens, alert persistence, and
-production model lifecycle management are not implemented yet.
+client. It also provides verified-transaction search and corrections, explicit
+role/duplicate review, and coverage-aware cash-flow dashboards. Forecast/planning
+screens, alert persistence, and production model lifecycle management are not
+implemented yet.
 
 ## Problem
 
@@ -451,8 +453,9 @@ budgets, goals, scenario comparisons, derived-data freshness, and model informat
 with bounded pagination and generated OpenAPI documentation. PDF approval is still
 returned only in memory. Streamlit navigation, its typed API client, home/status,
 data-minimised session state, profile/account setup, and review-gated CSV/PDF import
-are now implemented. The next stage adds transaction review and the first dashboard;
-later stages complete forecast, planning, deployment, and release interfaces.
+are now implemented. Transaction review and the first coverage-aware dashboard are
+also implemented; the next stage adds forecast and planning interfaces, while later
+stages complete deployment and release work.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

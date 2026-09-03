@@ -125,6 +125,12 @@ probable-match score; probable matches always require review. Repeated-file and
 statement-date overlap checks are separate because overlapping statements can
 contain both duplicates and legitimate transactions.
 
+Probable CSV matches now retain a versioned canonical draft beside—not in place of—
+the immutable raw row. The transaction application service exposes profile-scoped
+review evidence and owns the atomic keep/reject transition. Keeping creates a normal
+verified transaction from that validated draft; rejecting preserves source evidence.
+The Streamlit page never reconstructs or writes these records directly.
+
 ## Local persistence
 
 SQLAlchemy 2.x maps explicit persistence records to SQLite tables. Alembic owns

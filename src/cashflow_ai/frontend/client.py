@@ -12,6 +12,7 @@ import httpx2
 from pydantic import BaseModel
 
 from cashflow_ai.config import Settings
+from cashflow_ai.schemas.analytics import AnalyticsScope, CashFlowAnalytics
 from cashflow_ai.schemas.api import (
     AccountCreate,
     AccountResponse,
@@ -21,14 +22,38 @@ from cashflow_ai.schemas.api import (
     Page,
     PdfSourceType,
     ReadinessResponse,
+    TransactionResponse,
+    TransactionSearchRequest,
     UserProfileCreate,
     UserProfileResponse,
 )
+from cashflow_ai.schemas.api_decisions import (
+    FinancialDataFreshnessRequest,
+    FinancialRoleSuggestionRequest,
+    RoleDecisionRequest,
+    TransactionRoleReviewRequest,
+)
+from cashflow_ai.schemas.categories import CategorySummary
 from cashflow_ai.schemas.csv_imports import (
     CsvImportConfirmation,
     CsvImportPlan,
     CsvImportSummary,
     CsvPreview,
+)
+from cashflow_ai.schemas.duplicates import (
+    DuplicateReviewRequest,
+    DuplicateReviewResult,
+    ProbableDuplicateReviewItem,
+)
+from cashflow_ai.schemas.financial_roles import (
+    FinancialRoleSuggestion,
+    RoleDecisionResult,
+    RoleReviewItem,
+)
+from cashflow_ai.schemas.freshness import FinancialDataFreshness
+from cashflow_ai.schemas.hybrid_categorisation import (
+    CategoryFeedback,
+    CategoryFeedbackResult,
 )
 from cashflow_ai.schemas.reconciliation import (
     ApprovedStatement,
@@ -387,6 +412,124 @@ class ApiClient:
             },
             document=document,
             request_timeout_seconds=120.0,
+        )
+
+    def search_transactions(
+        self,
+        request: TransactionSearchRequest,
+    ) -> Page[TransactionResponse]:
+        """Search verified rows owned by the selected local profile."""
+        return self._request(
+            "POST",
+            "/api/v1/transactions/search",
+            Page[TransactionResponse],
+            params={"limit": 100, "offset": 0},
+            body=request,
+        )
+
+    def list_categories(self) -> Page[CategorySummary]:
+        """List the local versioned category taxonomy."""
+        return self.get(
+            "/api/v1/categories",
+            Page[CategorySummary],
+            params={"limit": 100, "offset": 0},
+        )
+
+    def correct_category(self, request: CategoryFeedback) -> CategoryFeedbackResult:
+        """Record one explicit transaction-only category correction."""
+        return self.post(
+            "/api/v1/categorisation/feedback",
+            request,
+            CategoryFeedbackResult,
+        )
+
+    def generate_role_suggestions(
+        self,
+        request: FinancialRoleSuggestionRequest,
+    ) -> Page[FinancialRoleSuggestion]:
+        """Generate advisory transfer, refund, and reimbursement suggestions."""
+        return self._request(
+            "POST",
+            "/api/v1/financial-roles/suggestions",
+            Page[FinancialRoleSuggestion],
+            params={"limit": 100, "offset": 0},
+            body=request,
+        )
+
+    def list_role_reviews(self, profile_id: str) -> Page[RoleReviewItem]:
+        """List pending financial-role suggestions with review context."""
+        return self.get(
+            f"/api/v1/profiles/{_path_segment(profile_id)}/financial-roles/reviews",
+            Page[RoleReviewItem],
+            params={"limit": 100, "offset": 0},
+        )
+
+    def decide_role_suggestion(
+        self,
+        suggestion_id: str,
+        request: RoleDecisionRequest,
+        *,
+        confirm: bool,
+    ) -> RoleDecisionResult:
+        """Confirm or reject one advisory financial-role suggestion."""
+        action = "confirm" if confirm else "reject"
+        return self.post(
+            f"/api/v1/financial-role-suggestions/"
+            f"{_path_segment(suggestion_id)}/{action}",
+            request,
+            RoleDecisionResult,
+        )
+
+    def correct_financial_role(
+        self,
+        transaction_id: str,
+        request: TransactionRoleReviewRequest,
+    ) -> RoleDecisionResult:
+        """Apply one explicit financial-role correction."""
+        return self.post(
+            f"/api/v1/transactions/{_path_segment(transaction_id)}/financial-role",
+            request,
+            RoleDecisionResult,
+        )
+
+    def list_duplicate_reviews(
+        self,
+        profile_id: str,
+    ) -> Page[ProbableDuplicateReviewItem]:
+        """List unresolved probable duplicates without complete raw payloads."""
+        return self.get(
+            f"/api/v1/profiles/{_path_segment(profile_id)}/duplicates/reviews",
+            Page[ProbableDuplicateReviewItem],
+            params={"limit": 100, "offset": 0},
+        )
+
+    def decide_duplicate(
+        self,
+        profile_id: str,
+        raw_transaction_id: str,
+        request: DuplicateReviewRequest,
+    ) -> DuplicateReviewResult:
+        """Keep or reject one probable raw transaction candidate."""
+        return self.post(
+            f"/api/v1/profiles/{_path_segment(profile_id)}/duplicates/"
+            f"{_path_segment(raw_transaction_id)}/review",
+            request,
+            DuplicateReviewResult,
+        )
+
+    def cash_flow(self, request: AnalyticsScope) -> CashFlowAnalytics:
+        """Calculate coverage-aware analytics for an explicit account period."""
+        return self.post("/api/v1/analytics/cash-flow", request, CashFlowAnalytics)
+
+    def freshness(
+        self,
+        request: FinancialDataFreshnessRequest,
+    ) -> FinancialDataFreshness:
+        """Assess account evidence freshness using caller-visible limits."""
+        return self.post(
+            "/api/v1/coverage/freshness",
+            request,
+            FinancialDataFreshness,
         )
 
 

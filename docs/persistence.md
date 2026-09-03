@@ -109,6 +109,11 @@ The confirmed CSV import is one such unit of work. It records document,
 statement context, coverage, balances, preserved rows, and accepted transactions
 together; any exception rolls all of them back. Invalid and probable-duplicate
 rows remain auditable raw evidence but do not receive a verified transaction.
+New probable rows also retain a versioned, validated canonical candidate snapshot.
+The raw payload is never rewritten. An explicit keep decision creates the linked
+verified row and any reported running-balance snapshot; rejection changes only the
+review status. Migration `0010` is additive, and its downgrade refuses to discard
+candidate snapshots while unresolved reviews still depend on them.
 One server-generated UTC receipt time is shared by all availability-bearing
 records in that transaction: `import_batches.imported_at`,
 `import_contexts.created_at`, `raw_transactions.created_at`,

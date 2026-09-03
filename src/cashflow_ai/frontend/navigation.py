@@ -42,7 +42,10 @@ NAVIGATION_ITEMS = (
         page_id=PageId.TRANSACTIONS,
         title="Transactions & analytics",
         icon="📊",
-        summary="Transaction review and dashboards arrive in Commit 34.",
+        summary=(
+            "Correct transactions, review suggestions, and inspect known-data "
+            "analytics."
+        ),
     ),
     NavigationItem(
         page_id=PageId.FORECAST_AND_PLANNING,

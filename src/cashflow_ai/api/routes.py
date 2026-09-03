@@ -25,6 +25,7 @@ from cashflow_ai.api.services import (
     get_profile,
     get_transaction,
     list_accounts,
+    list_probable_duplicate_reviews,
     list_transactions,
     page_items,
     parse_csv_confirmation_form,
@@ -32,6 +33,8 @@ from cashflow_ai.api.services import (
     prepare_pdf_statement_review,
     preview_ocr_statement,
     preview_text_statement,
+    review_probable_duplicate,
+    search_transactions,
 )
 from cashflow_ai.api.uploads import read_bounded_upload
 from cashflow_ai.imports import (
@@ -51,10 +54,16 @@ from cashflow_ai.schemas.api import (
     PdfSourceType,
     ReadinessResponse,
     TransactionResponse,
+    TransactionSearchRequest,
     UserProfileCreate,
     UserProfileResponse,
 )
 from cashflow_ai.schemas.csv_imports import CsvImportSummary, CsvPreview
+from cashflow_ai.schemas.duplicates import (
+    DuplicateReviewRequest,
+    DuplicateReviewResult,
+    ProbableDuplicateReviewItem,
+)
 from cashflow_ai.schemas.ocr_imports import OcrPdfPreview
 from cashflow_ai.schemas.pdf_imports import TextPdfPreview
 from cashflow_ai.schemas.reconciliation import (
@@ -410,6 +419,60 @@ def list_transactions_route(
 ) -> Page[TransactionResponse]:
     """Return verified transactions while excluding raw source payloads."""
     return page_items(list_transactions(factory, account_id=account_id), pagination)
+
+
+@router.post(
+    "/api/v1/transactions/search",
+    response_model=Page[TransactionResponse],
+    tags=["transactions"],
+    summary="Search verified profile transactions",
+)
+def search_transactions_route(
+    request: TransactionSearchRequest,
+    factory: SessionFactoryDependency,
+    pagination: PaginationDependency,
+) -> Page[TransactionResponse]:
+    """Apply profile-owned filters before returning one bounded result page."""
+    return page_items(search_transactions(factory, request), pagination)
+
+
+@router.get(
+    "/api/v1/profiles/{profile_id}/duplicates/reviews",
+    response_model=Page[ProbableDuplicateReviewItem],
+    tags=["duplicates"],
+    summary="List probable duplicate reviews",
+)
+def probable_duplicate_reviews_route(
+    profile_id: str,
+    factory: SessionFactoryDependency,
+    pagination: PaginationDependency,
+) -> Page[ProbableDuplicateReviewItem]:
+    """Return unresolved probable rows without their complete raw payloads."""
+    return page_items(
+        list_probable_duplicate_reviews(factory, user_profile_id=profile_id),
+        pagination,
+    )
+
+
+@router.post(
+    "/api/v1/profiles/{profile_id}/duplicates/{raw_transaction_id}/review",
+    response_model=DuplicateReviewResult,
+    tags=["duplicates"],
+    summary="Resolve a probable duplicate",
+)
+def probable_duplicate_review_route(
+    profile_id: str,
+    raw_transaction_id: str,
+    request: DuplicateReviewRequest,
+    factory: SessionFactoryDependency,
+) -> DuplicateReviewResult:
+    """Keep or reject one raw candidate through the atomic review service."""
+    return review_probable_duplicate(
+        factory,
+        user_profile_id=profile_id,
+        raw_transaction_id=raw_transaction_id,
+        request=request,
+    )
 
 
 @router.get(

@@ -231,6 +231,14 @@ updates, and generated fictional digital/scanned PDFs. Contract tests verify tha
 uploads are multipart, responses are validated, and private bytes are absent from
 object representations.
 
+Commit 34 adds complete statement/branch coverage for profile-scoped transaction
+search, every optional filter, retained probable-candidate evidence, keep/reject
+decisions, legacy and corrupt metadata handling, migration upgrade/downgrade safety,
+typed client calls, interaction states, and gap-preserving chart projections. The
+tests assert that keeping creates verified evidence, rejecting preserves raw source
+values, suggestions remain advisory, unknown coverage is visibly distinct, and
+application-managed session state contains no financial response data.
+
 The manual verification starts a migrated SQLite database, FastAPI, and Streamlit on
 loopback. It creates fictional metadata, persistently imports a generated CSV,
 approves a generated digital PDF without claiming persistence, and exercises the

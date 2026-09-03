@@ -8,8 +8,8 @@ categorisation, analytics, forecasting, anomaly detection, or planning.
 
 The Streamlit frontend calls these endpoints through its typed local client instead
 of accessing the database or domain services directly. Profile/account onboarding
-and statement preview/review are interactive; transaction and forecast workflows
-remain staged placeholders.
+and statement preview/review are interactive. Transaction review and analytics are
+interactive; forecast controls remain staged.
 Forecast, planning, scenario, recurrence, and anomaly calculations are rebuilt
 server-side from owned, cutoff-bound inputs; a caller cannot submit a fabricated
 model result or balance path as trusted evidence.
@@ -60,7 +60,10 @@ digital-PDF use must not fail merely because Tesseract is absent.
 | `POST /api/v1/imports/pdf/confirm` | Re-extract a PDF and apply explicit approval in memory | None |
 | `GET /api/v1/imports/{import_batch_id}/context` | Read stored coverage, balances, flags, and inert notes | None |
 | `GET /api/v1/accounts/{account_id}/transactions` | List verified transactions | None |
+| `POST /api/v1/transactions/search` | Search/filter profile-owned verified transactions | None |
 | `GET /api/v1/transactions/{transaction_id}` | Read one verified transaction | None |
+| `GET /api/v1/profiles/{profile_id}/duplicates/reviews` | List probable duplicate evidence | None |
+| `POST /api/v1/profiles/{profile_id}/duplicates/{raw_transaction_id}/review` | Keep or reject a probable candidate | Review state; a kept candidate becomes verified |
 | `POST /api/v1/analytics/cash-flow` | Calculate role- and coverage-aware cash flow | Derived freshness metadata only |
 | `POST /api/v1/analytics/coverage` | Calculate the exact known, partial, and missing periods | Derived freshness metadata only |
 | `POST /api/v1/coverage/freshness` | Assess transaction, balance, and statement age | None |
@@ -104,6 +107,15 @@ encoded `CsvImportPlan` and `CsvImportConfirmation` form fields. The existing
 confirmation service checks the document fingerprint before an atomic database
 write, preserves every raw source row, quarantines invalid rows, and handles exact
 and probable duplicates according to the reviewed plan.
+
+Probable rows retain a versioned canonical candidate snapshot separately from their
+unchanged raw payload. This is the minimum validated evidence needed for an explicit
+**keep as separate transaction** decision. Older rows created before that additive
+column remain reviewable and rejectable, but keeping them requires a fresh import
+rather than reconstructing financial values from arbitrary raw columns. The review
+endpoint scopes profile and account ownership, uses server receipt time for durable
+audit/invalidation, and marks an import verified only after its last needs-review row
+is resolved.
 
 PDF preview and review are also stateless. Review requires the exact PDF plus its
 source path (`digital_pdf` or `ocr_pdf`), account, currency, and confidence

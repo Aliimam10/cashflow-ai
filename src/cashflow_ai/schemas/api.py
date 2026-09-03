@@ -161,6 +161,38 @@ class TransactionResponse(_ApiContract):
     verified_at: AwareDatetime
 
 
+class TransactionSearchRequest(_ApiContract):
+    """Server-side filters for one profile's verified transaction history."""
+
+    user_profile_id: Identifier
+    account_ids: tuple[Identifier, ...] | None = Field(
+        default=None, min_length=1, max_length=20
+    )
+    start_date: date | None = None
+    end_date: date | None = None
+    search_text: str | None = Field(default=None, min_length=1, max_length=100)
+    category_ids: tuple[CategoryId, ...] | None = Field(
+        default=None, min_length=1, max_length=100
+    )
+    financial_roles: tuple[FinancialRole, ...] | None = Field(
+        default=None, min_length=1, max_length=20
+    )
+
+    @model_validator(mode="after")
+    def validate_filters(self) -> TransactionSearchRequest:
+        """Require ordered dates and unique filter selections."""
+        if (
+            self.start_date is not None
+            and self.end_date is not None
+            and self.end_date < self.start_date
+        ):
+            raise ValueError("transaction search end date cannot precede start date")
+        for values in (self.account_ids, self.category_ids, self.financial_roles):
+            if values is not None and len(values) != len(set(values)):
+                raise ValueError("transaction search filters must be unique")
+        return self
+
+
 class ImportContextResponse(_ApiContract):
     """Stored statement context and coverage for one confirmed import."""
 
@@ -201,6 +233,7 @@ __all__ = [
     "PdfSourceType",
     "ReadinessResponse",
     "TransactionResponse",
+    "TransactionSearchRequest",
     "UserProfileCreate",
     "UserProfileResponse",
 ]

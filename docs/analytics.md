@@ -1,9 +1,9 @@
 # Coverage-aware analytics
 
-CashFlow AI currently exposes deterministic analytics as a local Python service.
-It does not expose an HTTP endpoint or user interface and does not persist a
-report. Callers supply an owned account scope and an inclusive date range; the
-service returns immutable typed contracts.
+CashFlow AI exposes deterministic analytics through its local Python service, HTTP
+adapter, and Streamlit dashboard. It does not persist a report. Callers supply an
+owned account scope and an inclusive date range; the service returns immutable typed
+contracts and the UI renders those contracts without recalculating business logic.
 
 ## Trusted inputs
 
@@ -130,8 +130,8 @@ missing balances by summing transactions.
 
 - Version 1 analytics supports one shared account currency and currently validates
   GBP.
-- The local API exposes analytics and its exact coverage evidence, but the visual
-  dashboard remains a later stage.
+- The visual dashboard displays the first staged analytics. It is not yet the
+  forecasting, budgeting, goal, scenario, or anomaly interface.
 - Budget planning consumes these coverage indicators and verified breakdowns.
 - Approved PDF rows are still review-only until their complete atomic persistence
   workflow is implemented.
