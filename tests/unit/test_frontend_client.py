@@ -50,6 +50,7 @@ from cashflow_ai.schemas.hybrid_categorisation import (
     CategoryFeedback,
     CategoryFeedbackAction,
 )
+from cashflow_ai.schemas.model_registry import ModelTask
 from cashflow_ai.schemas.reconciliation import StatementApproval
 from cashflow_ai.schemas.recurrence import RecurrenceReview, RecurrenceReviewAction
 from cashflow_ai.schemas.statements import (
@@ -477,6 +478,17 @@ def test_client_exposes_typed_transaction_review_and_dashboard_requests(
     client.review_recurring(recurrence_review)
     client.evaluate_forecast(forecast)
     client.balance_forecast(forecast)
+    opaque_request: Any = MagicMock()
+    client.create_budget(opaque_request)
+    client.list_budgets("synthetic-profile", as_of_date=date(2026, 8, 31))
+    client.create_goal(opaque_request)
+    client.list_goals("synthetic-profile")
+    client.evaluate_planning(opaque_request)
+    client.evaluate_scenario(opaque_request)
+    client.detect_anomalies(opaque_request)
+    client.review_anomaly(opaque_request)
+    client.list_models()
+    client.list_models(ModelTask.CASH_FLOW_FORECASTING)
     client.close()
 
     paths = [call.args[1] for call in request.call_args_list]
@@ -498,7 +510,23 @@ def test_client_exposes_typed_transaction_review_and_dashboard_requests(
         "/api/v1/recurring/reviews",
         "/api/v1/forecasts/evaluate",
         "/api/v1/forecasts/balance",
+        "/api/v1/budgets",
+        "/api/v1/profiles/synthetic-profile/budgets",
+        "/api/v1/goals",
+        "/api/v1/profiles/synthetic-profile/goals",
+        "/api/v1/planning/evaluate",
+        "/api/v1/scenarios/evaluate",
+        "/api/v1/anomalies/detect",
+        "/api/v1/anomalies/feedback",
+        "/api/v1/models",
+        "/api/v1/models",
     ]
+    assert request.call_args_list[-2].kwargs["params"] == {"limit": 100, "offset": 0}
+    assert request.call_args_list[-1].kwargs["params"] == {
+        "limit": 100,
+        "offset": 0,
+        "task": "cash_flow_forecasting",
+    }
 
 
 def test_client_rejects_empty_or_oversized_record_identifiers() -> None:

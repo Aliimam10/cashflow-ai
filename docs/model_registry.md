@@ -89,5 +89,5 @@ the configured database, bank statements, uploads, or local model artefacts.
   path is claimed for them.
 - Anomaly metrics remain run diagnostics rather than supervised accuracy evidence.
 - Registry rows are local database data and are not an enterprise experiment tracker.
-- Read-only model-information API routes are available. Automated retraining,
-  deployment stages, and UI controls remain later work.
+- Read-only model-information API routes and an aggregate Commit 36 UI are available.
+  Automated retraining, activation controls, and deployment remain later work.

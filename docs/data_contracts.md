@@ -631,6 +631,12 @@ contains controlled feature/version/parameter/date/count information only. Contr
 validation forbids a rules-only response from claiming scored rows or a model-backed
 response from omitting reproducibility evidence.
 
+`AnomalyFeedbackRequest` binds one controlled expected/unusual action to the complete
+scan plan and transaction identity so the server can recompute the suggestion before
+writing. `AnomalyFeedbackResult` acknowledges only the identity, action, and resulting
+reviewed/dismissed status. A later detection may attach that status to
+`TransactionAnomalyAlert`; raw transaction text never enters these contracts.
+
 ## Model-registry contracts
 
 `ModelRegistration` is the immutable, data-minimised input for one evaluated version.

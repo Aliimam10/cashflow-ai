@@ -51,7 +51,10 @@ NAVIGATION_ITEMS = (
         page_id=PageId.FORECAST_AND_PLANNING,
         title="Forecast & planning",
         icon="📈",
-        summary=("Review recurring payments and inspect uncertainty-aware forecasts."),
+        summary=(
+            "Review forecasts, budgets, goals, scenarios, anomalies, and model "
+            "evaluation evidence."
+        ),
     ),
 )
 

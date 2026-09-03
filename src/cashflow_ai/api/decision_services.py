@@ -8,7 +8,7 @@ from datetime import UTC, date, datetime
 from sqlalchemy.orm import Session, sessionmaker
 
 from cashflow_ai.analytics import compute_cash_flow_analytics
-from cashflow_ai.anomalies import detect_unusual_transactions
+from cashflow_ai.anomalies import detect_unusual_transactions, record_anomaly_feedback
 from cashflow_ai.api.services import ApiServiceError, ApiServiceErrorCode, page_items
 from cashflow_ai.balances import assess_financial_data_freshness
 from cashflow_ai.categorisation import (
@@ -58,7 +58,12 @@ from cashflow_ai.schemas.analytics import (
     CashFlowAnalytics,
     DataCoverageIndicator,
 )
-from cashflow_ai.schemas.anomalies import AnomalyDetectionPlan, AnomalyDetectionResult
+from cashflow_ai.schemas.anomalies import (
+    AnomalyDetectionPlan,
+    AnomalyDetectionResult,
+    AnomalyFeedbackRequest,
+    AnomalyFeedbackResult,
+)
 from cashflow_ai.schemas.api import Page, Pagination
 from cashflow_ai.schemas.api_decisions import (
     BalanceForecastRequest,
@@ -492,6 +497,14 @@ def calculate_anomalies(
     )
 
 
+def review_anomaly(
+    factory: sessionmaker[Session], request: AnomalyFeedbackRequest
+) -> AnomalyFeedbackResult:
+    """Rebuild the bounded scan before saving explicit user feedback."""
+    _require_present_cutoff(request.plan.knowledge_cutoff_at)
+    return record_anomaly_feedback(factory, request=request)
+
+
 def page_models(
     factory: sessionmaker[Session],
     *,
@@ -558,6 +571,7 @@ __all__ = [
     "page_recurring_payments",
     "refresh_recurring_payments",
     "reject_role_suggestion",
+    "review_anomaly",
     "review_recurrence",
     "review_transaction_role",
     "suggest_financial_roles",

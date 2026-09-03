@@ -19,6 +19,7 @@ from cashflow_ai.imports.duplicates import assess_duplicate_facts
 from cashflow_ai.persistence.database import session_scope
 from cashflow_ai.persistence.models import (
     AccountRecord,
+    AnomalyAlertRecord,
     CategoryDecisionRecord,
     FinancialRoleAuditRecord,
     ImportBatchRecord,
@@ -35,6 +36,10 @@ from cashflow_ai.schemas.anomalies import (
     AnomalyDetectionResult,
     AnomalyExclusionCount,
     AnomalyExclusionReason,
+    AnomalyFeedbackAction,
+    AnomalyFeedbackRequest,
+    AnomalyFeedbackResult,
+    AnomalyReviewStatus,
     AnomalySignal,
     AnomalySignalCode,
     AnomalyUserLabel,
@@ -72,6 +77,7 @@ class AnomalyDetectionErrorCode(StrEnum):
     PROFILE_NOT_FOUND = "profile_not_found"
     ACCOUNT_NOT_FOUND = "account_not_found"
     ACCOUNT_NOT_OWNED = "account_not_owned"
+    ALERT_NOT_FOUND = "alert_not_found"
 
 
 class AnomalyDetectionError(ValueError):
@@ -748,6 +754,17 @@ def detect_unusual_transactions(
         transactions = _load_transactions(session, plan)
         covered = _covered_account_days(session, plan)
         recurring = _recurring_evidence(session, plan)
+        review_statuses = {
+            record.verified_transaction_id: AnomalyReviewStatus(record.status)
+            for record in session.scalars(
+                select(AnomalyAlertRecord).where(
+                    AnomalyAlertRecord.verified_transaction_id.in_(
+                        tuple(item.transaction_id for item in transactions)
+                    )
+                )
+            )
+            if record.status != "open"
+        }
 
     detection = tuple(
         item
@@ -944,6 +961,7 @@ def detect_unusual_transactions(
                 score=max(signal.score for signal in ordered_signals),
                 signals=ordered_signals,
                 model_score=alert_model_score,
+                review_status=review_statuses.get(transaction_id),
             )
         )
     alerts.sort(
@@ -975,8 +993,59 @@ def detect_unusual_transactions(
     )
 
 
+def record_anomaly_feedback(
+    factory: sessionmaker[Session], *, request: AnomalyFeedbackRequest
+) -> AnomalyFeedbackResult:
+    """Recompute an alert and save the user's latest non-fraud interpretation."""
+    result = detect_unusual_transactions(factory, plan=request.plan)
+    alert = next(
+        (
+            item
+            for item in result.alerts
+            if item.transaction_id == request.transaction_id
+        ),
+        None,
+    )
+    if alert is None:
+        raise AnomalyDetectionError(
+            AnomalyDetectionErrorCode.ALERT_NOT_FOUND,
+            "the anomaly review suggestion is no longer present for this scan",
+        )
+    status = (
+        AnomalyReviewStatus.DISMISSED
+        if request.action is AnomalyFeedbackAction.EXPECTED_ACTIVITY
+        else AnomalyReviewStatus.REVIEWED
+    )
+    reason = ",".join(signal.code.value for signal in alert.signals)
+    with session_scope(factory) as session:
+        record = session.scalar(
+            select(AnomalyAlertRecord).where(
+                AnomalyAlertRecord.verified_transaction_id == alert.transaction_id
+            )
+        )
+        if record is None:
+            record = AnomalyAlertRecord(
+                verified_transaction_id=alert.transaction_id,
+                score=alert.score,
+                reason=reason,
+                status=status.value,
+            )
+            session.add(record)
+        else:
+            record.score = alert.score
+            record.reason = reason
+            record.status = status.value
+        session.flush()
+    return AnomalyFeedbackResult(
+        transaction_id=alert.transaction_id,
+        action=request.action,
+        status=status,
+    )
+
+
 __all__ = [
     "AnomalyDetectionError",
     "AnomalyDetectionErrorCode",
     "detect_unusual_transactions",
+    "record_anomaly_feedback",
 ]

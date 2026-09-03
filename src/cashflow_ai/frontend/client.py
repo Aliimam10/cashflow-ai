@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import date
 from enum import StrEnum
 from types import TracebackType
 from urllib.parse import quote, urlsplit
@@ -13,6 +14,12 @@ from pydantic import BaseModel
 
 from cashflow_ai.config import Settings
 from cashflow_ai.schemas.analytics import AnalyticsScope, CashFlowAnalytics
+from cashflow_ai.schemas.anomalies import (
+    AnomalyDetectionPlan,
+    AnomalyDetectionResult,
+    AnomalyFeedbackRequest,
+    AnomalyFeedbackResult,
+)
 from cashflow_ai.schemas.api import (
     AccountCreate,
     AccountResponse,
@@ -32,8 +39,10 @@ from cashflow_ai.schemas.api_decisions import (
     FinancialDataFreshnessRequest,
     FinancialRoleSuggestionRequest,
     ForecastEvaluationRequest,
+    PlanningApiRequest,
     RecurrenceDetectionRequest,
     RoleDecisionRequest,
+    ScenarioApiRequest,
     TransactionRoleReviewRequest,
 )
 from cashflow_ai.schemas.categories import CategorySummary
@@ -60,6 +69,14 @@ from cashflow_ai.schemas.hybrid_categorisation import (
     CategoryFeedback,
     CategoryFeedbackResult,
 )
+from cashflow_ai.schemas.model_registry import ModelTask, RegisteredModel
+from cashflow_ai.schemas.planning import (
+    Budget,
+    BudgetCreate,
+    FinancialGoal,
+    FinancialGoalCreate,
+    FinancialPlanningResult,
+)
 from cashflow_ai.schemas.reconciliation import (
     ApprovedStatement,
     StatementApproval,
@@ -70,6 +87,7 @@ from cashflow_ai.schemas.recurrence import (
     RecurrenceReviewResult,
     RecurringPaymentCandidate,
 )
+from cashflow_ai.schemas.scenarios import FinancialScenarioComparison
 from cashflow_ai.schemas.transactions import Currency
 
 
@@ -591,6 +609,71 @@ class ApiClient:
             request,
             ForecastTrainingResult,
         )
+
+    def create_budget(self, request: BudgetCreate) -> Budget:
+        """Create one explicit local budget."""
+        return self.post("/api/v1/budgets", request, Budget)
+
+    def list_budgets(self, profile_id: str, *, as_of_date: date) -> Page[Budget]:
+        """List budgets active on one date."""
+        return self.get(
+            f"/api/v1/profiles/{_path_segment(profile_id)}/budgets",
+            Page[Budget],
+            params={"as_of_date": as_of_date.isoformat(), "limit": 100, "offset": 0},
+        )
+
+    def create_goal(self, request: FinancialGoalCreate) -> FinancialGoal:
+        """Create a savings target or minimum-balance floor."""
+        return self.post("/api/v1/goals", request, FinancialGoal)
+
+    def list_goals(self, profile_id: str) -> Page[FinancialGoal]:
+        """List goals owned by one local profile."""
+        return self.get(
+            f"/api/v1/profiles/{_path_segment(profile_id)}/goals",
+            Page[FinancialGoal],
+            params={"limit": 100, "offset": 0},
+        )
+
+    def evaluate_planning(self, request: PlanningApiRequest) -> FinancialPlanningResult:
+        """Calculate budget, goal, and safe-spending progress."""
+        return self.post(
+            "/api/v1/planning/evaluate",
+            request,
+            FinancialPlanningResult,
+        )
+
+    def evaluate_scenario(
+        self, request: ScenarioApiRequest
+    ) -> FinancialScenarioComparison:
+        """Compare one non-persistent scenario with its baseline."""
+        return self.post(
+            "/api/v1/scenarios/evaluate",
+            request,
+            FinancialScenarioComparison,
+        )
+
+    def detect_anomalies(self, request: AnomalyDetectionPlan) -> AnomalyDetectionResult:
+        """Return local review suggestions without alleging fraud."""
+        return self.post(
+            "/api/v1/anomalies/detect",
+            request,
+            AnomalyDetectionResult,
+        )
+
+    def review_anomaly(self, request: AnomalyFeedbackRequest) -> AnomalyFeedbackResult:
+        """Save expected-activity or confirmed-unusual feedback."""
+        return self.post(
+            "/api/v1/anomalies/feedback",
+            request,
+            AnomalyFeedbackResult,
+        )
+
+    def list_models(self, task: ModelTask | None = None) -> Page[RegisteredModel]:
+        """List data-minimised local model evaluation metadata."""
+        params: dict[str, str | int] = {"limit": 100, "offset": 0}
+        if task is not None:
+            params["task"] = task.value
+        return self.get("/api/v1/models", Page[RegisteredModel], params=params)
 
 
 __all__ = [

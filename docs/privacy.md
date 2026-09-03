@@ -358,3 +358,12 @@ values to the local API. Candidate evidence and forecast results are rendered fo
 current run but never copied into application-managed session state, files, telemetry,
 or logs. Chart floats are presentation-only copies; fixed-precision source and API
 money remains unchanged.
+
+Budget/goal forms persist only the validated plan values the user explicitly saves.
+Scenarios remain non-persistent and charts receive presentation-only floating-point
+copies. Anomaly scans are read-only; an explicit feedback action causes the backend to
+recompute the same scoped alert and retain only its transaction link, bounded score,
+controlled signal-code reasons, and reviewed/dismissed status. No raw description or
+merchant text is duplicated into the alert record, and feedback does not trigger
+training. Model-information controls expose only aggregate registry metadata, never
+learned vocabulary, feature rows, or transaction-level predictions.

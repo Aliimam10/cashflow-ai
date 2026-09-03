@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import Engine
+from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session, sessionmaker
 
 import cashflow_ai.anomalies.demo as anomaly_demo
@@ -18,11 +18,13 @@ from cashflow_ai.anomalies import (
     AnomalyDetectionError,
     AnomalyDetectionErrorCode,
     detect_unusual_transactions,
+    record_anomaly_feedback,
 )
 from cashflow_ai.persistence import Base, create_session_factory, create_sqlite_engine
 from cashflow_ai.persistence.database import session_scope
 from cashflow_ai.persistence.models import (
     AccountRecord,
+    AnomalyAlertRecord,
     CategoryDecisionRecord,
     CategoryRecord,
     FinancialRoleAuditRecord,
@@ -41,6 +43,9 @@ from cashflow_ai.schemas import (
     AnomalyDetectionPolicy,
     AnomalyDetectionResult,
     AnomalyExclusionReason,
+    AnomalyFeedbackAction,
+    AnomalyFeedbackRequest,
+    AnomalyReviewStatus,
     AnomalySignal,
     AnomalySignalCode,
     AnomalyUserLabel,
@@ -536,6 +541,66 @@ def test_detects_all_rule_types_and_runs_reproducible_isolation_forest(
     assert duplicate.label is AnomalyUserLabel.POSSIBLE_DUPLICATE
     assert duplicate.model_score is None
     assert all("fraud" not in item.label.value.casefold() for item in first.alerts)
+
+    dismissed = record_anomaly_feedback(
+        factory,
+        request=AnomalyFeedbackRequest(
+            plan=_plan(),
+            transaction_id="exact-issue",
+            action=AnomalyFeedbackAction.EXPECTED_ACTIVITY,
+        ),
+    )
+    assert dismissed.status is AnomalyReviewStatus.DISMISSED
+    with session_scope(factory) as session:
+        saved = session.scalar(
+            select(AnomalyAlertRecord).where(
+                AnomalyAlertRecord.verified_transaction_id == "exact-issue"
+            )
+        )
+        assert saved is not None
+        assert saved.reason == "exact_duplicate"
+        session.add(
+            AnomalyAlertRecord(
+                verified_transaction_id="large",
+                score=Decimal("0.500000"),
+                reason="unusually_large_transaction",
+                status="open",
+            )
+        )
+
+    reviewed_scan = detect_unusual_transactions(factory, plan=_plan())
+    reviewed_alerts = {item.transaction_id: item for item in reviewed_scan.alerts}
+    assert reviewed_alerts["exact-issue"].review_status is AnomalyReviewStatus.DISMISSED
+    assert reviewed_alerts["large"].review_status is None
+
+    confirmed = record_anomaly_feedback(
+        factory,
+        request=AnomalyFeedbackRequest(
+            plan=_plan(),
+            transaction_id="exact-issue",
+            action=AnomalyFeedbackAction.CONFIRMED_UNUSUAL,
+        ),
+    )
+    assert confirmed.status is AnomalyReviewStatus.REVIEWED
+    with session_scope(factory) as session:
+        updated = session.scalar(
+            select(AnomalyAlertRecord).where(
+                AnomalyAlertRecord.verified_transaction_id == "exact-issue"
+            )
+        )
+        assert updated is not None
+        assert updated.status == "reviewed"
+
+    with pytest.raises(AnomalyDetectionError) as missing_alert:
+        record_anomaly_feedback(
+            factory,
+            request=AnomalyFeedbackRequest(
+                plan=_plan(),
+                transaction_id="not-an-alert",
+                action=AnomalyFeedbackAction.EXPECTED_ACTIVITY,
+            ),
+        )
+    assert missing_alert.value.code is AnomalyDetectionErrorCode.ALERT_NOT_FOUND
 
 
 def test_sparse_or_uncovered_data_returns_rules_only_with_explicit_warnings(

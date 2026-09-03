@@ -156,7 +156,7 @@ def _path(*, occurrences: bool = True) -> BalanceForecastPath:
 def _ui(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     ui = MagicMock()
     ui.container.return_value = nullcontext()
-    ui.tabs.return_value = (nullcontext(), nullcontext())
+    ui.tabs.return_value = tuple(nullcontext() for _index in range(6))
     monkeypatch.setattr(page, "st", ui)
     monkeypatch.setattr(page, "loading_state", lambda message: nullcontext())
     return ui
@@ -345,14 +345,27 @@ def test_page_handles_no_accounts_success_and_safe_api_failure(
     client.list_accounts.return_value = Page[AccountResponse](
         items=(_account(),), limit=100, offset=0, total=1
     )
+    client.list_categories.return_value.items = ()
     ui.date_input.return_value = date(2026, 8, 30)
     monkeypatch.setattr(page, "_render_recurring", MagicMock())
     monkeypatch.setattr(
         page, "_render_forecast", MagicMock(return_value="synthetic-account")
     )
+    planning = MagicMock()
+    scenarios = MagicMock()
+    anomalies = MagicMock()
+    models = MagicMock()
+    monkeypatch.setattr(page, "render_budgets_and_goals", planning)
+    monkeypatch.setattr(page, "render_scenarios", scenarios)
+    monkeypatch.setattr(page, "render_anomalies", anomalies)
+    monkeypatch.setattr(page, "render_models", models)
     state = page.render_forecast_page(client, session)
     assert state.account_id == "synthetic-account"
     assert state.privacy_notice_seen
+    planning.assert_called_once()
+    scenarios.assert_called_once()
+    anomalies.assert_called_once()
+    models.assert_called_once_with(client)
 
     failure = ApiClientError(ApiClientErrorCode.CONNECTION_FAILED, "safe failure")
     client.current_profile.side_effect = failure
