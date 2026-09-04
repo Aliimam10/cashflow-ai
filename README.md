@@ -33,7 +33,9 @@ role/duplicate review, and coverage-aware cash-flow dashboards. Forecast/plannin
 screens now add recurring review, uncertainty-aware forecasts, budgets, goals,
 safe-spending estimates, isolated scenarios, anomaly feedback, and aggregate model
 evaluation. PDF persistence and production model lifecycle management are not
-implemented yet.
+implemented yet. The application is now packaged as one local Docker image with
+separate FastAPI and Streamlit services, persistent private SQLite/model volumes,
+bundled Tesseract OCR, and read-only GitHub Actions quality and image-build gates.
 
 ## Problem
 
@@ -388,6 +390,21 @@ review-gated recurrence, uncertainty-aware balance forecasts, budgets and goals,
 hypothetical scenarios, anomaly review, and model evaluation metadata. See
 [`docs/frontend.md`](docs/frontend.md) for the exact manual check and privacy boundary.
 
+To run the same application boundaries in local containers, install Docker Desktop
+and use:
+
+```bash
+make docker-config
+make docker-build
+make docker-up
+```
+
+Open `http://127.0.0.1:8501`, then stop the services with `make docker-down`.
+SQLite and model artefacts remain in private Docker-managed volumes between runs.
+The ports remain loopback-only and the Compose setup is not a remote deployment.
+See [`docs/containers.md`](docs/containers.md) for the topology, privacy safeguards,
+CI gates, exact checks, and limitations.
+
 ## Privacy
 
 This repository must never contain real bank statements, credentials, personal
@@ -401,6 +418,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 
 - [`docs/api.md`](docs/api.md)
 - [`docs/frontend.md`](docs/frontend.md)
+- [`docs/containers.md`](docs/containers.md)
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/data_contracts.md`](docs/data_contracts.md)
 - [`docs/imports.md`](docs/imports.md)
@@ -461,9 +479,11 @@ data-minimised session state, profile/account setup, and review-gated CSV/PDF im
 are now implemented. Transaction review and the first coverage-aware dashboard are
 also implemented. The forecast and planning interface is now implemented. Synthetic
 cross-boundary CSV/forecast and OCR/reconciliation tests now harden privacy, security,
-and ingestion failure behaviour; PDF approval remains non-persistent by design. The
-next stage adds reproducible local containers and continuous integration before the
-release documentation is finalised.
+and ingestion failure behaviour; PDF approval remains non-persistent by design.
+Reproducible local containers now package the API, interface, SQLite storage, model
+storage, and Tesseract without introducing a remote service. GitHub Actions repeats
+the locked quality, coverage, migration, image, import, and OCR build checks. The
+next stage completes evaluation, privacy, and release documentation.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

@@ -1,0 +1,52 @@
+# Source-control and local tool state
+.git/
+.github/
+.venv/
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.pre-commit-config.yaml
+
+# Secrets and machine-specific configuration
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Private financial and generated runtime data
+uploads/
+data/
+models/
+artifacts/
+mlruns/
+logs/
+*.db
+*.db-*
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.joblib
+*.pkl
+*.skops
+*.log
+
+# Development-only material and generated output
+tests/
+scripts/
+docs/
+notebooks/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+build/
+dist/
+*.egg-info/
+.ipynb_checkpoints/
+.DS_Store
+.idea/
+.vscode/

@@ -1,0 +1,70 @@
+name: cashflow-ai
+
+x-cashflow-environment: &cashflow-environment
+  CASHFLOW_API_HOST: "127.0.0.1"
+  CASHFLOW_API_PORT: "8000"
+  CASHFLOW_DATABASE_URL: "sqlite:////app/data/cashflow.db"
+  CASHFLOW_DEBUG: "false"
+  CASHFLOW_ENVIRONMENT: "production"
+  CASHFLOW_LOG_FORMAT: "json"
+  CASHFLOW_LOG_LEVEL: "INFO"
+  CASHFLOW_TIMEZONE: "UTC"
+  CASHFLOW_UI_HOST: "127.0.0.1"
+  CASHFLOW_UI_PORT: "8501"
+  HOME: "/tmp/cashflow-home"
+
+x-runtime-safeguards: &runtime-safeguards
+  cap_drop:
+    - ALL
+  init: true
+  read_only: true
+  security_opt:
+    - no-new-privileges:true
+  tmpfs:
+    - /tmp:rw,noexec,nosuid,size=64m
+
+services:
+  api:
+    <<: *runtime-safeguards
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: cashflow-ai:local
+    command:
+      - /bin/sh
+      - -c
+      - alembic upgrade head && exec cashflow-api
+    environment: *cashflow-environment
+    ports:
+      - "127.0.0.1:8000:8000"
+      - "127.0.0.1:8501:8501"
+    volumes:
+      - cashflow_data:/app/data
+      - cashflow_models:/app/models
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/ready', timeout=2).read()
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 30s
+
+  ui:
+    <<: *runtime-safeguards
+    image: cashflow-ai:local
+    command:
+      - cashflow-ui
+    depends_on:
+      api:
+        condition: service_healthy
+    environment: *cashflow-environment
+    network_mode: service:api
+
+volumes:
+  cashflow_data:
+  cashflow_models:
