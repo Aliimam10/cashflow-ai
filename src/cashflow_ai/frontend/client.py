@@ -445,13 +445,16 @@ class ApiClient:
     def search_transactions(
         self,
         request: TransactionSearchRequest,
+        *,
+        limit: int = 100,
+        offset: int = 0,
     ) -> Page[TransactionResponse]:
         """Search verified rows owned by the selected local profile."""
         return self._request(
             "POST",
             "/api/v1/transactions/search",
             Page[TransactionResponse],
-            params={"limit": 100, "offset": 0},
+            params={"limit": limit, "offset": offset},
             body=request,
         )
 

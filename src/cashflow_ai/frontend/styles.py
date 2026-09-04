@@ -143,7 +143,7 @@ APP_STYLES = """
     .cf-page-title {
         margin: 0;
         color: var(--cf-navy);
-        font-size: clamp(2.15rem, 5vw, 3.55rem);
+        font-size: clamp(1.9rem, 3.5vw, 2.85rem);
         line-height: 1.04;
         letter-spacing: -0.045em;
     }
@@ -318,7 +318,7 @@ APP_STYLES = """
         }
 
         .cf-page-title {
-            font-size: 2.15rem;
+            font-size: 1.95rem;
         }
 
         .cf-feature-card {

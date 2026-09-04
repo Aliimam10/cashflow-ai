@@ -461,6 +461,49 @@ def test_dashboard_range_and_page_orchestration_are_data_minimised(
     today_start, today_end = page._dashboard_range(())
     assert today_start == today_end == date.today()
 
+    client = MagicMock()
+    oldest = _transaction().model_copy(
+        update={"transaction_id": "oldest", "transaction_date": date(2025, 9, 1)}
+    )
+    newest = _transaction().model_copy(
+        update={"transaction_id": "newest", "transaction_date": date(2026, 8, 31)}
+    )
+    client.search_transactions.side_effect = [
+        Page[TransactionResponse](items=(newest,), limit=1, offset=0, total=292),
+        Page[TransactionResponse](items=(oldest,), limit=1, offset=291, total=292),
+    ]
+    boundaries = page._dashboard_boundary_transactions(
+        client,
+        profile_id="profile-1",
+        accounts=(_account(),),
+    )
+    assert boundaries == (oldest, newest)
+    assert client.search_transactions.call_args_list[1].kwargs == {
+        "limit": 1,
+        "offset": 291,
+    }
+
+    client.search_transactions.side_effect = None
+    client.search_transactions.return_value = Page[TransactionResponse](
+        items=(), limit=1, offset=0, total=0
+    )
+    assert (
+        page._dashboard_boundary_transactions(
+            client,
+            profile_id="profile-1",
+            accounts=(_account(),),
+        )
+        == ()
+    )
+    client.search_transactions.return_value = Page[TransactionResponse](
+        items=(newest,), limit=1, offset=0, total=1
+    )
+    assert page._dashboard_boundary_transactions(
+        client,
+        profile_id="profile-1",
+        accounts=(_account(),),
+    ) == (newest,)
+
     ui = _ui(monkeypatch)
     ui.tabs.return_value = (nullcontext(), nullcontext(), nullcontext())
     client = MagicMock()
@@ -475,7 +518,10 @@ def test_dashboard_range_and_page_orchestration_are_data_minimised(
     monkeypatch.setattr(page, "_render_corrections", MagicMock())
     monkeypatch.setattr(page, "_render_role_reviews", MagicMock())
     monkeypatch.setattr(page, "_render_duplicate_reviews", MagicMock())
-    monkeypatch.setattr(page, "_render_dashboard", MagicMock())
+    dashboard = MagicMock()
+    monkeypatch.setattr(page, "_render_dashboard", dashboard)
+    dashboard_boundaries = MagicMock(return_value=(oldest, newest))
+    monkeypatch.setattr(page, "_dashboard_boundary_transactions", dashboard_boundaries)
     session = FrontendSessionState(selected_page=PageId.TRANSACTIONS)
 
     updated = page.render_transaction_page(client, session)
@@ -483,6 +529,12 @@ def test_dashboard_range_and_page_orchestration_are_data_minimised(
     assert updated.user_profile_id == "profile-1"
     assert updated.account_id == "account-1"
     assert updated.model_dump().keys() == session.model_dump().keys()
+    dashboard.assert_called_once_with(
+        client,
+        profile_id="profile-1",
+        accounts=(_account(),),
+        transactions=(oldest, newest),
+    )
 
     client.list_accounts.return_value = Page[AccountResponse](
         items=(), limit=100, offset=0, total=0

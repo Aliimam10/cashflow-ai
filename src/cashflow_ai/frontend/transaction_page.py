@@ -82,7 +82,11 @@ class TransactionApi(Protocol):
         ...
 
     def search_transactions(
-        self, request: TransactionSearchRequest
+        self,
+        request: TransactionSearchRequest,
+        *,
+        limit: int = 100,
+        offset: int = 0,
     ) -> Page[TransactionResponse]:
         """Search verified transactions."""
         ...
@@ -395,6 +399,24 @@ def _dashboard_range(
     return (min(dates), max(dates)) if dates else (today, today)
 
 
+def _dashboard_boundary_transactions(
+    client: TransactionApi,
+    *,
+    profile_id: str,
+    accounts: tuple[AccountResponse, ...],
+) -> tuple[TransactionResponse, ...]:
+    """Load only the newest and oldest rows needed for dashboard date defaults."""
+    request = TransactionSearchRequest(
+        user_profile_id=profile_id,
+        account_ids=tuple(item.account_id for item in accounts),
+    )
+    newest = client.search_transactions(request, limit=1)
+    if not newest.items or newest.total == 1:
+        return newest.items
+    oldest = client.search_transactions(request, limit=1, offset=newest.total - 1)
+    return (*oldest.items, *newest.items)
+
+
 def _render_dashboard(
     client: TransactionApi,
     *,
@@ -414,6 +436,7 @@ def _render_dashboard(
     requested = st.date_input(
         "Dashboard period",
         value=(default_start, default_end),
+        key="cashflow_dashboard_period_v2",
     )
     if not selected_ids:
         st.warning("Select at least one account for the dashboard.")
@@ -546,6 +569,12 @@ def render_transaction_page(
                 "Create an account and import a statement under Add a statement.",
             )
             return session
+        with loading_state("Finding your statement dates…"):
+            dashboard_transactions = _dashboard_boundary_transactions(
+                client,
+                profile_id=profile.profile_id,
+                accounts=accounts,
+            )
         dashboard, history, reviews = st.tabs(
             ("Cash-flow overview", "Transactions", "Needs your review")
         )
@@ -554,7 +583,7 @@ def render_transaction_page(
                 client,
                 profile_id=profile.profile_id,
                 accounts=accounts,
-                transactions=(),
+                transactions=dashboard_transactions,
             )
         with history:
             with loading_state("Loading your transactions…"):
