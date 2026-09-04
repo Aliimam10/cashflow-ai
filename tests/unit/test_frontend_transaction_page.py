@@ -121,6 +121,7 @@ def _ui(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     ui = MagicMock()
     monkeypatch.setattr(page, "st", ui)
     monkeypatch.setattr(page, "loading_state", lambda message: nullcontext())
+    monkeypatch.setattr(page, "render_page_header", MagicMock())
     return ui
 
 
@@ -263,7 +264,7 @@ def test_role_reviews_refresh_confirm_reject_and_show_empty_queue(
     ui.button.return_value = False
     page._render_role_reviews(client, profile_id="profile-1")
     assert ui.caption.call_args_list[-1].args == (
-        "No financial-role suggestions currently need review.",
+        "No money-movement suggestions currently need review.",
     )
 
     client.list_role_reviews.return_value = SimpleNamespace(items=(review,))

@@ -28,33 +28,27 @@ class NavigationItem(BaseModel):
 NAVIGATION_ITEMS = (
     NavigationItem(
         page_id=PageId.HOME,
-        title="Home",
-        icon="🏠",
-        summary="Local service status and product boundaries.",
+        title="Overview",
+        icon="⌂",
+        summary="Start here and see what CashFlow AI can help you do.",
     ),
     NavigationItem(
         page_id=PageId.IMPORT,
-        title="Import statements",
-        icon="📄",
-        summary="Set up local accounts and review CSV, digital-PDF, or OCR extraction.",
+        title="Add a statement",
+        icon="+",
+        summary="Upload and review a CSV, digital PDF, or scanned statement.",
     ),
     NavigationItem(
         page_id=PageId.TRANSACTIONS,
-        title="Transactions & analytics",
-        icon="📊",
-        summary=(
-            "Correct transactions, review suggestions, and inspect known-data "
-            "analytics."
-        ),
+        title="Transactions",
+        icon="↕",
+        summary="Review activity and understand where your money goes.",
     ),
     NavigationItem(
         page_id=PageId.FORECAST_AND_PLANNING,
-        title="Forecast & planning",
-        icon="📈",
-        summary=(
-            "Review forecasts, budgets, goals, scenarios, anomalies, and model "
-            "evaluation evidence."
-        ),
+        title="Forecast & plans",
+        icon="⌁",
+        summary="Look ahead, set budgets, and explore financial scenarios.",
     ),
 )
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, date, datetime, timedelta
+from enum import StrEnum
 from typing import Protocol
 
 import streamlit as st
@@ -13,6 +14,7 @@ from cashflow_ai.frontend.components import (
     render_empty_state,
     render_error,
     render_forecast_disclaimer,
+    render_page_header,
 )
 from cashflow_ai.frontend.forecast_workflow import (
     forecast_chart,
@@ -49,6 +51,17 @@ from cashflow_ai.schemas.recurrence import (
     RecurrenceStatus,
     RecurringPaymentCandidate,
 )
+
+
+class ForecastView(StrEnum):
+    """User-facing tools available on the planning page."""
+
+    FORECAST = "Balance forecast"
+    RECURRING = "Recurring payments"
+    PLANNING = "Budgets and goals"
+    SCENARIOS = "What-if scenarios"
+    ANOMALIES = "Unusual activity"
+    MODELS = "How the models performed"
 
 
 class ForecastApi(PlanningApi, Protocol):
@@ -96,7 +109,7 @@ def _render_recurring(
         "used as known future payments."
     )
     if st.button("Refresh recurring patterns"):
-        with loading_state("Checking verified history for recurring patterns…"):
+        with loading_state("Checking your history for recurring payments…"):
             result = client.detect_recurring(
                 recurrence_request(
                     profile_id=profile_id,
@@ -108,7 +121,7 @@ def _render_recurring(
     if not result.items:
         render_empty_state(
             "No recurring patterns detected",
-            "More verified history or repeated payments may be needed.",
+            "More history or repeated payments may be needed.",
         )
         return
 
@@ -127,7 +140,7 @@ def _render_recurring(
             third.metric("Next expected", item.next_expected_date.isoformat())
             st.caption(
                 f"Confidence {item.confidence:.0%} · "
-                f"{len(item.occurrence_dates)} verified occurrences · "
+                f"{len(item.occurrence_dates)} past payments · "
                 f"status {item.status.value}"
             )
             if item.status is not RecurrenceStatus.PENDING:
@@ -186,7 +199,7 @@ def _render_forecast_result(
 
     source, cutoff, model = st.columns(3)
     source.metric("Current balance source", path.opening_balance.source.value)
-    cutoff.metric("Data cutoff", path.plan.knowledge_cutoff_at.date().isoformat())
+    cutoff.metric("History through", path.plan.knowledge_cutoff_at.date().isoformat())
     model.metric("Selected model", path.selected_model.value.replace("_", " "))
     st.caption(
         f"Opening balance: {money_text(path.opening_balance.balance, currency)} as of "
@@ -203,7 +216,7 @@ def _render_forecast_result(
         reasons = ", ".join(
             warning.value.replace("_", " ") for warning in path.freshness_warnings
         )
-        st.warning(f"Stale or incomplete financial evidence: {reasons}.")
+        st.warning(f"Some account information is old or incomplete: {reasons}.")
     if ForecastPathWarningCode.LIMITED_RESIDUAL_HISTORY in path.warnings:
         st.info("Few past forecast errors are available, so uncertainty is cautious.")
 
@@ -232,7 +245,7 @@ def _render_forecast(
     accounts: tuple[AccountResponse, ...],
     default_account_id: str | None,
 ) -> str:
-    st.subheader("Balance forecast")
+    st.subheader("Your projected balance")
     account_names = {item.account_id: item.name for item in accounts}
     account_ids = tuple(account_names)
     selected_index = (
@@ -248,7 +261,7 @@ def _render_forecast(
     )
     latest_complete_date = datetime.now(UTC).date() - timedelta(days=1)
     as_of = st.date_input(
-        "Use verified data through (completed UTC date)",
+        "Use spending history through",
         value=latest_complete_date,
         max_value=latest_complete_date,
     )
@@ -296,7 +309,12 @@ def render_forecast_page(
     client: ForecastApi, session: FrontendSessionState
 ) -> FrontendSessionState:
     """Render review-gated recurrence and uncertainty-aware forecasts."""
-    st.title("📈 Forecast & planning")
+    render_page_header(
+        "Plan ahead",
+        "Make the next few weeks less uncertain.",
+        "Project your balance, keep an eye on recurring bills, and explore changes "
+        "before they affect your real money.",
+    )
     render_forecast_disclaimer()
     try:
         profile = client.current_profile()
@@ -309,37 +327,34 @@ def render_forecast_page(
             return session
         categories = client.list_categories().items
         latest_complete_date = datetime.now(UTC).date() - timedelta(days=1)
+        selected_view = st.selectbox(
+            "What would you like to do?",
+            tuple(ForecastView),
+            format_func=lambda item: item.value,
+        )
         as_of = st.date_input(
-            "Recurring evidence date (completed UTC date)",
+            "Use transactions up to",
             value=latest_complete_date,
             max_value=latest_complete_date,
+            help="Choose the latest fully completed day covered by your statement.",
         )
         account_names = {item.account_id: item.name for item in accounts}
-        recurring, forecasting, planning, scenarios, anomalies, models = st.tabs(
-            (
-                "Recurring payments",
-                "Forecast",
-                "Budgets & goals",
-                "Scenarios",
-                "Anomaly review",
-                "Model evaluation",
-            )
-        )
-        with recurring:
-            _render_recurring(
-                client,
-                profile_id=profile.profile_id,
-                account_names=account_names,
-                as_of=as_of,
-            )
-        with forecasting:
+        selected_account = session.account_id or accounts[0].account_id
+        if selected_view is ForecastView.FORECAST:
             selected_account = _render_forecast(
                 client,
                 profile_id=profile.profile_id,
                 accounts=accounts,
                 default_account_id=session.account_id,
             )
-        with planning:
+        elif selected_view is ForecastView.RECURRING:
+            _render_recurring(
+                client,
+                profile_id=profile.profile_id,
+                account_names=account_names,
+                as_of=as_of,
+            )
+        elif selected_view is ForecastView.PLANNING:
             render_budgets_and_goals(
                 client,
                 profile_id=profile.profile_id,
@@ -348,7 +363,7 @@ def render_forecast_page(
                 categories=categories,
                 as_of=as_of,
             )
-        with scenarios:
+        elif selected_view is ForecastView.SCENARIOS:
             render_scenarios(
                 client,
                 profile_id=profile.profile_id,
@@ -356,14 +371,14 @@ def render_forecast_page(
                 categories=categories,
                 as_of=as_of,
             )
-        with anomalies:
+        elif selected_view is ForecastView.ANOMALIES:
             render_anomalies(
                 client,
                 profile_id=profile.profile_id,
                 accounts=accounts,
                 as_of=as_of,
             )
-        with models:
+        else:
             render_models(client)
     except ApiClientError as error:
         render_error(error)
@@ -376,4 +391,4 @@ def render_forecast_page(
     )
 
 
-__all__ = ["ForecastApi", "render_forecast_page"]
+__all__ = ["ForecastApi", "ForecastView", "render_forecast_page"]

@@ -13,6 +13,7 @@ from cashflow_ai.frontend.components import (
     loading_state,
     render_empty_state,
     render_error,
+    render_page_header,
     render_privacy_notice,
 )
 from cashflow_ai.frontend.import_workflow import (
@@ -180,8 +181,10 @@ def _load_or_create_profile(client: ImportApi) -> UserProfileResponse | None:
         )
         return profile
 
-    st.subheader("1. Create your local profile")
-    st.caption("This stores local preferences only; no bank login is requested.")
+    st.subheader("Set up your profile")
+    st.caption(
+        "Choose local preferences. You will never be asked for bank login details."
+    )
     with st.form("profile_setup"):
         display_name = st.text_input("Display name (optional)", max_chars=100)
         base_currency = st.selectbox(
@@ -217,6 +220,7 @@ def _select_or_create_account(
     profile: UserProfileResponse,
     current_account_id: str | None,
 ) -> AccountResponse | None:
+    st.subheader("Choose an account")
     try:
         accounts = list(client.list_accounts(profile.profile_id).items)
     except ApiClientError as error:
@@ -228,7 +232,10 @@ def _select_or_create_account(
             "No accounts yet",
             "Add current/checking or savings metadata before importing a statement.",
         )
-    with st.expander("Add an account", expanded=not accounts):
+    with st.expander(
+        "Add another account" if accounts else "Add your first account",
+        expanded=not accounts,
+    ):
         with st.form("account_setup"):
             name = st.text_input("Account name", max_chars=100)
             account_type = st.selectbox(
@@ -309,7 +316,7 @@ def _column_choice(
 
 def _render_coverage(coverage: StatementCoverage) -> None:
     st.caption(
-        f"Coverage preview: {coverage.statement_start_date.isoformat()} to "
+        f"Statement dates: {coverage.statement_start_date.isoformat()} to "
         f"{coverage.statement_end_date.isoformat()} · {coverage.status.value}"
     )
     if coverage.missing_periods:
@@ -334,7 +341,7 @@ def _render_csv_result(result: CsvImportSummary) -> None:
     if result.coverage.new_missing_periods or result.coverage.disconnected_range:
         st.warning("The confirmed statement leaves a gap or disconnected date range.")
     if result.coverage.overlap_periods:
-        st.info("The confirmed statement overlaps earlier verified coverage.")
+        st.info("Part of this statement covers dates you previously imported.")
 
 
 def _render_csv_workflow(
@@ -356,7 +363,7 @@ def _render_csv_workflow(
     st.dataframe(csv_preview_rows(preview), hide_index=True, use_container_width=True)
 
     with st.form("csv_review"):
-        st.subheader("3. Map columns and confirm statement context")
+        st.subheader("Check the columns and statement details")
         transaction_date_column = _column_choice(
             "Transaction date",
             preview,
@@ -456,7 +463,7 @@ def _render_csv_workflow(
         )
         missing_periods = st.text_area(
             "Known missing periods (one YYYY-MM-DD,YYYY-MM-DD range per line)",
-            help="Use gapped coverage when dates or pages are missing.",
+            help="Choose Gapped if dates or statement pages are missing.",
         )
         include_balances = st.checkbox("The CSV reports statement balances")
         opening_balance = st.text_input("Opening balance (optional)")
@@ -676,7 +683,7 @@ def _pdf_coverage_fields(
     )
     required = review.statement_coverage is not None or bool(review.balance_evidence)
     enabled = st.checkbox(
-        "Confirm a statement coverage period",
+        "Confirm the dates covered by this statement",
         value=required,
         disabled=required,
     )
@@ -688,7 +695,7 @@ def _pdf_coverage_fields(
         else CoverageStatus.UNKNOWN
     )
     status = st.selectbox(
-        "Confirmed coverage status",
+        "Are all dates in this period included?",
         tuple(CoverageStatus),
         index=tuple(CoverageStatus).index(default_status),
         format_func=lambda value: value.value.replace("_", " ").title(),
@@ -711,8 +718,8 @@ def _render_pdf_result(result: ApprovedStatement) -> None:
         "Reconciliation", result.reconciliation.status.value.replace("_", " ")
     )
     st.warning(
-        "PDF persistence is not implemented yet. Keep the original statement and do "
-        "not treat this approval as an imported account history."
+        "This PDF was reviewed but not added to your transaction history. PDF saving "
+        "is not available yet, so keep the original statement."
     )
 
 
@@ -758,11 +765,11 @@ def _render_pdf_workflow(
         _render_import_error(error)
         return
 
-    st.success("Extraction is ready for review; no PDF row has been persisted.")
+    st.success("Your statement is ready to check. Nothing has been saved yet.")
     _render_pdf_evidence(review)
 
     with st.form("pdf_review"):
-        st.subheader("3. Confirm PDF extraction")
+        st.subheader("Check the extracted statement")
         coverage_enabled, start, end, coverage_status, gaps = _pdf_coverage_fields(
             review
         )
@@ -903,8 +910,12 @@ def render_import_page(
     session: FrontendSessionState,
 ) -> FrontendSessionState:
     """Render onboarding/import controls and return only safe session selections."""
-    st.title("📄 Import statements")
-    st.caption("Review locally extracted data before it can become trusted evidence.")
+    render_page_header(
+        "Add data",
+        "Import a statement",
+        "Upload a bank export, check what was recognised, and decide what the app "
+        "may use. Nothing is accepted without your confirmation.",
+    )
     render_privacy_notice()
     profile = _load_or_create_profile(client)
     if profile is None:
@@ -921,7 +932,7 @@ def render_import_page(
         }
     )
 
-    st.subheader("2. Select and review a statement")
+    st.subheader("Upload a statement")
     kind = st.radio(
         "Statement source",
         tuple(UploadKind),
@@ -934,7 +945,7 @@ def render_import_page(
             "Choose a statement",
             type=kind.extensions,
             accept_multiple_files=False,
-            help="The file is sent only to the loopback FastAPI process.",
+            help="The file is processed only by CashFlow AI on this device.",
         ),
     )
     if uploaded is None:

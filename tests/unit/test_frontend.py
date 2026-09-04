@@ -11,6 +11,7 @@ import pytest
 import cashflow_ai.frontend.app as app
 import cashflow_ai.frontend.cli as cli
 import cashflow_ai.frontend.components as components
+import cashflow_ai.frontend.styles as styles
 from cashflow_ai.config import Environment, LogFormat, Settings
 from cashflow_ai.frontend.client import ApiClientError, ApiClientErrorCode
 from cashflow_ai.frontend.navigation import (
@@ -79,7 +80,7 @@ def test_navigation_metadata_and_data_minimised_session_state() -> None:
     assert tuple(navigation_item(item.page_id) for item in NAVIGATION_ITEMS) == (
         NAVIGATION_ITEMS
     )
-    assert app.selected_navigation_item("Import statements").page_id is PageId.IMPORT
+    assert app.selected_navigation_item("Add a statement").page_id is PageId.IMPORT
 
 
 @pytest.mark.parametrize("invalid", [{"unexpected": "value"}, 42])
@@ -95,6 +96,7 @@ def test_common_display_states_use_only_controlled_copy(
 ) -> None:
     ui = MagicMock()
     ui.spinner.return_value = nullcontext()
+    ui.expander.return_value = nullcontext()
     monkeypatch.setattr(components, "st", ui)
     error = ApiClientError(
         ApiClientErrorCode.CONNECTION_FAILED,
@@ -117,15 +119,47 @@ def test_common_display_states_use_only_controlled_copy(
 
     ui.spinner.assert_called_once_with("Checking synthetic service…")
     assert ui.error.call_args_list[0].args == (
-        "the local API is unavailable; start it and try again · "
-        "code: `connection_failed`",
+        "the local API is unavailable; start it and try again",
     )
-    assert ui.error.call_args_list[1].args == (
-        "the local API rejected the request · "
-        "code: `api_rejected_request/synthetic_problem`",
+    assert ui.error.call_args_list[1].args == ("the local API rejected the request",)
+    assert tuple(call.args[0] for call in ui.code.call_args_list) == (
+        "connection_failed",
+        "api_rejected_request/synthetic_problem",
     )
-    assert ui.info.call_count == 2
-    ui.warning.assert_called_once()
+    assert ui.markdown.call_count == 3
+
+
+def test_visual_components_escape_copy_and_cover_both_statuses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = MagicMock()
+    monkeypatch.setattr(components, "st", ui)
+
+    components.render_page_header("Safe <area>", "Money & me", "Look <ahead>.")
+    components.render_feature_card("↗", "Plan & save", "Try <changes> first.")
+    components.render_service_status(ready=True)
+    components.render_service_status(ready=False)
+
+    rendered = "\n".join(call.args[0] for call in ui.markdown.call_args_list)
+    assert "Safe &lt;area&gt;" in rendered
+    assert "Money &amp; me" in rendered
+    assert "Try &lt;changes&gt; first." in rendered
+    assert "Everything is ready on this device" in rendered
+    assert "The local service needs attention" in rendered
+    assert "is-warning" in rendered
+
+
+def test_application_styles_are_installed_as_static_css(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = MagicMock()
+    monkeypatch.setattr(styles, "st", ui)
+
+    styles.apply_app_styles()
+
+    assert "cf-page-header" in styles.APP_STYLES
+    assert 'data-testid="stToolbar"' in styles.APP_STYLES
+    ui.markdown.assert_called_once_with(styles.APP_STYLES, unsafe_allow_html=True)
 
 
 @pytest.mark.parametrize("ready", [True, False])
@@ -134,27 +168,32 @@ def test_home_renders_backend_status(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     ui = MagicMock()
-    first = MagicMock()
-    second = MagicMock()
-    ui.columns.return_value = (first, second)
+    ui.columns.return_value = tuple(MagicMock() for _index in range(3))
     monkeypatch.setattr(app, "st", ui)
     monkeypatch.setattr(app, "loading_state", lambda message: nullcontext())
     privacy = MagicMock()
     disclaimer = MagicMock()
     monkeypatch.setattr(app, "render_privacy_notice", privacy)
     monkeypatch.setattr(app, "render_forecast_disclaimer", disclaimer)
+    page_header = MagicMock()
+    status = MagicMock()
+    feature = MagicMock()
+    monkeypatch.setattr(app, "render_page_header", page_header)
+    monkeypatch.setattr(app, "render_service_status", status)
+    monkeypatch.setattr(app, "render_feature_card", feature)
 
     app.render_home(StubStatusApi(ready=ready))
 
-    ui.title.assert_called_once_with("CashFlow AI")
-    first.metric.assert_called_once_with("API", "ok")
-    second.metric.assert_called_once_with("Database", "ready" if ready else "not ready")
+    page_header.assert_called_once()
+    status.assert_called_once_with(ready=ready)
+    assert feature.call_count == 3
+    ui.button.assert_called_once()
     if ready:
-        ui.success.assert_called_once()
-        ui.warning.assert_not_called()
+        assert not ui.caption.called
     else:
-        ui.warning.assert_called_once()
-        ui.success.assert_not_called()
+        ui.caption.assert_called_once_with(
+            "Run `make db-upgrade` once, then refresh this page."
+        )
     privacy.assert_called_once_with()
     disclaimer.assert_called_once_with()
 
@@ -168,6 +207,7 @@ def test_home_displays_safe_connection_failure(
     monkeypatch.setattr(app, "loading_state", lambda message: nullcontext())
     monkeypatch.setattr(app, "render_privacy_notice", MagicMock())
     monkeypatch.setattr(app, "render_forecast_disclaimer", MagicMock())
+    monkeypatch.setattr(app, "render_page_header", MagicMock())
     monkeypatch.setattr(app, "render_error", display_error)
     failure = ApiClientError(
         ApiClientErrorCode.CONNECTION_FAILED,
@@ -178,7 +218,7 @@ def test_home_displays_safe_connection_failure(
 
     display_error.assert_called_once_with(failure)
     ui.caption.assert_any_call(
-        "Start the backend with `make api`, then refresh this page."
+        "Start CashFlow AI with `make api`, then refresh this page."
     )
     ui.columns.assert_not_called()
 
@@ -201,11 +241,13 @@ def test_placeholder_is_truthful_and_forecast_warning_stays_visible(
     monkeypatch.setattr(app, "st", ui)
     monkeypatch.setattr(app, "render_empty_state", empty)
     monkeypatch.setattr(app, "render_forecast_disclaimer", disclaimer)
+    page_header = MagicMock()
+    monkeypatch.setattr(app, "render_page_header", page_header)
     item = navigation_item(page_id)
 
     app.render_placeholder(item)
 
-    ui.title.assert_called_once_with(f"{item.icon} {item.title}")
+    page_header.assert_called_once_with("CashFlow AI", item.title, item.summary)
     empty.assert_called_once_with("This area is not implemented yet", item.summary)
     assert disclaimer.called is expects_disclaimer
 
@@ -271,7 +313,7 @@ def test_application_main_restores_and_saves_navigation(
 ) -> None:
     ui = MagicMock()
     ui.session_state = {}
-    ui.sidebar.radio.return_value = "Import statements"
+    ui.sidebar.radio.return_value = "Add a statement"
     rendered = MagicMock(
         side_effect=lambda item, base_url, session: session.model_copy(
             update={"account_id": "account-1"}
@@ -280,15 +322,22 @@ def test_application_main_restores_and_saves_navigation(
     monkeypatch.setattr(app, "st", ui)
     monkeypatch.setattr(app, "load_settings", _settings)
     monkeypatch.setattr(app, "render_application_page", rendered)
+    apply_styles = MagicMock()
+    monkeypatch.setattr(app, "apply_app_styles", apply_styles)
 
     app.main()
 
     ui.set_page_config.assert_called_once()
-    ui.sidebar.radio.assert_called_once_with(
-        "Navigation",
+    radio_call = ui.sidebar.radio.call_args
+    assert radio_call.args == (
+        "Main menu",
         tuple(item.title for item in NAVIGATION_ITEMS),
-        index=0,
     )
+    assert radio_call.kwargs["index"] == 0
+    assert radio_call.kwargs["label_visibility"] == "collapsed"
+    assert radio_call.kwargs["key"] == app._NAVIGATION_WIDGET_KEY
+    assert radio_call.kwargs["format_func"]("Overview") == "⌂  Overview"
+    apply_styles.assert_called_once_with()
     assert ui.session_state[SESSION_KEY]["selected_page"] == "import"
     assert ui.session_state[SESSION_KEY]["account_id"] == "account-1"
     assert ui.session_state[SESSION_KEY]["privacy_notice_seen"] is True
@@ -300,6 +349,18 @@ def test_application_main_restores_and_saves_navigation(
             privacy_notice_seen=True,
         ),
     )
+
+
+def test_home_action_selects_statement_import(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = MagicMock()
+    ui.session_state = {}
+    monkeypatch.setattr(app, "st", ui)
+
+    app._navigate_to(PageId.IMPORT)
+
+    assert ui.session_state[app._NAVIGATION_WIDGET_KEY] == "Add a statement"
 
 
 def test_packaged_cli_uses_loopback_settings(

@@ -30,6 +30,7 @@ COPY pyproject.toml uv.lock README.md LICENSE ./
 RUN uv sync --frozen --no-dev --no-install-project --no-cache
 
 COPY alembic.ini ./
+COPY .streamlit ./.streamlit
 COPY migrations ./migrations
 COPY configs ./configs
 COPY src ./src

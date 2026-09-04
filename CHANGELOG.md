@@ -4,6 +4,16 @@ All notable changes to CashFlow AI are documented here. The project follows
 [Semantic Versioning](https://semver.org/), and this history describes the
 repository rather than implying that a hosted service has been deployed.
 
+## [Unreleased]
+
+### Changed
+
+- Reworked the Streamlit experience around plain-language navigation, a focused
+  onboarding homepage, compact safety notices, responsive cards, clearer import and
+  transaction wording, and a single planning-tool selector.
+- Added a packaged light theme and moved technical error identities behind an
+  optional details panel without weakening privacy or financial safeguards.
+
 ## [1.0.0] - 2026-09-05
 
 ### Added

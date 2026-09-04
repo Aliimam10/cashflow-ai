@@ -47,7 +47,7 @@ Open `http://127.0.0.1:8501`. Docker users can instead follow
 1. Create the local profile and choose GBP plus an IANA timezone.
 2. Create a current/checking or savings account without entering account numbers,
    login details, or bank credentials.
-3. Open **Import statements**, select that destination account, and choose CSV,
+3. Open **Add a statement**, select that destination account, and choose CSV,
    digital PDF, or scanned PDF deliberately.
 4. Inspect the source preview. Confirm column mappings for CSV or extracted fields,
    dates, debit/credit signs, confidence, and balances for PDF.

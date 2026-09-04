@@ -12,6 +12,7 @@ from cashflow_ai.frontend.components import (
     loading_state,
     render_empty_state,
     render_error,
+    render_page_header,
 )
 from cashflow_ai.frontend.session import FrontendSessionState
 from cashflow_ai.frontend.transaction_workflow import (
@@ -156,8 +157,8 @@ def _render_transaction_table(
     accounts: tuple[AccountResponse, ...],
     categories: tuple[CategorySummary, ...],
 ) -> tuple[TransactionResponse, ...]:
-    st.subheader("Transaction history")
-    st.caption("Search and filters run locally against verified transactions only.")
+    st.subheader("Find a transaction")
+    st.caption("Search or filter the transactions you have already confirmed.")
     account_names = {item.account_id: item.name for item in accounts}
     category_names = {item.id: item.name for item in categories}
 
@@ -197,7 +198,7 @@ def _render_transaction_table(
         st.info(f"Showing the first {len(result.items)} of {result.total} matches.")
     if not result.items:
         render_empty_state(
-            "No matching verified transactions",
+            "No matching transactions",
             "Adjust the filters or import and confirm a statement first.",
         )
         return ()
@@ -220,7 +221,7 @@ def _render_corrections(
     transactions: tuple[TransactionResponse, ...],
     categories: tuple[CategorySummary, ...],
 ) -> None:
-    st.subheader("Correct a transaction")
+    st.subheader("Update transaction details")
     if not transactions:
         st.caption("A matching transaction is required before making a correction.")
         return
@@ -249,7 +250,7 @@ def _render_corrections(
         st.success("Category correction saved and downstream results invalidated.")
 
     action = st.selectbox(
-        "Correct financial role",
+        "How should this transaction count?",
         options=tuple(TransactionReviewAction),
         format_func=lambda item: item.value.replace("_", " "),
     )
@@ -257,7 +258,7 @@ def _render_corrections(
         "Financial role controls whether money is treated as income, spending, "
         "a transfer, refund, reimbursement, cash withdrawal, or excluded activity."
     )
-    if st.button("Save financial-role correction"):
+    if st.button("Save how this transaction counts"):
         client.correct_financial_role(
             selected_id,
             TransactionRoleReviewRequest(
@@ -269,8 +270,8 @@ def _render_corrections(
 
 
 def _render_role_reviews(client: TransactionApi, *, profile_id: str) -> None:
-    st.subheader("Transfers, refunds and reimbursements")
-    st.caption("Suggestions never change a transaction until you confirm one.")
+    st.subheader("Money movements to check")
+    st.caption("Possible transfers, refunds and reimbursements need your approval.")
     if st.button("Refresh role suggestions"):
         generated = client.generate_role_suggestions(
             FinancialRoleSuggestionRequest(user_profile_id=profile_id)
@@ -278,7 +279,7 @@ def _render_role_reviews(client: TransactionApi, *, profile_id: str) -> None:
         st.success(f"Role suggestion scan complete: {generated.total} suggestion(s).")
     reviews = client.list_role_reviews(profile_id).items
     if not reviews:
-        st.caption("No financial-role suggestions currently need review.")
+        st.caption("No money-movement suggestions currently need review.")
         return
     by_id = {item.suggestion.suggestion_id: item for item in reviews}
     suggestion_id = st.selectbox(
@@ -322,7 +323,7 @@ def _duplicate_summary(item: DuplicateTransactionSummary) -> dict[str, object]:
 
 
 def _render_duplicate_reviews(client: TransactionApi, *, profile_id: str) -> None:
-    st.subheader("Probable duplicates")
+    st.subheader("Possible duplicates")
     reviews = client.list_duplicate_reviews(profile_id).items
     if not reviews:
         st.caption("No probable imported duplicates currently need review.")
@@ -355,7 +356,7 @@ def _render_duplicate_reviews(client: TransactionApi, *, profile_id: str) -> Non
         else "The original comparison transaction is unavailable."
     )
     st.caption(
-        f"Similarity score {selected.score:.0%}; evidence: "
+        f"Match confidence {selected.score:.0%}; reasons: "
         + ", ".join(item.value.replace("_", " ") for item in selected.reasons)
     )
     keep, reject = st.columns(2)
@@ -368,7 +369,7 @@ def _render_duplicate_reviews(client: TransactionApi, *, profile_id: str) -> Non
                 decided_at=datetime.now(UTC),
             ),
         )
-        st.success("Candidate kept as a separate verified transaction.")
+        st.success("Kept as a separate transaction.")
     if reject.button("Reject as duplicate"):
         client.decide_duplicate(
             profile_id,
@@ -401,7 +402,7 @@ def _render_dashboard(
     accounts: tuple[AccountResponse, ...],
     transactions: tuple[TransactionResponse, ...],
 ) -> None:
-    st.subheader("Coverage-aware cash-flow dashboard")
+    st.subheader("Your cash flow")
     account_names = {item.account_id: item.name for item in accounts}
     selected_ids = st.multiselect(
         "Dashboard accounts",
@@ -434,12 +435,12 @@ def _render_dashboard(
             else AnalyticsView.CONSOLIDATED
         ),
     )
-    with loading_state("Calculating verified, coverage-aware analytics…"):
+    with loading_state("Calculating your cash flow…"):
         analytics = client.cash_flow(scope)
 
     st.caption(
-        "Unknown statement dates remain gaps. Dashboard amounts describe observed "
-        "transactions unless complete coverage is explicitly shown."
+        "Totals use only the dates covered by your statements. Missing dates are "
+        "left out rather than counted as zero spending."
     )
     st.vega_lite_chart(coverage_chart(analytics.coverage), use_container_width=True)
     freshness_columns = st.columns(len(selected_ids))
@@ -470,8 +471,8 @@ def _render_dashboard(
 
     if analytics.totals is None:
         st.warning(
-            "Cash-flow totals are unavailable because none of the selected period "
-            "has verified coverage."
+            "Cash-flow totals are unavailable because your statements do not cover "
+            "the selected dates."
         )
         return
     totals = analytics.totals
@@ -529,10 +530,11 @@ def render_transaction_page(
     session: FrontendSessionState,
 ) -> FrontendSessionState:
     """Render the complete local review workspace without caching financial rows."""
-    st.title("📊 Transactions & analytics")
-    st.caption(
-        "Review verified transactions, correct their meaning, and explore only "
-        "coverage-aware totals."
+    render_page_header(
+        "Transactions",
+        "Understand where your money goes.",
+        "Review activity, fix anything the app misunderstood, and see totals based "
+        "only on the statement dates you actually provided.",
     )
     try:
         profile = client.current_profile()
@@ -541,20 +543,27 @@ def render_transaction_page(
         if not accounts:
             render_empty_state(
                 "No local accounts",
-                "Create an account and import a statement on Import statements.",
+                "Create an account and import a statement under Add a statement.",
             )
             return session
-        with loading_state("Loading verified transactions…"):
-            transactions = _render_transaction_table(
+        dashboard, history, reviews = st.tabs(
+            ("Cash-flow overview", "Transactions", "Needs your review")
+        )
+        with dashboard:
+            _render_dashboard(
                 client,
                 profile_id=profile.profile_id,
                 accounts=accounts,
-                categories=categories,
+                transactions=(),
             )
-        history, reviews, dashboard = st.tabs(
-            ("Correct transactions", "Review suggestions", "Dashboard")
-        )
         with history:
+            with loading_state("Loading your transactions…"):
+                transactions = _render_transaction_table(
+                    client,
+                    profile_id=profile.profile_id,
+                    accounts=accounts,
+                    categories=categories,
+                )
             _render_corrections(
                 client,
                 profile_id=profile.profile_id,
@@ -564,13 +573,6 @@ def render_transaction_page(
         with reviews:
             _render_role_reviews(client, profile_id=profile.profile_id)
             _render_duplicate_reviews(client, profile_id=profile.profile_id)
-        with dashboard:
-            _render_dashboard(
-                client,
-                profile_id=profile.profile_id,
-                accounts=accounts,
-                transactions=transactions,
-            )
     except ApiClientError as error:
         render_error(error)
         return session

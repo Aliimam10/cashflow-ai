@@ -1,5 +1,6 @@
 """Static safeguards for local containers and continuous integration."""
 
+import tomllib
 from pathlib import Path
 from typing import Any, cast
 
@@ -34,8 +35,28 @@ def test_dockerfile_is_locked_local_and_unprivileged() -> None:
     assert "uv sync --frozen --no-dev --no-install-project --no-cache" in dockerfile
     assert "uv sync --locked --no-dev --no-editable --no-cache" in dockerfile
     assert "USER cashflow" in dockerfile
+    assert "COPY .streamlit ./.streamlit" in dockerfile
     assert "COPY . " not in dockerfile
     assert dockerfile.index("USER cashflow") > dockerfile.index("chown -R")
+
+
+def test_streamlit_theme_is_light_minimal_and_packaged() -> None:
+    configuration = tomllib.loads(
+        (PROJECT_ROOT / ".streamlit/config.toml").read_text(encoding="utf-8")
+    )
+
+    assert configuration["theme"] == {
+        "base": "light",
+        "primaryColor": "#0F766E",
+        "backgroundColor": "#F5F7FB",
+        "secondaryBackgroundColor": "#EDF3F5",
+        "textColor": "#102A43",
+        "font": "sans serif",
+    }
+    assert configuration["client"] == {
+        "toolbarMode": "minimal",
+        "showErrorDetails": "none",
+    }
 
 
 def test_docker_context_excludes_private_and_generated_data() -> None:

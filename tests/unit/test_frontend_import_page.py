@@ -148,6 +148,7 @@ def _ui(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     ui.expander.return_value = nullcontext()
     monkeypatch.setattr(page, "st", ui)
     monkeypatch.setattr(page, "loading_state", lambda message: nullcontext())
+    monkeypatch.setattr(page, "render_page_header", MagicMock())
     return ui
 
 

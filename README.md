@@ -402,9 +402,10 @@ then run the following in a second terminal and open `http://127.0.0.1:8501`:
 make ui
 ```
 
-The home page reports local API/database readiness. **Import statements** provides
-account setup and review-gated CSV/PDF workflows; **Transactions & analytics** adds
-correction and observed-data dashboards; and **Forecast & planning** now exposes
+The **Overview** page reports local readiness in user-friendly language. **Add a
+statement** provides account setup and review-gated CSV/PDF workflows;
+**Transactions** adds correction and observed-data dashboards; and **Forecast &
+plans** exposes
 review-gated recurrence, uncertainty-aware balance forecasts, budgets and goals,
 hypothetical scenarios, anomaly review, and model evaluation metadata. See
 [`docs/frontend.md`](docs/frontend.md) for the exact manual check and privacy boundary.

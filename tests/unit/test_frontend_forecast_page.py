@@ -156,9 +156,9 @@ def _path(*, occurrences: bool = True) -> BalanceForecastPath:
 def _ui(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     ui = MagicMock()
     ui.container.return_value = nullcontext()
-    ui.tabs.return_value = tuple(nullcontext() for _index in range(6))
     monkeypatch.setattr(page, "st", ui)
     monkeypatch.setattr(page, "loading_state", lambda message: nullcontext())
+    monkeypatch.setattr(page, "render_page_header", MagicMock())
     return ui
 
 
@@ -347,10 +347,10 @@ def test_page_handles_no_accounts_success_and_safe_api_failure(
     )
     client.list_categories.return_value.items = ()
     ui.date_input.return_value = date(2026, 8, 30)
-    monkeypatch.setattr(page, "_render_recurring", MagicMock())
-    monkeypatch.setattr(
-        page, "_render_forecast", MagicMock(return_value="synthetic-account")
-    )
+    recurring = MagicMock()
+    forecast = MagicMock(return_value="synthetic-account")
+    monkeypatch.setattr(page, "_render_recurring", recurring)
+    monkeypatch.setattr(page, "_render_forecast", forecast)
     planning = MagicMock()
     scenarios = MagicMock()
     anomalies = MagicMock()
@@ -359,9 +359,14 @@ def test_page_handles_no_accounts_success_and_safe_api_failure(
     monkeypatch.setattr(page, "render_scenarios", scenarios)
     monkeypatch.setattr(page, "render_anomalies", anomalies)
     monkeypatch.setattr(page, "render_models", models)
-    state = page.render_forecast_page(client, session)
-    assert state.account_id == "synthetic-account"
-    assert state.privacy_notice_seen
+    for selected_view in page.ForecastView:
+        ui.selectbox.return_value = selected_view
+        state = page.render_forecast_page(client, session)
+        assert state.account_id == "synthetic-account"
+        assert state.privacy_notice_seen
+
+    forecast.assert_called_once()
+    recurring.assert_called_once()
     planning.assert_called_once()
     scenarios.assert_called_once()
     anomalies.assert_called_once()

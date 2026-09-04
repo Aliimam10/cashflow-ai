@@ -1,7 +1,10 @@
 # Local Streamlit frontend
 
 The frontend is a loopback-only Streamlit client over the existing FastAPI
-boundary. It now provides:
+boundary. Its user-facing design uses a light financial dashboard theme, compact
+safety notices, plain-language navigation, responsive content cards, and one focused
+planning tool at a time. Developer health details stay behind friendly readiness
+wording rather than dominating the home page. It provides:
 
 - a home page with local API/database readiness and privacy guidance;
 - first-run profile setup using display name, currency, and IANA timezone;
@@ -97,7 +100,7 @@ make ui
 
 Expected first-run and account behaviour:
 
-1. **Import statements** asks for a local profile if none exists. Use `Fictional
+1. **Add a statement** asks for a local profile if none exists. Use `Fictional
    User`, `GBP`, and `Europe/London`.
 2. Add an account named `Fictional Current`, choose `Current`, and leave
    the optional institution label blank.
@@ -112,7 +115,7 @@ behaviour is a preserved preview followed by an import summary that separately
 counts imported, exact-duplicate, probable-duplicate, and rejected rows. Repeating
 the same file reports a repeated file rather than adding a second import.
 
-Open **Transactions & analytics** after that import. Under the transaction table:
+Open **Transactions** after that import. Under the transaction table:
 
 1. Search for a fictional merchant such as `RENT`, then clear it and vary the
    account, category, financial-role, and date filters. Expected: only matching
@@ -134,9 +137,11 @@ Open **Transactions & analytics** after that import. Under the transaction table
    `active forecasting` only when every displayed policy passes; missing dates break
    balance lines; headline values say `Observed` unless coverage is complete.
 
-Open **Forecast & planning** for the Commit 36 workflow:
+Open **Forecast & plans** for the planning workflow. Choose one tool from the
+plain-language selector rather than working through six simultaneous tabs:
 
-1. Set **Recurring evidence date** to the last completed UTC date covered by the
+1. Choose **Recurring payments**, then set **Use transactions up to** to the last
+   completed UTC date covered by the
    fictional import, then select **Refresh recurring patterns**.
    Expected: repeated fictional merchants are listed with frequency, expected amount,
    next-payment date, confidence, evidence count, and current review status.

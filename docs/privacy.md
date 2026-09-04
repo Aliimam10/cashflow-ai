@@ -363,7 +363,8 @@ identifiers, and whether the privacy notice was shown. It must not hold upload b
 raw or verified transaction text, amounts, balances, API payloads, model features, or
 forecast results. Common errors render only controlled client messages and stable
 codes; untrusted API bodies, URLs, source descriptions, and local paths are discarded.
-The home page keeps both the privacy notice and forecast disclaimer visible.
+The Overview page keeps compact privacy and forecast notices visible without making
+technical warnings the primary content.
 
 The import page reads bytes only from the current upload widget and sends them to the
 loopback API. It creates no application-managed upload file or preview cache. Raw

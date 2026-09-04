@@ -437,7 +437,7 @@ def render_scenarios(
     as_of: date,
 ) -> None:
     """Render all supported non-persistent scenario shapes."""
-    st.caption("Scenarios are temporary comparisons and never edit imported evidence.")
+    st.caption("Scenarios are private experiments and never change your transactions.")
     account_names = {item.account_id: item.name for item in accounts}
     account_id = st.selectbox(
         "Scenario account",
@@ -536,7 +536,7 @@ def render_scenarios(
             scenario_type is FinancialScenarioType.CATEGORY_SPENDING_REDUCTION
             and category_id is None
         ):
-            st.error("The selected scenario is missing its required reviewed evidence.")
+            st.error("Review the related payment before using this scenario.")
             return
         scenario = _scenario_definition(
             profile_id=profile_id,
@@ -589,7 +589,7 @@ def render_anomalies(
     if not st.toggle("Run anomaly scan", key="anomaly-scan"):
         render_empty_state(
             "Anomaly scan is off",
-            "Turn it on to rebuild suggestions from verified local evidence.",
+            "Turn it on when you want CashFlow AI to check your transaction history.",
         )
         return
     if not selected:
@@ -600,7 +600,7 @@ def render_anomalies(
         account_ids=selected,
         as_of_date=as_of,
     )
-    with loading_state("Scanning verified transactions for review signals…"):
+    with loading_state("Checking transactions for unusual activity…"):
         result = client.detect_anomalies(plan)
     st.caption(
         f"Mode: {result.mode.value.replace('_', ' ')} · "
