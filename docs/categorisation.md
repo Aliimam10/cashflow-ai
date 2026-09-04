@@ -6,8 +6,9 @@ labelled as groceries, housing, utilities, transport, subscriptions, health, or
 travel, allowing the existing analytics service to group them meaningfully.
 
 The local service is exposed through taxonomy, low-confidence-review, and explicit
-feedback API endpoints. It still has no visual correction workflow and does not
-import a statement, infer financial roles, calculate a forecast, or make a budget.
+feedback API endpoints. The transaction workspace provides a transaction-level
+category correction form. Categorisation itself does not import a statement, infer
+financial roles, calculate a forecast, or make a budget.
 
 ## Taxonomy and rule configuration
 
@@ -71,8 +72,9 @@ Every supplied restriction uses AND semantics: all of them must match the same
 verified transaction. Rules are bound to the selected local profile and inactive
 rules are ignored. Commit 18 accepts these typed rules for one service run but
 does not store them. Commit 20 persists only a rule the user explicitly requests,
-after verifying every supplied scope matches the selected transaction. Editing,
-deletion, and a user-facing review screen remain later interface work.
+after verifying every supplied scope matches the selected transaction. Transaction
+corrections are available in the interface; personal-rule editing and deletion
+remain future work.
 
 ## Decisions and explanations
 
@@ -166,12 +168,13 @@ model registry owns database registration and explicit active-model selection.
   service may call a selected, compatible local candidate.
 - Commit 18 accepts caller-supplied rules in memory; Commit 20 persists only rules
   explicitly requested through feedback.
-- Category explanations are returned for the current run but are not yet shown
-  in a review screen.
+- Transaction correction is available, but the complete automatic-decision
+  explanation is not yet rendered in the review screen.
 - A local user may not yet have enough explicitly corrected categories for both
   leakage-safe holdouts; the trainer reports this rather than weakening a split.
-- Categorisation improves category breakdowns only; recurrence, forecasting,
-  budgeting, anomaly detection, and personalised guidance remain later stages.
+- Categories feed the implemented analytics, recurrence, forecasting, budgeting,
+  scenario, and anomaly boundaries; they do not produce personalised financial
+  advice.
 
 ## Hybrid inference and feedback
 

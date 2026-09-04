@@ -3,6 +3,37 @@
 CashFlow AI is designed for local-first use and does not require bank
 credentials.
 
+## Version 1 privacy position
+
+The release is a local single-user application, not a hosted financial service.
+FastAPI and Streamlit bind only to loopback, Tesseract runs locally, and no bank,
+analytics, telemetry, advertising, cloud-model, or external OCR API receives a
+statement. Docker preserves the same boundary and stores SQLite/model files in local
+named volumes.
+
+Local-first does not mean risk-free. Anyone who can access the operating-system
+account, SQLite file, Docker volumes, process memory, browser session, backups, or a
+user-created screenshot may see financial information. Version 1 does not encrypt the
+database, manage OS permissions, automate backups or deletion, authenticate users, or
+protect a remotely exposed port. Users remain responsible for device encryption,
+account access, backups, and secure removal.
+
+### Release privacy checklist
+
+- Use only synthetic fixtures, demonstrations, documentation images, and logs in Git.
+- Keep `.env`, uploads, raw/processed data, SQLite files and journals, exports, logs,
+  and model artefacts ignored and outside the Docker context.
+- Verify that PDF/OCR bytes and recognised lines are not persisted or logged before
+  the future atomic PDF import boundary exists.
+- Verify API responses expose canonical user-facing fields rather than raw payloads.
+- Inspect screenshots manually for names, institutions, account identifiers,
+  balances, merchants, dates, filenames, browser history, and desktop notifications.
+- Never publish the loopback-only application through port forwarding, a tunnel, or
+  a remote host without a separate authentication, TLS, threat-model, and deployment
+  stage.
+- Treat model vocabularies, fingerprints, aggregate results from very small groups,
+  and backups as potentially identifying private data.
+
 Repository rules:
 
 - do not commit real statements or personal transaction data;

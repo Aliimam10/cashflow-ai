@@ -51,7 +51,7 @@ class StubStatusApi:
     def health(self) -> HealthResponse:
         if self.error is not None:
             raise self.error
-        return HealthResponse(version="0.1.0")
+        return HealthResponse(version="1.0.0")
 
     def readiness(self) -> ReadinessResponse:
         return ReadinessResponse(

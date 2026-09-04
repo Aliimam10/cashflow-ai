@@ -100,3 +100,11 @@ or container. `make docker-config` additionally asks Docker Compose to resolve t
 real configuration, and GitHub Actions performs the Linux image build, packaged
 import check, and Tesseract executable check. See `docs/containers.md` for a complete
 manual start/readiness/stop procedure.
+
+## Release-documentation safeguards
+
+`tests/integration/test_release_documentation.py` keeps the package, project,
+lockfile, changelog, and release-note version aligned; checks that required limitations
+and financial interpretations are stated; and resolves local links in the release
+entry points. These tests prevent a documentation-only release edit from silently
+claiming PDF persistence, real-world model accuracy, or a missing document.

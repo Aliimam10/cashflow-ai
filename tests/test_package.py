@@ -2,7 +2,7 @@
 
 
 def test_package_imports() -> None:
-    """The installed package exposes its initial version."""
+    """The installed package exposes its release version."""
     import cashflow_ai
 
-    assert cashflow_ai.__version__ == "0.1.0"
+    assert cashflow_ai.__version__ == "1.0.0"
