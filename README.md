@@ -417,6 +417,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 - [`docs/modelling.md`](docs/modelling.md)
 - [`docs/evaluation.md`](docs/evaluation.md)
 - [`docs/privacy.md`](docs/privacy.md)
+- [`docs/testing.md`](docs/testing.md)
 
 ## Status and roadmap
 
@@ -458,9 +459,11 @@ with bounded pagination and generated OpenAPI documentation. PDF approval is sti
 returned only in memory. Streamlit navigation, its typed API client, home/status,
 data-minimised session state, profile/account setup, and review-gated CSV/PDF import
 are now implemented. Transaction review and the first coverage-aware dashboard are
-also implemented. The forecast and planning interface is now implemented; the next
-stage hardens end-to-end privacy, security, and failure behaviour before later
-deployment and release work.
+also implemented. The forecast and planning interface is now implemented. Synthetic
+cross-boundary CSV/forecast and OCR/reconciliation tests now harden privacy, security,
+and ingestion failure behaviour; PDF approval remains non-persistent by design. The
+next stage adds reproducible local containers and continuous integration before the
+release documentation is finalised.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

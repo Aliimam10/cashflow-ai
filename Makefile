@@ -1,4 +1,4 @@
-.PHONY: setup format format-check lint typecheck test coverage pre-commit check check-import check-ocr api ui demo-api demo-data demo-statements demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade
+.PHONY: setup format format-check lint typecheck test test-safeguards coverage pre-commit check check-import check-ocr api ui demo-api demo-data demo-statements demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade
 
 setup:
 	uv sync --dev
@@ -18,6 +18,9 @@ typecheck:
 
 test:
 	uv run pytest
+
+test-safeguards:
+	uv run pytest -o addopts="-ra --strict-config --strict-markers" -vv tests/integration/test_end_to_end_safeguards.py
 
 coverage: test
 
