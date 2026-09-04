@@ -23,6 +23,21 @@ synthetic demo data ------> generated records ------------------+
 
 Business logic will remain outside API routes and Streamlit pages.
 
+## Local container topology
+
+The same application package now produces one non-root Docker image containing the
+FastAPI and Streamlit entry points, Alembic migrations, category configuration, and
+local Tesseract executable. Compose runs the entry points as separate processes but
+places them in one network namespace. This preserves the established rule that both
+services bind only to loopback: Streamlit reaches FastAPI on `127.0.0.1:8000`, and
+the host publishes both application ports explicitly on `127.0.0.1`.
+
+The API is the only database-owning process. Its startup command applies Alembic
+migrations before serving requests, and its readiness check verifies the connection
+and required schema. A named volume stores SQLite data and a second named volume is
+reserved for local model artefacts. No private host directory is bind-mounted into
+the services. See `docs/containers.md` for operating and privacy details.
+
 ## Statement-source adapters
 
 Source adapters are responsible only for turning an uploaded document into

@@ -260,7 +260,8 @@ and fingerprints, provenance, issues, confidence, and OCR line references beside
 their canonical values. Rejected rows retain their full unchanged review-row
 evidence rather than disappearing into a count. `approve_statement_review`
 returns this trusted in-memory contract but intentionally performs no database
-write; PDF persistence and the visual review UI remain later stages.
+write. The Streamlit interface now renders this review and approval boundary, while
+atomic PDF persistence remains future work.
 
 Confirmed PDF balance evidence is therefore not written on its own. A later PDF
 persistence service must atomically retain the approved rows, rejected-row

@@ -1,13 +1,34 @@
 # Evaluation
 
-This document records reproducible evaluation policy and, in later release
-stages, results for categorisation, recurring-payment detection, forecasting,
+This document records reproducible evaluation policy and Version 1 release
+evidence for categorisation, recurring-payment detection, forecasting,
 anomaly detection, and product performance. Automated tests establish pipeline
 correctness with fictional data; they are not a benchmark on real bank data.
 
 Every advanced model must be compared with a meaningful baseline. Forecast
 evaluation will use chronological cutoffs and must include leakage checks,
 failure analysis, uncertainty coverage, and sparse-data behaviour.
+
+## Version 1 release evidence
+
+The following results were reproduced on 2026-09-05 with the checked-in default
+seeds and entirely fictional data. They verify execution and failure behavior; they
+must not be presented as expected performance for a bank, account, merchant, or user.
+
+| Boundary | Reproducible observation | Release interpretation |
+| --- | --- | --- |
+| Full suite | `make check` enforces 100% statement and branch coverage | Code-path evidence, not financial-model accuracy |
+| Categorisation | Both chronological and unseen-merchant splits fit fresh TF-IDF/Logistic Regression pipelines and compare the same rows with the most-frequent baseline | No release-wide F1 is published: the controlled fixture is too small and no reviewed real dataset exists |
+| Forecast candidate | `make demo-forecast-model` produced 28 feature rows and selected histogram gradient boosting; final MAE was `3.18` versus `75.00` for the best baseline | Expected only for the deliberately learnable synthetic pattern |
+| Forecast fallback | The same demo with `--flat` selected `historical_mean`; candidate and baseline final MAE were both `0.00` | A tie cannot justify the advanced model |
+| Forecast interval | The default 30-day/200-path demo reported held-out coverage `1.00`, expected balance `£929.48`, and range `£907.48–£947.45` | A small synthetic holdout is not a coverage guarantee; width remains visible |
+| Anomaly sufficient-data path | Default demo used rules plus Isolation Forest, scored two current records, and produced three review items | No precision/recall claim is possible without reviewed labels |
+| Anomaly sparse path | `--history-transactions 20 --sparse` used rules only and emitted `insufficient_coverage` and `insufficient_history` | Fallback is preferable to fitting an unjustified model |
+
+Exact outputs and the broader fictional walkthrough are recorded in the
+[release notes](releases/v1.0.0.md) and [user guide](user_guide.md). Metrics should
+be regenerated on the release commit; changing a seed, fixture, policy, dependency,
+or model invalidates a direct comparison.
 
 ## Transaction category classifier
 

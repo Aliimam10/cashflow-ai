@@ -82,3 +82,29 @@ make check-import
 
 `make check` must finish with 100% statement and branch coverage. Do not bypass a
 failed privacy assertion or reduce the configured coverage threshold.
+
+## Container delivery safeguards
+
+The four synthetic/static checks in `tests/integration/test_container_delivery.py`
+verify that the image is non-root and includes Tesseract, private paths cannot enter
+the Docker context, Compose retains loopback-only networking and private volumes, and
+continuous integration has read-only permissions plus every required quality gate.
+Run them directly with:
+
+```bash
+make test-containers
+```
+
+Expected result: four tests pass without creating a database, model, upload, image,
+or container. `make docker-config` additionally asks Docker Compose to resolve the
+real configuration, and GitHub Actions performs the Linux image build, packaged
+import check, and Tesseract executable check. See `docs/containers.md` for a complete
+manual start/readiness/stop procedure.
+
+## Release-documentation safeguards
+
+`tests/integration/test_release_documentation.py` keeps the package, project,
+lockfile, changelog, and release-note version aligned; checks that required limitations
+and financial interpretations are stated; and resolves local links in the release
+entry points. These tests prevent a documentation-only release edit from silently
+claiming PDF persistence, real-world model accuracy, or a missing document.

@@ -1,10 +1,30 @@
 # CashFlow AI
 
-CashFlow AI is a planned local-first personal cash-flow forecasting, budgeting,
-and financial-insight application. It will import transaction CSV files and
-digital or scanned PDF bank statements, normalise and categorise transactions,
-identify recurring activity and unusual transactions, and produce explainable
-balance forecasts with uncertainty.
+[![Continuous integration](https://github.com/Aliimam10/cashflow-ai/actions/workflows/ci.yml/badge.svg)](https://github.com/Aliimam10/cashflow-ai/actions/workflows/ci.yml)
+![Python 3.12](https://img.shields.io/badge/Python-3.12-3776AB.svg)
+![Version 1.0.0](https://img.shields.io/badge/version-1.0.0-2E8B57.svg)
+
+CashFlow AI is a local-first personal cash-flow forecasting, budgeting, and
+financial-insight application. It imports transaction CSV files, reviews digital or
+scanned PDF bank statements, normalises and categorises transactions, identifies
+recurring and unusual activity, and produces explainable balance forecasts with
+uncertainty.
+
+## What a local user can do
+
+- Review and persist CSV statements without losing the original source rows.
+- Extract digital or scanned PDFs locally, correct OCR, and reconcile balances before
+  approval; PDF approval remains in memory in Version 1.
+- Correct categories and explicitly distinguish expenses, income, internal transfers,
+  refunds, reimbursements, withdrawals, and exclusions.
+- View coverage-aware analytics, recurring payments, cautious balance forecasts,
+  budgets, goals, safe-spending estimates, scenarios, and unusual-activity reviews.
+- Keep statements, SQLite data, OCR processing, and model artefacts on the local
+  machine without supplying bank credentials.
+
+Start with the [Version 1 user guide](docs/user_guide.md), see the
+[architecture and data-flow diagrams](docs/diagrams.md), or read the
+[v1.0.0 release candidate notes](docs/releases/v1.0.0.md).
 
 The repository currently contains the **project foundation, quality tooling,
 typed configuration, structured logging, reproducible synthetic demo data,
@@ -33,7 +53,9 @@ role/duplicate review, and coverage-aware cash-flow dashboards. Forecast/plannin
 screens now add recurring review, uncertainty-aware forecasts, budgets, goals,
 safe-spending estimates, isolated scenarios, anomaly feedback, and aggregate model
 evaluation. PDF persistence and production model lifecycle management are not
-implemented yet.
+implemented yet. The application is now packaged as one local Docker image with
+separate FastAPI and Streamlit services, persistent private SQLite/model volumes,
+bundled Tesseract OCR, and read-only GitHub Actions quality and image-build gates.
 
 ## Problem
 
@@ -43,9 +65,9 @@ CashFlow AI is intended to turn imported history into an understandable,
 forward-looking decision-support view while keeping assumptions, uncertainty,
 and model limitations visible.
 
-## Planned architecture
+## Architecture
 
-The application will be a Python modular monolith:
+The application is a Python modular monolith:
 
 ```text
 CSV, digital PDF, scanned PDF, and synthetic demo data
@@ -70,14 +92,14 @@ Relational database
       Streamlit frontend
 ```
 
-Version 1 uses SQLite locally and in the Docker environment. PostgreSQL is
-postponed until the local single-user application is complete. The FastAPI
+Version 1 uses SQLite locally and in the Docker environment. PostgreSQL and remote
+deployment are outside the approved local single-user scope. The FastAPI
 ingestion and decision-support boundary is implemented. The Streamlit frontend now
 provides local navigation, shared display states, backend readiness, account
 onboarding, and statement review/confirmation without moving business logic into
 pages.
 
-### Planned statement import
+### Statement import
 
 - CSV exports can now be decoded and structurally validated into a limited,
   non-persistent preview. Common headings produce mapping suggestions, while the
@@ -165,8 +187,9 @@ aware timestamp cannot backdate a decision into an earlier analytics, recurrence
 training, or forecast cutoff.
 
 Statement flags and free-text notes appear only as reference context in the
-review queue. They are never parsed to assign a role. There is no API or visual
-review screen yet, and the role-review stage itself does not calculate totals.
+review queue. They are never parsed to assign a role. The API and transaction
+workspace expose explicit role review; the role-review service itself does not
+calculate totals.
 
 ### Implemented coverage-aware analytics boundary
 
@@ -182,11 +205,10 @@ withheld when coverage is incomplete, a financial role remains unknown, or
 income is zero. Account views show transfer movement; consolidated views suppress
 both legs of a currently valid confirmed internal-transfer pair.
 
-Expense spending is currently `unclassified` for recurrence because recurrence
-detection belongs to a later stage. Null categories remain an explicit
-uncategorised bucket for transactions that have not run through categorisation.
-The service writes nothing, stores no derived report, and exposes no API or UI
-yet.
+Confirmed recurrence can distinguish recurring from discretionary spending. Null
+categories remain an explicit uncategorised bucket for transactions that have not
+run through categorisation. The analytics service writes no derived report; thin API
+and Streamlit boundaries render its read-only result.
 
 ### Implemented deterministic categorisation boundary
 
@@ -211,7 +233,7 @@ precedence source, rule identity where applicable, and which fields matched. It
 updates only the verified transaction's category; financial role, raw import
 evidence, source text, amounts, dates, statement notes, and flags remain
 unchanged. Commit 20 adds local personal-rule storage and a correction workflow;
-APIs and review screens remain later interface stages.
+the API and transaction workspace now expose transaction-level corrections.
 
 ### Implemented ML categoriser candidate boundary
 
@@ -248,12 +270,11 @@ rule-plus-model inference, confidence thresholds, low-confidence review, and
 feedback. The separate local registry owns database model metadata and explicit
 active-model selection.
 
-The CSV preview, confirmation, and persistence pipeline currently consists of
-Python services rather than an upload or review screen.
-Text-based and scanned-PDF preview extraction are Python services. The shared
-PDF correction and confirmation boundary is also a Python service; a later
-stage will connect its approved output to persistence and a user interface. It
-does not currently write an approved or rejected PDF row to the database.
+The Streamlit import workspace calls the CSV preview, confirmation, and persistence
+services through the typed local API. Text-based and scanned-PDF preview extraction
+use the same interface, while the shared PDF correction and confirmation boundary
+still returns only an in-memory approval. It does not currently write an approved or
+rejected PDF row to the database.
 
 ## Development setup
 
@@ -388,6 +409,21 @@ review-gated recurrence, uncertainty-aware balance forecasts, budgets and goals,
 hypothetical scenarios, anomaly review, and model evaluation metadata. See
 [`docs/frontend.md`](docs/frontend.md) for the exact manual check and privacy boundary.
 
+To run the same application boundaries in local containers, install Docker Desktop
+and use:
+
+```bash
+make docker-config
+make docker-build
+make docker-up
+```
+
+Open `http://127.0.0.1:8501`, then stop the services with `make docker-down`.
+SQLite and model artefacts remain in private Docker-managed volumes between runs.
+The ports remain loopback-only and the Compose setup is not a remote deployment.
+See [`docs/containers.md`](docs/containers.md) for the topology, privacy safeguards,
+CI gates, exact checks, and limitations.
+
 ## Privacy
 
 This repository must never contain real bank statements, credentials, personal
@@ -401,6 +437,10 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 
 - [`docs/api.md`](docs/api.md)
 - [`docs/frontend.md`](docs/frontend.md)
+- [`docs/containers.md`](docs/containers.md)
+- [`docs/user_guide.md`](docs/user_guide.md)
+- [`docs/diagrams.md`](docs/diagrams.md)
+- [`docs/releases/v1.0.0.md`](docs/releases/v1.0.0.md)
 - [`docs/architecture.md`](docs/architecture.md)
 - [`docs/data_contracts.md`](docs/data_contracts.md)
 - [`docs/imports.md`](docs/imports.md)
@@ -419,9 +459,9 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 - [`docs/privacy.md`](docs/privacy.md)
 - [`docs/testing.md`](docs/testing.md)
 
-## Status and roadmap
+## Release status
 
-The planned implementation is deliberately incremental. The project foundation,
+The implementation was delivered incrementally. The project foundation,
 quality tooling, typed settings, structured logging, privacy-safe synthetic
 data, canonical data contracts, CSV preview/mapping, transaction cleaning,
 duplicate/statement-overlap detection, and SQLite persistence are configured.
@@ -461,9 +501,22 @@ data-minimised session state, profile/account setup, and review-gated CSV/PDF im
 are now implemented. Transaction review and the first coverage-aware dashboard are
 also implemented. The forecast and planning interface is now implemented. Synthetic
 cross-boundary CSV/forecast and OCR/reconciliation tests now harden privacy, security,
-and ingestion failure behaviour; PDF approval remains non-persistent by design. The
-next stage adds reproducible local containers and continuous integration before the
-release documentation is finalised.
+and ingestion failure behaviour; PDF approval remains non-persistent by design.
+Reproducible local containers now package the API, interface, SQLite storage, model
+storage, and Tesseract without introducing a remote service. GitHub Actions repeats
+the locked quality, coverage, migration, image, import, and OCR build checks. The
+Version 1 release candidate documentation, diagrams, evaluation evidence, privacy
+checklist, demonstration workflow, changelog, release notes, limitations, and future
+roadmap are now included. Tagging remains gated on the exact GitHub Actions run,
+synthetic screenshot review, and final pull-request review.
+
+## Future roadmap
+
+Post-Version 1 work may add atomic PDF persistence, broader bank-layout evaluation,
+additional currencies and account types, stronger user-managed retention and backup
+controls, accessibility testing, and production-grade authentication/TLS only if a
+remote deployment is explicitly approved. Better models remain candidates until they
+beat the documented baselines on leakage-safe evidence.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

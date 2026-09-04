@@ -1,4 +1,4 @@
-.PHONY: setup format format-check lint typecheck test test-safeguards coverage pre-commit check check-import check-ocr api ui demo-api demo-data demo-statements demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade
+.PHONY: setup format format-check lint typecheck test test-safeguards test-containers coverage pre-commit check check-import check-ocr api ui demo-api demo-data demo-statements demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade docker-config docker-build docker-up docker-down
 
 setup:
 	uv sync --dev
@@ -21,6 +21,9 @@ test:
 
 test-safeguards:
 	uv run pytest -o addopts="-ra --strict-config --strict-markers" -vv tests/integration/test_end_to_end_safeguards.py
+
+test-containers:
+	uv run pytest -o addopts="-ra --strict-config --strict-markers" -vv tests/integration/test_container_delivery.py
 
 coverage: test
 
@@ -82,3 +85,15 @@ db-upgrade:
 
 db-downgrade:
 	uv run alembic downgrade base
+
+docker-config:
+	docker compose config --quiet
+
+docker-build:
+	docker compose build
+
+docker-up:
+	docker compose up --detach
+
+docker-down:
+	docker compose down

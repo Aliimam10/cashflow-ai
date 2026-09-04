@@ -91,7 +91,7 @@ def test_client_reads_typed_status_profile_and_json_post() -> None:
     def handler(request: httpx2.Request) -> httpx2.Response:
         requests.append(request)
         if request.url.path == "/health":
-            return httpx2.Response(200, json={"status": "ok", "version": "0.1.0"})
+            return httpx2.Response(200, json={"status": "ok", "version": "1.0.0"})
         if request.url.path == "/ready":
             return httpx2.Response(
                 503,
@@ -120,7 +120,7 @@ def test_client_reads_typed_status_profile_and_json_post() -> None:
         "http://127.0.0.1:8765/",
         transport=httpx2.MockTransport(handler),
     )
-    assert client.health() == HealthResponse(version="0.1.0")
+    assert client.health() == HealthResponse(version="1.0.0")
     assert client.readiness().status == "not_ready"
     assert client.current_profile().profile_id == "synthetic-profile"
     response = client.post(
@@ -551,7 +551,7 @@ def test_client_context_manager_closes_connections(
         transport=httpx2.MockTransport(
             lambda request: httpx2.Response(
                 200,
-                json={"status": "ok", "version": "0.1.0"},
+                json={"status": "ok", "version": "1.0.0"},
                 request=request,
             )
         ),
@@ -674,7 +674,7 @@ def test_client_translates_api_errors_without_echoing_untrusted_bodies(
 @pytest.mark.parametrize(
     "body",
     [
-        {"status": "wrong", "version": "0.1.0"},
+        {"status": "wrong", "version": "1.0.0"},
         b"not-json",
     ],
 )

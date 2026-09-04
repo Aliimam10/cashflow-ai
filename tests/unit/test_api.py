@@ -269,7 +269,7 @@ def test_health_readiness_and_openapi_include_decision_support(api: ApiHarness) 
     schema = api.client.get("/openapi.json").json()
 
     assert health.status_code == 200
-    assert health.json() == {"status": "ok", "version": "0.1.0"}
+    assert health.json() == {"status": "ok", "version": "1.0.0"}
     assert ready.status_code == 200
     assert ready.json() == {
         "status": "ready",
