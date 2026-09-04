@@ -17,10 +17,15 @@ boundary. It now provides:
   suggestions, and probable-duplicate decisions;
 - coverage and freshness indicators plus observed income, expense, savings,
   category, cadence, and gap-preserving balance charts; and
-- recurring-series detection with explicit confirm/reject controls; and
+- recurring-series detection with explicit confirm/reject controls;
 - on-demand balance forecasts with a selectable horizon, expected path,
   uncertainty band, confirmed upcoming flows, balance source, cutoff, model, and
-  low-data/stale-data warnings.
+  low-data/stale-data warnings;
+- budget and financial-goal setup, progress, and a conservative safe-weekly-spending
+  estimate;
+- temporary baseline-versus-scenario comparisons for all supported scenario types;
+- an explainable anomaly-review queue with explicit expected/unusual feedback; and
+- aggregate model versions, evaluation metrics, eligibility, and active status.
 
 The import page does not reproduce parsing or financial logic. Typed form values go
 through the local API client to the existing backend contracts.
@@ -52,6 +57,14 @@ Recurring candidates and forecasts are also requested again rather than stored i
 session state. The browser supplies identifiers, dates, horizon, and explicit review
 actions; the API rebuilds all evidence and models locally. Confirming or rejecting a
 series changes derived-data state through the existing backend invalidation rules.
+
+Budgets and goals are stored only after an explicit save action. Scenario definitions
+and comparison paths remain temporary and are requested again on each rerun. Anomaly
+feedback sends the original bounded scan plan plus one transaction identifier; the
+backend recomputes the suggestion before saving only its controlled review status,
+score, and signal-code reasons. It does not store descriptions, alter transactions,
+or retrain the anomaly model. Model evaluation views contain aggregate registry
+metadata and never expose learned vocabulary or transaction-level predictions.
 
 CSV confirmation persists an import atomically through the established service. PDF
 approval remains an in-memory result because atomic PDF persistence has not been
@@ -121,7 +134,7 @@ Open **Transactions & analytics** after that import. Under the transaction table
    `active forecasting` only when every displayed policy passes; missing dates break
    balance lines; headline values say `Observed` unless coverage is complete.
 
-Open **Forecast & planning** for the Commit 35 workflow:
+Open **Forecast & planning** for the Commit 36 workflow:
 
 1. Set **Recurring evidence date** to the last completed UTC date covered by the
    fictional import, then select **Refresh recurring patterns**.
@@ -137,6 +150,26 @@ Open **Forecast & planning** for the Commit 35 workflow:
    names the verified opening-balance source, cutoff, selected model and best
    baseline, selection reason, held-out errors when available, final range, upcoming
    confirmed flows, and any low-data/stale-data warning.
+4. Open **Budgets & goals**. Save a fictional monthly category budget and a weekly
+   discretionary budget, then save a fictional savings target and minimum-balance
+   goal. Select the relevant fictional accounts and **Evaluate plan**. Expected:
+   coverage-aware progress, controlled unavailable values where dates are missing,
+   goal requirements, warnings, and an estimated safe weekly amount. The page must
+   call it an estimate and not financial advice.
+5. Open **Scenarios**, select a fictional one-off purchase of `100.00`, choose a date
+   inside the displayed horizon, and select **Compare scenario**. Expected: separate
+   baseline and scenario lines plus ending-balance and safe-spending differences; the
+   page states that no transaction or plan changed. Safely vary the positive amount,
+   horizon, supported type, frequency, and synthetic date. Cancelling a subscription
+   requires an explicitly confirmed recurring candidate.
+6. Open **Anomaly review** and enable **Run anomaly scan**. Expected: either explicit
+   low-history/coverage warnings and rule-only results, or carefully worded review
+   suggestions with controlled reasons. Choose **This was expected** or **Keep as
+   unusual** on one fictional item. Expected: the saved review appears on the next
+   scan, the source transaction remains unchanged, and the UI never calls it fraud.
+7. Open **Model evaluation** and vary the task filter. Expected: aggregate model
+   version, training dates, activation eligibility/status, and metrics when local
+   registrations exist; an empty state is valid when none have been registered.
 
 Safe parameters to vary are the four displayed horizons and dates inside synthetic
 verified coverage. A year of contiguous weekly evidence is the intended full model
@@ -182,8 +215,9 @@ reports.
   re-reviewed after that later boundary is implemented.
 - Bank PDF layouts are not standardised. Digital extraction and OCR support the
   tested conservative layouts, not every institution or scan quality.
-- Budget, goal, scenario, and anomaly controls remain for Commit 36. Transaction and
-  recurring searches currently return at most the first 100 matches.
+- Budget/goal update and deletion, saved scenarios, and pagination controls are not
+  implemented. Transaction, recurring, and planning searches currently return at
+  most the first 100 matches.
 - Forecast intervals are empirical estimates rather than guarantees, and recursive
   errors can compound at longer horizons.
 - The client is synchronous; spinners make bounded extraction work visible, but

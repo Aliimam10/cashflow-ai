@@ -33,6 +33,7 @@ from cashflow_ai.api.decision_services import (
     page_recurring_payments,
     refresh_recurring_payments,
     reject_role_suggestion,
+    review_anomaly,
     review_recurrence,
     review_transaction_role,
     suggest_financial_roles,
@@ -44,7 +45,12 @@ from cashflow_ai.schemas.analytics import (
     CashFlowAnalytics,
     DataCoverageIndicator,
 )
-from cashflow_ai.schemas.anomalies import AnomalyDetectionPlan, AnomalyDetectionResult
+from cashflow_ai.schemas.anomalies import (
+    AnomalyDetectionPlan,
+    AnomalyDetectionResult,
+    AnomalyFeedbackRequest,
+    AnomalyFeedbackResult,
+)
 from cashflow_ai.schemas.api import Page
 from cashflow_ai.schemas.api_decisions import (
     BalanceForecastRequest,
@@ -495,6 +501,20 @@ def anomalies_route(
 ) -> AnomalyDetectionResult:
     """Return rules/model review signals without alleging fraud."""
     return calculate_anomalies(factory, request)
+
+
+@router.post(
+    "/anomalies/feedback",
+    response_model=AnomalyFeedbackResult,
+    tags=["anomalies"],
+    summary="Review an anomaly suggestion",
+)
+def anomaly_feedback_route(
+    request: AnomalyFeedbackRequest,
+    factory: SessionFactoryDependency,
+) -> AnomalyFeedbackResult:
+    """Recompute the suggestion before saving expected or unusual feedback."""
+    return review_anomaly(factory, request)
 
 
 @router.get(

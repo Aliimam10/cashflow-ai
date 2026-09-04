@@ -30,7 +30,9 @@ remains absent. The Streamlit frontend now provides local profile and account se
 plus review-gated CSV, digital-PDF, and scanned-PDF workflows over its typed API
 client. It also provides verified-transaction search and corrections, explicit
 role/duplicate review, and coverage-aware cash-flow dashboards. Forecast/planning
-screens, alert persistence, and production model lifecycle management are not
+screens now add recurring review, uncertainty-aware forecasts, budgets, goals,
+safe-spending estimates, isolated scenarios, anomaly feedback, and aggregate model
+evaluation. PDF persistence and production model lifecycle management are not
 implemented yet.
 
 ## Problem
@@ -382,7 +384,8 @@ make ui
 The home page reports local API/database readiness. **Import statements** provides
 account setup and review-gated CSV/PDF workflows; **Transactions & analytics** adds
 correction and observed-data dashboards; and **Forecast & planning** now exposes
-review-gated recurrence plus uncertainty-aware balance forecasts. See
+review-gated recurrence, uncertainty-aware balance forecasts, budgets and goals,
+hypothetical scenarios, anomaly review, and model evaluation metadata. See
 [`docs/frontend.md`](docs/frontend.md) for the exact manual check and privacy boundary.
 
 ## Privacy
@@ -414,6 +417,7 @@ See [`docs/privacy.md`](docs/privacy.md) for the evolving privacy design.
 - [`docs/modelling.md`](docs/modelling.md)
 - [`docs/evaluation.md`](docs/evaluation.md)
 - [`docs/privacy.md`](docs/privacy.md)
+- [`docs/testing.md`](docs/testing.md)
 
 ## Status and roadmap
 
@@ -455,8 +459,11 @@ with bounded pagination and generated OpenAPI documentation. PDF approval is sti
 returned only in memory. Streamlit navigation, its typed API client, home/status,
 data-minimised session state, profile/account setup, and review-gated CSV/PDF import
 are now implemented. Transaction review and the first coverage-aware dashboard are
-also implemented; the next stage adds forecast and planning interfaces, while later
-stages complete deployment and release work.
+also implemented. The forecast and planning interface is now implemented. Synthetic
+cross-boundary CSV/forecast and OCR/reconciliation tests now harden privacy, security,
+and ingestion failure behaviour; PDF approval remains non-persistent by design. The
+next stage adds reproducible local containers and continuous integration before the
+release documentation is finalised.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.
@@ -541,6 +548,8 @@ merchant-gap, median-difference, and novelty features. Transfers, pending rows,
 duplicates, unresolved roles, and uncovered dates are excluded from ML; confirmed
 recurring payments are protected from generic alerts. Results use only `Unusual`,
 `Possible duplicate`, or `Needs review`, expose rule/model evidence and sufficiency
-warnings, and never call an outlier fraud. Run `make demo-anomalies` for a fictional
-model-backed review or add `--sparse` to the underlying CLI to see safe rule-only
-fallback behaviour.
+warnings, and never call an outlier fraud. The local interface can save an explicit
+`expected activity` or `confirmed unusual` review after the backend recomputes the
+same alert; feedback does not alter a transaction or retrain a model. Run
+`make demo-anomalies` for a fictional model-backed review or add `--sparse` to the
+underlying CLI to see safe rule-only fallback behaviour.

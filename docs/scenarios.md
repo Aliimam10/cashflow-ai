@@ -117,5 +117,6 @@ confirmed baseline occurrence supplies the amount.
 - Travel is represented as one total dated outflow rather than a daily itinerary.
 - Category reduction is an explicit avoided amount, not a learned category forecast.
 - Savings-goal risk is an aggregate capacity check, not a probability of success.
-- Scenarios are not saved, edited, shared, or displayed in a UI in this stage.
+- Scenarios can be built and compared in the local Commit 36 UI, but they are not
+  saved, edited after comparison, or shared.
 - Outputs are estimates, not guarantees or financial advice.

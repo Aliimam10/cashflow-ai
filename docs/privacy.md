@@ -358,3 +358,26 @@ values to the local API. Candidate evidence and forecast results are rendered fo
 current run but never copied into application-managed session state, files, telemetry,
 or logs. Chart floats are presentation-only copies; fixed-precision source and API
 money remains unchanged.
+
+Budget/goal forms persist only the validated plan values the user explicitly saves.
+Scenarios remain non-persistent and charts receive presentation-only floating-point
+copies. Anomaly scans are read-only; an explicit feedback action causes the backend to
+recompute the same scoped alert and retain only its transaction link, bounded score,
+controlled signal-code reasons, and reviewed/dismissed status. No raw description or
+merchant text is duplicated into the alert record, and feedback does not trigger
+training. Model-information controls expose only aggregate registry metadata, never
+learned vocabulary, feature rows, or transaction-level predictions.
+
+## Privacy regression gates
+
+The end-to-end safety suite uses only generated CSV bytes, an in-memory fictional PDF,
+and a deterministic fake local OCR engine. It verifies safe upload basenames, raw-row
+preservation, explicit OCR correction, closed page images, data-minimised transaction
+responses, and the rule that an approved but unpersisted PDF cannot enter analytics.
+Sensitive marker text is allowed in the local response needed for review but must not
+appear in normal logs.
+
+Focused tests continue to protect file and render limits, controlled error bodies,
+unknown coverage, transfer double-counting, stale balances, scenario isolation, and
+downstream invalidation. The test map and exact manual command are documented in
+[`testing.md`](testing.md).

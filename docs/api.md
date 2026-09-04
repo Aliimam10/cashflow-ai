@@ -9,7 +9,8 @@ categorisation, analytics, forecasting, anomaly detection, or planning.
 The Streamlit frontend calls these endpoints through its typed local client instead
 of accessing the database or domain services directly. Profile/account onboarding
 and statement preview/review are interactive. Transaction review and analytics are
-interactive; forecast controls remain staged.
+interactive; recurrence, forecast, planning, scenario, anomaly-review, and model-
+information controls are also interactive.
 Forecast, planning, scenario, recurrence, and anomaly calculations are rebuilt
 server-side from owned, cutoff-bound inputs; a caller cannot submit a fabricated
 model result or balance path as trusted evidence.
@@ -90,6 +91,7 @@ digital-PDF use must not fail merely because Tesseract is absent.
 | `POST /api/v1/planning/evaluate` | Evaluate budgets, goals, and safe weekly spending | Freshness metadata only |
 | `POST /api/v1/scenarios/evaluate` | Compare an isolated hypothetical scenario | Freshness metadata only |
 | `POST /api/v1/anomalies/detect` | Identify review signals without alleging fraud | Freshness metadata only |
+| `POST /api/v1/anomalies/feedback` | Recompute and review one current anomaly suggestion | Controlled review state |
 | `GET /api/v1/models` | List data-minimised model metadata | None |
 | `GET /api/v1/models/{task}/active` | Read an explicitly active eligible model | None |
 
@@ -152,9 +154,12 @@ confirmed import, category/role correction, balance change, or recurring review 
 mark affected output types stale. The API stores this revision/freshness metadata,
 not private analytics, forecast, anomaly, planning, or scenario response payloads.
 
-Anomaly responses are review aids, not fraud allegations. Forecast intervals are
-empirical estimates, not guarantees. Scenario responses are hypothetical and are
-not persisted as actual transactions, budgets, goals, or forecasts.
+Anomaly responses are review aids, not fraud allegations. Feedback requests repeat
+the bounded detection plan; the server recomputes the alert before saving only its
+controlled status, score, and signal-code reasons. Feedback does not alter the
+transaction or retrain a model. Forecast intervals are empirical estimates, not
+guarantees. Scenario responses are hypothetical and are not persisted as actual
+transactions, budgets, goals, or forecasts.
 
 ## Privacy and errors
 

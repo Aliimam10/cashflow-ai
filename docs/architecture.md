@@ -491,12 +491,13 @@ coverage, history, role, pending, transfer, and duplicate gates pass. A confirme
 recurring flow is withheld from generic scoring so normal rent is not flagged merely
 because it is large. Neither path mutates a transaction or claims fraud.
 
-Commit 25 deliberately does not use `anomaly_alerts`. The separate model-registry
-module now writes only aggregate model metadata; its anomaly adapter never stores
+Detection deliberately does not write `anomaly_alerts`. The separate model-registry
+module writes only aggregate model metadata; its anomaly adapter never stores
 transaction-level alerts or scores and does not make the in-memory candidate active.
-Later interface work owns alert review state. This keeps current model output
-reversible, avoids silently opening database alerts during a read operation, and
-prevents a partial lifecycle from being presented as complete.
+Commit 36 adds a distinct explicit-feedback command: it recomputes the scoped alert,
+then stores only its latest controlled review status, score, and signal-code reasons
+in the existing alert table. This keeps scans read-only, prevents stale suggestions
+from being reviewed, and does not turn feedback into training labels automatically.
 
 ## Local model-registry boundary
 
@@ -606,3 +607,10 @@ series, trains/selects models, anchors verified balances, and simulates paths. T
 does not persist model objects, forecast paths, transaction evidence, or source rows.
 Its ordinary recurring-series read is side-effect free; only the explicit refresh
 control runs detection, and only confirm/reject controls change review state.
+
+The same page hosts thin adapters for persisted budget/goal creation, planning
+evaluation, temporary scenarios, anomaly review, and aggregate model-registry
+metadata. It renders server-returned calculations rather than reproducing planning,
+scenario, anomaly, or model-selection logic. Scenario paths are never persisted;
+anomaly detection remains read-only and only the separate feedback action writes a
+controlled review record after server-side recomputation.

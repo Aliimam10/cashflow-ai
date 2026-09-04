@@ -6,8 +6,9 @@ analytics boundary, consumes a data-minimised balance-forecast summary, and retu
 budget progress, required savings contributions, projected shortfalls, and a
 conservative weekly spending estimate.
 
-This is a Python service rather than an API or UI. Its outputs are estimates based on
-the supplied evidence and are not financial advice or guarantees.
+The calculation remains a Python service behind thin local API and Streamlit
+adapters. Its outputs are estimates based on the supplied evidence and are not
+financial advice or guarantees.
 
 ## Persisted planning types
 
@@ -137,6 +138,7 @@ database and fictional records.
 - The safe amount consumes an existing forecast; it does not train or select a model.
 - Multiple savings goals share aggregate available capacity because priority is not
   part of the authoritative Commit 27 scope.
-- Commit 28 compares these results under isolated financial scenarios. Create,
-  list, evaluate, and scenario API routes are available; update, deletion, and UI
-  controls remain later interface work.
+- Commit 28 compares these results under isolated financial scenarios. Create, list,
+  evaluate, and scenario API routes plus the Commit 36 setup/progress interface are
+  available; budget/goal update, deletion, prioritisation, and pagination controls
+  remain later work.

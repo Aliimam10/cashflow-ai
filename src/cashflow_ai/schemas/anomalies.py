@@ -54,6 +54,20 @@ class AnomalyWarningCode(StrEnum):
     NO_ELIGIBLE_DETECTION_TRANSACTIONS = "no_eligible_detection_transactions"
 
 
+class AnomalyFeedbackAction(StrEnum):
+    """User interpretation of one recomputed review suggestion."""
+
+    EXPECTED_ACTIVITY = "expected_activity"
+    CONFIRMED_UNUSUAL = "confirmed_unusual"
+
+
+class AnomalyReviewStatus(StrEnum):
+    """Persisted latest-review state supported by the current schema."""
+
+    REVIEWED = "reviewed"
+    DISMISSED = "dismissed"
+
+
 class AnomalyExclusionReason(StrEnum):
     """Why a verified row did not enter Isolation Forest."""
 
@@ -159,6 +173,7 @@ class TransactionAnomalyAlert(_AnomalyModel):
     model_score: Decimal | None = Field(
         default=None, ge=0, le=1, max_digits=7, decimal_places=6
     )
+    review_status: AnomalyReviewStatus | None = None
 
     @model_validator(mode="after")
     def validate_alert(self) -> TransactionAnomalyAlert:
@@ -266,6 +281,22 @@ class AnomalyDetectionResult(_AnomalyModel):
         return self
 
 
+class AnomalyFeedbackRequest(_AnomalyModel):
+    """Reproducible scan scope and explicit feedback for one transaction alert."""
+
+    plan: AnomalyDetectionPlan
+    transaction_id: Identifier
+    action: AnomalyFeedbackAction
+
+
+class AnomalyFeedbackResult(_AnomalyModel):
+    """Data-minimised acknowledgement of the latest saved review state."""
+
+    transaction_id: Identifier
+    action: AnomalyFeedbackAction
+    status: AnomalyReviewStatus
+
+
 __all__ = [
     "AnomalyDetectionMode",
     "AnomalyDetectionPlan",
@@ -273,6 +304,10 @@ __all__ = [
     "AnomalyDetectionResult",
     "AnomalyExclusionCount",
     "AnomalyExclusionReason",
+    "AnomalyFeedbackAction",
+    "AnomalyFeedbackRequest",
+    "AnomalyFeedbackResult",
+    "AnomalyReviewStatus",
     "AnomalySignal",
     "AnomalySignalCode",
     "AnomalyUserLabel",

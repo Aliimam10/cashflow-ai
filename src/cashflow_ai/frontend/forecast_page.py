@@ -19,6 +19,13 @@ from cashflow_ai.frontend.forecast_workflow import (
     forecast_request,
     recurrence_request,
 )
+from cashflow_ai.frontend.planning_page import (
+    PlanningApi,
+    render_anomalies,
+    render_budgets_and_goals,
+    render_models,
+    render_scenarios,
+)
 from cashflow_ai.frontend.session import FrontendSessionState
 from cashflow_ai.frontend.transaction_workflow import money_text
 from cashflow_ai.schemas.api import AccountResponse, Page, UserProfileResponse
@@ -44,7 +51,7 @@ from cashflow_ai.schemas.recurrence import (
 )
 
 
-class ForecastApi(Protocol):
+class ForecastApi(PlanningApi, Protocol):
     """Typed local API surface used by recurring and forecast views."""
 
     def current_profile(self) -> UserProfileResponse:
@@ -59,10 +66,6 @@ class ForecastApi(Protocol):
         self, request: RecurrenceDetectionRequest
     ) -> Page[RecurringPaymentCandidate]:
         """Refresh cutoff-safe recurring candidates."""
-        ...
-
-    def list_recurring(self, profile_id: str) -> Page[RecurringPaymentCandidate]:
-        """Return persisted recurrence state without running detection."""
         ...
 
     def review_recurring(self, request: RecurrenceReview) -> RecurrenceReviewResult:
@@ -293,7 +296,7 @@ def render_forecast_page(
     client: ForecastApi, session: FrontendSessionState
 ) -> FrontendSessionState:
     """Render review-gated recurrence and uncertainty-aware forecasts."""
-    st.title("📈 Recurring & forecasting")
+    st.title("📈 Forecast & planning")
     render_forecast_disclaimer()
     try:
         profile = client.current_profile()
@@ -304,6 +307,7 @@ def render_forecast_page(
                 "Create an account and confirm a statement before forecasting.",
             )
             return session
+        categories = client.list_categories().items
         latest_complete_date = datetime.now(UTC).date() - timedelta(days=1)
         as_of = st.date_input(
             "Recurring evidence date (completed UTC date)",
@@ -311,7 +315,16 @@ def render_forecast_page(
             max_value=latest_complete_date,
         )
         account_names = {item.account_id: item.name for item in accounts}
-        recurring, forecasting = st.tabs(("Recurring payments", "Forecast"))
+        recurring, forecasting, planning, scenarios, anomalies, models = st.tabs(
+            (
+                "Recurring payments",
+                "Forecast",
+                "Budgets & goals",
+                "Scenarios",
+                "Anomaly review",
+                "Model evaluation",
+            )
+        )
         with recurring:
             _render_recurring(
                 client,
@@ -326,6 +339,32 @@ def render_forecast_page(
                 accounts=accounts,
                 default_account_id=session.account_id,
             )
+        with planning:
+            render_budgets_and_goals(
+                client,
+                profile_id=profile.profile_id,
+                currency=profile.base_currency,
+                accounts=accounts,
+                categories=categories,
+                as_of=as_of,
+            )
+        with scenarios:
+            render_scenarios(
+                client,
+                profile_id=profile.profile_id,
+                accounts=accounts,
+                categories=categories,
+                as_of=as_of,
+            )
+        with anomalies:
+            render_anomalies(
+                client,
+                profile_id=profile.profile_id,
+                accounts=accounts,
+                as_of=as_of,
+            )
+        with models:
+            render_models(client)
     except ApiClientError as error:
         render_error(error)
         return session

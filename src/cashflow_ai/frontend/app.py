@@ -67,7 +67,8 @@ def render_home(client: StatusApi) -> None:
     st.write(
         "Review-gated statement onboarding, transaction corrections, duplicate and "
         "financial-role review, and coverage-aware dashboards are ready. Forecasting "
-        "and uncertainty-aware recurring and forecasting controls are ready."
+        "and decision-support controls now include recurrence, budgets, goals, "
+        "scenarios, anomaly review, and aggregate model evaluation evidence."
     )
 
 

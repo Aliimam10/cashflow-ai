@@ -115,6 +115,7 @@ def test_all_decision_routes_delegate_to_application_services(
         "calculate_financial_plan",
         "calculate_scenario",
         "calculate_anomalies",
+        "review_anomaly",
         "page_models",
         "active_model",
     )
@@ -148,6 +149,7 @@ def test_all_decision_routes_delegate_to_application_services(
         routes.planning_route(request, factory),
         routes.scenario_route(request, factory),
         routes.anomalies_route(request, factory),
+        routes.anomaly_feedback_route(request, factory),
         routes.models_route(factory, pagination, ModelTask.TRANSACTION_CATEGORISATION),
         routes.active_model_route(ModelTask.TRANSACTION_CATEGORISATION, factory),
     )
@@ -404,6 +406,11 @@ def test_decision_services_delegate_and_preserve_revision_boundaries(
         services, "detect_unusual_transactions", MagicMock(return_value=result)
     )
     _assert_same(services.calculate_anomalies(factory, anomaly_plan), result)
+    feedback_request: Any = SimpleNamespace(plan=anomaly_plan)
+    monkeypatch.setattr(
+        services, "record_anomaly_feedback", MagicMock(return_value=result)
+    )
+    _assert_same(services.review_anomaly(factory, feedback_request), result)
 
     monkeypatch.setattr(
         services, "list_registered_models", MagicMock(return_value=(result,))
