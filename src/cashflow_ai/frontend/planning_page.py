@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Protocol
 
@@ -322,6 +322,7 @@ def render_budgets_and_goals(
     accounts: tuple[AccountResponse, ...],
     categories: tuple[CategorySummary, ...],
     as_of: date,
+    knowledge_cutoff_at: datetime | None = None,
 ) -> None:
     """Render persisted setup plus on-demand planning progress."""
     setup_budget, setup_goal = st.columns(2)
@@ -378,6 +379,7 @@ def render_budgets_and_goals(
                     as_of_date=as_of,
                     horizon_days=horizon,
                     payday_days=paydays,
+                    knowledge_cutoff_at=knowledge_cutoff_at,
                 )
             )
         _planning_result(result)
@@ -435,6 +437,7 @@ def render_scenarios(
     accounts: tuple[AccountResponse, ...],
     categories: tuple[CategorySummary, ...],
     as_of: date,
+    knowledge_cutoff_at: datetime | None = None,
 ) -> None:
     """Render all supported non-persistent scenario shapes."""
     st.caption("Scenarios are private experiments and never change your transactions.")
@@ -460,7 +463,9 @@ def render_scenarios(
         value=90,
         key="scenario-horizon",
     )
-    start_default = forecast_monday_after(complete_day_cutoff(as_of))
+    start_default = forecast_monday_after(
+        knowledge_cutoff_at or complete_day_cutoff(as_of)
+    )
     start = st.date_input("Scenario start", value=start_default, key="scenario-start")
     paydays = tuple(
         st.multiselect(
@@ -559,6 +564,7 @@ def render_scenarios(
                     horizon_days=horizon,
                     payday_days=paydays,
                     scenario=scenario,
+                    knowledge_cutoff_at=knowledge_cutoff_at,
                 )
             )
         _scenario_result(result)
@@ -570,6 +576,7 @@ def render_anomalies(
     profile_id: str,
     accounts: tuple[AccountResponse, ...],
     as_of: date,
+    knowledge_cutoff_at: datetime | None = None,
 ) -> None:
     """Render a careful, feedback-enabled anomaly review queue."""
     st.caption(
@@ -599,6 +606,7 @@ def render_anomalies(
         profile_id=profile_id,
         account_ids=selected,
         as_of_date=as_of,
+        knowledge_cutoff_at=knowledge_cutoff_at,
     )
     with loading_state("Checking transactions for unusual activity…"):
         result = client.detect_anomalies(plan)

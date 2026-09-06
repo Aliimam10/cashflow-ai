@@ -40,17 +40,17 @@ def test_dockerfile_is_locked_local_and_unprivileged() -> None:
     assert dockerfile.index("USER cashflow") > dockerfile.index("chown -R")
 
 
-def test_streamlit_theme_is_light_minimal_and_packaged() -> None:
+def test_streamlit_theme_is_dark_minimal_and_packaged() -> None:
     configuration = tomllib.loads(
         (PROJECT_ROOT / ".streamlit/config.toml").read_text(encoding="utf-8")
     )
 
     assert configuration["theme"] == {
-        "base": "light",
-        "primaryColor": "#0F766E",
-        "backgroundColor": "#F5F7FB",
-        "secondaryBackgroundColor": "#EDF3F5",
-        "textColor": "#102A43",
+        "base": "dark",
+        "primaryColor": "#5B8DEF",
+        "backgroundColor": "#080B10",
+        "secondaryBackgroundColor": "#0F1419",
+        "textColor": "#F3F6FB",
         "font": "sans serif",
     }
     assert configuration["client"] == {

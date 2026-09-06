@@ -9,6 +9,7 @@ from collections import defaultdict
 from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal
 from enum import StrEnum
+from itertools import pairwise
 from typing import Any, cast
 
 from sqlalchemy import case, desc, select
@@ -364,7 +365,11 @@ def _recursive_prediction(
     trained: TrainedPrimaryForecaster,
     row: ForecastInferenceRow,
     history: tuple[tuple[date, Decimal], ...],
+    *,
+    force_recent_mean: bool = False,
 ) -> Decimal:
+    if force_recent_mean:
+        return _money(max(_ZERO, row.rolling_mean_4))
     if trained.estimator is None:
         return _money(max(_ZERO, _baseline_value(trained, row, history)))
     raw = cast(
@@ -374,24 +379,86 @@ def _recursive_prediction(
     return _money(max(_ZERO, Decimal(str(float(raw)))))
 
 
+def _future_gap_fallback_row(
+    *,
+    dataset: ForecastDataset,
+    plan: ForecastPathPlan,
+    occurrences: tuple[RecurringForecastOccurrence, ...],
+) -> ForecastInferenceRow:
+    """Build a conservative recent-mean row without filling uncovered weeks."""
+    history = dataset.weekly_targets[-8:]
+    origin = datetime.combine(plan.forecast_start, time.min, tzinfo=UTC)
+    if len(history) < 8 or any(
+        current.week_start - previous.week_start != timedelta(weeks=1)
+        for previous, current in pairwise(history)
+    ):
+        raise ForecastPathError(
+            ForecastPathErrorCode.FORECAST_EVIDENCE_MISALIGNED,
+            "eight consecutive covered weeks are required before forecasting",
+        )
+    if any(item.known_at >= origin for item in history):
+        raise ForecastPathError(
+            ForecastPathErrorCode.FORECAST_EVIDENCE_MISALIGNED,
+            "forecast history must be known before the requested future week",
+        )
+    values = tuple(item.discretionary_spending for item in history)
+    recurring_expense_roles = {
+        FinancialRole.EXPENSE,
+        FinancialRole.CASH_WITHDRAWAL,
+    }
+    known_recurring_outflow = sum(
+        (
+            abs(item.signed_amount)
+            for item in occurrences
+            if item.financial_role in recurring_expense_roles
+            and plan.forecast_start
+            <= item.occurrence_date
+            <= plan.forecast_start + timedelta(days=6)
+        ),
+        start=_ZERO,
+    )
+    since, until = _payday_distances(plan.forecast_start, dataset.plan.payday_days)
+    return ForecastInferenceRow(
+        week_start=plan.forecast_start,
+        forecast_origin_at=origin,
+        lag_1=values[-1],
+        lag_2=values[-2],
+        lag_4=values[-4],
+        rolling_mean_4=sum(values[-4:], start=_ZERO) / 4,
+        rolling_mean_8=sum(values, start=_ZERO) / 8,
+        days_since_payday=since,
+        days_until_payday=until,
+        month=plan.forecast_start.month,
+        week_of_year=plan.forecast_start.isocalendar().week,
+        known_recurring_outflow=known_recurring_outflow,
+        recurring_outflow_known_at=plan.knowledge_cutoff_at,
+    )
+
+
 def _weekly_point_predictions(
     *,
     dataset: ForecastDataset,
     trained: TrainedPrimaryForecaster,
     plan: ForecastPathPlan,
     occurrences: tuple[RecurringForecastOccurrence, ...],
-) -> tuple[tuple[date, Decimal], ...]:
-    first_row = build_next_forecast_inference_row(dataset)
-    if first_row.week_start != plan.forecast_start:
-        raise ForecastPathError(
-            ForecastPathErrorCode.FORECAST_EVIDENCE_MISALIGNED,
-            "forecast start must be the next unobserved model week",
+) -> tuple[tuple[tuple[date, Decimal], ...], bool]:
+    latest_observed_week = cast(date, trained.latest_observed_week)
+    expected_next_week = latest_observed_week + timedelta(weeks=1)
+    recent_gap_fallback = expected_next_week != plan.forecast_start
+    if recent_gap_fallback:
+        first_row = _future_gap_fallback_row(
+            dataset=dataset,
+            plan=plan,
+            occurrences=occurrences,
         )
-    first = predict_discretionary_spending(trained, first_row)
+        first_value = _money(first_row.rolling_mean_4)
+    else:
+        first_row = build_next_forecast_inference_row(dataset)
+        first_value = predict_discretionary_spending(
+            trained, first_row
+        ).discretionary_spending
     week_count = math.ceil(plan.horizon_days / 7)
-    points: list[tuple[date, Decimal]] = [
-        (first.week_start, first.discretionary_spending)
-    ]
+    points: list[tuple[date, Decimal]] = [(first_row.week_start, first_value)]
     history: list[tuple[date, Decimal]] = [
         (week, amount) for week, amount, _known_at in trained.target_history
     ]
@@ -425,20 +492,29 @@ def _weekly_point_predictions(
             known_recurring_outflow=recurring,
             recurring_outflow_known_at=plan.knowledge_cutoff_at,
         )
-        value = _recursive_prediction(trained, row, tuple(history))
+        value = _recursive_prediction(
+            trained,
+            row,
+            tuple(history),
+            force_recent_mean=recent_gap_fallback,
+        )
         points.append((week_start, value))
         history.append((week_start, value))
-    return tuple(points)
+    return tuple(points), recent_gap_fallback
 
 
 def _residuals(
     trained: TrainedPrimaryForecaster,
     dataset: ForecastDataset,
     plan: ForecastPathPlan,
+    *,
+    force_recent_mean: bool = False,
 ) -> tuple[tuple[Decimal, ...], bool]:
     validation = trained.comparison.expanding_validation
     values = (
-        tuple(
+        tuple(row.target - row.rolling_mean_4 for row in dataset.feature_rows)
+        if force_recent_mean
+        else tuple(
             actual - predicted
             for actual, predicted in zip(
                 validation.actuals, validation.predictions, strict=True
@@ -524,11 +600,18 @@ def _validate_inputs(
             ForecastPathErrorCode.ACCOUNT_SCOPE_MISMATCH,
             "forecast dataset must contain exactly the requested owned account",
         )
+    history = tuple(
+        (item.week_start, item.discretionary_spending, item.known_at)
+        for item in dataset.weekly_targets
+    )
     if (
         dataset.plan.knowledge_cutoff_at != plan.knowledge_cutoff_at
         or trained.comparison.knowledge_cutoff_at != plan.knowledge_cutoff_at
         or trained.latest_observed_week is None
-        or trained.latest_observed_week + timedelta(weeks=1) != plan.forecast_start
+        or not dataset.weekly_targets
+        or dataset.weekly_targets[-1].week_start != trained.latest_observed_week
+        or trained.target_history != history
+        or trained.latest_observed_week >= plan.forecast_start
     ):
         raise ForecastPathError(
             ForecastPathErrorCode.FORECAST_EVIDENCE_MISALIGNED,
@@ -592,24 +675,31 @@ def build_balance_forecast_path(
         dataset=dataset,
         plan=plan,
     )
-    residuals, limited_residuals = _residuals(trained, dataset, plan)
+    base_points, recent_gap_fallback = _weekly_point_predictions(
+        dataset=dataset,
+        trained=trained,
+        plan=plan,
+        occurrences=occurrences,
+    )
+    residuals, limited_residuals = _residuals(
+        trained,
+        dataset,
+        plan,
+        force_recent_mean=recent_gap_fallback,
+    )
     warnings: list[ForecastPathWarningCode] = []
     confidence_multiplier = _ONE
-    if not trained.comparison.selected:
+    if not trained.comparison.selected or recent_gap_fallback:
         warnings.append(ForecastPathWarningCode.LOW_CONFIDENCE_MODEL)
         confidence_multiplier *= plan.policy.low_confidence_multiplier
+    if recent_gap_fallback:
+        warnings.append(ForecastPathWarningCode.RECENT_HISTORY_GAP)
     if limited_residuals:
         warnings.append(ForecastPathWarningCode.LIMITED_RESIDUAL_HISTORY)
     if freshness.warnings:
         warnings.append(ForecastPathWarningCode.STALE_DATA)
         confidence_multiplier *= plan.policy.stale_data_multiplier
 
-    base_points = _weekly_point_predictions(
-        dataset=dataset,
-        trained=trained,
-        plan=plan,
-        occurrences=occurrences,
-    )
     multiplier = selected_scenario.discretionary_spending_multiplier
     point_values = tuple(
         (week, _money(value * multiplier)) for week, value in base_points
@@ -708,7 +798,11 @@ def build_balance_forecast_path(
             recorded_at=balance.recorded_at,
             source=BalanceSnapshotSource(balance.source),
         ),
-        selected_model=trained.comparison.selected_model,
+        selected_model=(
+            ForecastBaselineName.RECENT_ROLLING_MEAN
+            if recent_gap_fallback
+            else trained.comparison.selected_model
+        ),
         interval_method=ForecastIntervalMethod.RESIDUAL_BOOTSTRAP,
         widening_multiplier=confidence_multiplier,
         warnings=tuple(warnings),
@@ -716,8 +810,10 @@ def build_balance_forecast_path(
         recurring_occurrences=occurrences,
         weekly_spending=tuple(weekly_results),
         daily_balances=daily_path,
-        interval_performance=_interval_performance(
-            trained, residuals, plan, confidence_multiplier
+        interval_performance=(
+            None
+            if recent_gap_fallback
+            else _interval_performance(trained, residuals, plan, confidence_multiplier)
         ),
         expected_final_balance=daily_path[-1].expected_balance,
         lower_final_balance=daily_path[-1].lower_balance,

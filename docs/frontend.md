@@ -1,12 +1,15 @@
 # Local Streamlit frontend
 
 The frontend is a loopback-only Streamlit client over the existing FastAPI
-boundary. Its user-facing design uses a light financial dashboard theme, compact
-safety notices, plain-language navigation, responsive content cards, and one focused
-planning tool at a time. Developer health details stay behind friendly readiness
-wording rather than dominating the home page. It provides:
+boundary. Its user-facing design uses a dark personal-finance dashboard, spacious
+data cards, cool indigo highlights, green income cues, amber spending cues, and one
+animated verified-balance pulse line. Labels prefer the local `DM Sans` font and
+numbers prefer local `JetBrains Mono`, with system fallbacks so the interface never
+contacts a font CDN. Developer health details stay behind friendly readiness wording
+rather than dominating the home page. It provides:
 
-- a home page with local API/database readiness and privacy guidance;
+- a functional home dashboard with local readiness, verified cash balance history,
+  latest activity, statement coverage, and cash-flow analytics;
 - first-run profile setup using display name, currency, and IANA timezone;
 - current/checking and savings account setup without bank credentials or account
   numbers;
@@ -109,11 +112,15 @@ Expected first-run and account behaviour:
 
 For the CSV workflow, choose **CSV**, upload
 `data/demo/generated/student/student_canonical.csv`, and check the proposed
-mapping. Use a complete statement period from `2024-01-01` to `2025-12-31`, leave
-reported balances disabled, tick the exact-file confirmation, and submit. Expected
-behaviour is a preserved preview followed by an import summary that separately
-counts imported, exact-duplicate, probable-duplicate, and rejected rows. Repeating
-the same file reports a repeated file rather than adding a second import.
+mapping. The statement start and end must default to the earliest and latest readable
+transaction dates detected across the **complete file**, including rows beyond the
+visible preview. Check those suggested dates against the statement, leave reported
+balances disabled, tick the exact-file confirmation, and submit. The API rejects the
+whole import before writing anything if a readable transaction falls outside the
+confirmed range or inside a declared gap. Expected behaviour is a preserved preview
+followed by an import summary that separately counts imported, exact-duplicate,
+probable-duplicate, and rejected rows. Repeating the same file reports a repeated
+file rather than adding a second import.
 
 Open **Transactions** after that import. Under the transaction table:
 
@@ -124,7 +131,7 @@ Open **Transactions** after that import. Under the transaction table:
    set its financial role to `expense` or `income` as appropriate and save. Expected:
    both changes survive refresh, the role change has an audit trail in the backend,
    and the preserved raw import row is unchanged.
-3. In **Review suggestions**, refresh role suggestions. Confirm or reject only a
+3. Choose **Needs review**, refresh role suggestions, and confirm or reject only a
    clearly fictional transfer/refund/reimbursement. Expected: scanning alone changes
    no role; only confirmation applies the suggested role.
 4. Review a probable duplicate from the generated data when one is listed. Choose
@@ -132,7 +139,10 @@ Open **Transactions** after that import. Under the transaction table:
    fictional purchases, or **Reject as duplicate** otherwise. Expected: the queue
    removes the decision while the source row stays preserved. A legacy row without a
    retained candidate can be rejected but must be re-imported before it can be kept.
-5. In **Dashboard**, select the imported account and its exact statement dates.
+5. Choose **Dashboard**, select the imported account, and confirm that its period
+   resets to the imported transaction boundaries rather than the computer's current
+   date. The dashboard, transaction search, and review areas load independently, so
+   a problem in one hidden area cannot replace another area with a generic error.
    Expected: a coverage timeline labels known and missing dates; freshness reports
    `active forecasting` only when every displayed policy passes; missing dates break
    balance lines; headline values say `Observed` unless coverage is complete.
@@ -188,6 +198,58 @@ Safe values to vary are the fictional search text, category/role choice, dashboa
 accounts and statement-contained dates. Corrections are real local database writes,
 so regenerate a disposable local database if you want to repeat the test from a
 known state.
+
+### Repairing an older disposable demo import
+
+Earlier frontend versions defaulted CSV coverage to the computer's current month.
+That could leave correctly parsed historical transactions attached to incorrect
+coverage metadata. CashFlow AI deliberately does not rewrite that confirmed metadata
+silently. If the affected database contains only generated fictional data, stop the
+API and UI, preserve it as a backup, and rebuild a clean local database before
+re-importing with the detected dates:
+
+```bash
+mv -i data/cashflow.db data/cashflow.before-date-fix.db
+make db-upgrade
+```
+
+Do not run those commands on a database containing information you need without
+first making and verifying a separate backup. A non-destructive audited coverage
+correction workflow is not yet implemented.
+
+### Automatically prepared synthetic dashboard
+
+For a complete interface demonstration without manually reviewing hundreds of
+fictional rows, stop the normal API and run:
+
+```bash
+make demo-dashboard
+make demo-dashboard-api
+```
+
+Keep `make demo-dashboard-api` running, then run `make ui` in a second terminal.
+The first command regenerates the labelled student canonical CSV, migrates the
+separate ignored `data/cashflow-demo.db`, imports the CSV through the real confirmed
+import service, and records explicit audited role and category decisions for each
+verified fictional transaction. Expected output includes the detected statement
+period, verified transaction count, approved-label count, income, and expenses.
+
+The seeding step refuses the ordinary `data/cashflow.db` and refuses to add a profile
+to a demo database that already has one. The preceding migration step may first bring
+an existing disposable demo schema up to date. It never enables automatic
+source-label trust for ordinary bank uploads. To repeat the test, stop the demo API, move
+`data/cashflow-demo.db` to an ignored backup name, and run `make demo-dashboard`
+again.
+
+To verify the repaired forecast path, open **Forecast & plans**, leave **Balance
+forecast** selected, and click **Generate forecast**. The history-end field must use
+the detected statement boundary rather than the computer date. Expected output is a
+30-day path using `recent rolling mean` plus visible low-confidence,
+recent-history-gap, and limited-residual warnings. This is deliberate: the fictional
+year was imported today, so the app does not fabricate a historical ML backtest or
+turn the uncovered current week into zero spending. The HTTP evaluation and balance
+requests should both succeed. No future recurring salary or bill is included until
+you refresh recurring patterns and explicitly confirm a suggestion.
 
 For the digital-PDF workflow, choose **Digital PDF** and upload
 `data/demo/generated/statements/fictional_digital_statement.pdf`. Expected values

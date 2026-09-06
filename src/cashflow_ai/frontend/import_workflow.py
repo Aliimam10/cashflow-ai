@@ -114,6 +114,24 @@ def build_statement_coverage(
     )
 
 
+def suggested_csv_statement_period(
+    preview: CsvPreview,
+    transaction_date_column: str,
+    *,
+    fallback_date: date,
+) -> tuple[date, date, bool]:
+    """Return full-file suggested bounds only for the inferred date column."""
+    period = preview.suggested_statement_period
+    if (
+        preview.suggested_date_column is None
+        or preview.suggested_date_column.casefold()
+        != transaction_date_column.casefold()
+        or period is None
+    ):
+        return fallback_date, fallback_date, False
+    return period.start_date, period.end_date, True
+
+
 def build_statement_balances(
     *,
     currency: Currency,
@@ -284,4 +302,5 @@ __all__ = [
     "parse_gap_ranges",
     "pdf_review_rows",
     "suggested_column_index",
+    "suggested_csv_statement_period",
 ]

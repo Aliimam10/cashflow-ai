@@ -32,6 +32,7 @@ class ForecastPathWarningCode(StrEnum):
 
     LOW_CONFIDENCE_MODEL = "low_confidence_model"
     LIMITED_RESIDUAL_HISTORY = "limited_residual_history"
+    RECENT_HISTORY_GAP = "recent_history_gap"
     STALE_DATA = "stale_data"
 
 

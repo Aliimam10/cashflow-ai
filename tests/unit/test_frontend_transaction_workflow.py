@@ -226,11 +226,18 @@ def test_chart_specs_retain_coverage_gaps_and_explicit_observed_values() -> None
         "Missing",
     ]
     assert timeline["data"]["values"] == periods
+    assert timeline["encoding"]["color"]["scale"]["range"] == [
+        "#52D98F",
+        "#F5A623",
+        "#FF6B78",
+    ]
     assert [item["segment"] for item in balance["data"]["values"]] == [
         "account-1:0",
         "account-1:1",
     ]
     assert categories["data"]["values"][1]["category"] == "Uncategorised"
+    assert categories["mark"]["type"] == "arc"
+    assert categories["mark"]["innerRadius"] == 58
     assert cadence["data"]["values"][0] == {
         "cadence": "Recurring",
         "amount": 300.0,
@@ -238,7 +245,14 @@ def test_chart_specs_retain_coverage_gaps_and_explicit_observed_values() -> None
     assert [item["flow"] for item in monthly["data"]["values"]] == [
         "Income",
         "Expenses",
+        "Net cash flow",
     ]
+    assert len(monthly["layer"]) == 2
+    assert monthly["layer"][0]["encoding"]["color"]["scale"]["range"] == [
+        "#52D98F",
+        "#F5A623",
+    ]
+    assert monthly["layer"][1]["mark"]["color"] == "#5B8DEF"
 
 
 def test_optional_charts_remain_empty_when_analytics_withholds_values() -> None:

@@ -41,13 +41,16 @@ def forecast_monday_after(cutoff: datetime) -> date:
 
 
 def recurrence_request(
-    *, profile_id: str, as_of_date: date
+    *,
+    profile_id: str,
+    as_of_date: date,
+    knowledge_cutoff_at: datetime | None = None,
 ) -> RecurrenceDetectionRequest:
     """Build conservative, visible defaults for recurring-series detection."""
     return RecurrenceDetectionRequest(
         user_profile_id=profile_id,
         as_of_date=as_of_date,
-        knowledge_cutoff_at=complete_day_cutoff(as_of_date),
+        knowledge_cutoff_at=(knowledge_cutoff_at or complete_day_cutoff(as_of_date)),
         policy=RecurrenceDetectionPolicy(
             minimum_occurrences=3,
             maximum_amount_variation=Decimal("5.00"),
@@ -65,9 +68,10 @@ def forecast_request(
     as_of_date: date,
     horizon_days: int,
     payday_days: tuple[int, ...],
+    knowledge_cutoff_at: datetime | None = None,
 ) -> BalanceForecastRequest:
     """Build one leakage-safe forecast request from user-understandable controls."""
-    cutoff = complete_day_cutoff(as_of_date)
+    cutoff = knowledge_cutoff_at or complete_day_cutoff(as_of_date)
     dataset = ForecastDatasetPlan(
         user_profile_id=profile_id,
         account_ids=(account_id,),
@@ -107,14 +111,19 @@ def forecast_request(
                 low_confidence_multiplier=Decimal("1.50"),
                 stale_data_multiplier=Decimal("2.00"),
                 random_seed=42,
-                freshness=FreshnessPolicy(
-                    max_transaction_age_days=45,
-                    max_balance_age_days=45,
-                    max_coverage_age_days=45,
-                    minimum_contiguous_coverage_days=60,
-                ),
+                freshness=forecast_freshness_policy(),
             ),
         ),
+    )
+
+
+def forecast_freshness_policy() -> FreshnessPolicy:
+    """Return the same visible evidence-age policy used by forecast paths."""
+    return FreshnessPolicy(
+        max_transaction_age_days=45,
+        max_balance_age_days=45,
+        max_coverage_age_days=45,
+        minimum_contiguous_coverage_days=60,
     )
 
 
@@ -155,6 +164,7 @@ def forecast_chart(path: BalanceForecastPath) -> dict[str, Any]:
 __all__ = [
     "complete_day_cutoff",
     "forecast_chart",
+    "forecast_freshness_policy",
     "forecast_monday_after",
     "forecast_request",
     "next_monday",

@@ -355,6 +355,21 @@ Generated files are written under `data/demo/generated/` and are intentionally
 ignored because they can be reproduced from source. Run the CLI with `--help`
 to select a profile, date range, seed, output directory, or CSV layout.
 
+Prepare a fully labelled, isolated student database for manual dashboard testing:
+
+```bash
+make demo-dashboard
+make demo-dashboard-api
+```
+
+Then run `make ui` in another terminal. This workflow uses
+`data/cashflow-demo.db`, never the normal local database, and automatically approves
+only generated fictional category and financial-role ground truth. Under **Forecast
+& plans**, generating a forecast uses the actual click time as its evidence cutoff
+and the statement's detected end date as its history boundary. A recent uncovered
+week activates a clearly labelled, widened recent-mean fallback instead of causing
+an API failure or inventing zero spending.
+
 Run the fictional unusual-transaction review demo:
 
 ```bash
@@ -402,7 +417,7 @@ then run the following in a second terminal and open `http://127.0.0.1:8501`:
 make ui
 ```
 
-The **Overview** page reports local readiness in user-friendly language. **Add a
+The **Dashboard** page reports local readiness in user-friendly language. **Add a
 statement** provides account setup and review-gated CSV/PDF workflows;
 **Transactions** adds correction and observed-data dashboards; and **Forecast &
 plans** exposes

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Final
 
 from cashflow_ai.demo_data.models import SyntheticDataset, SyntheticTransaction
+from cashflow_ai.schemas.transactions import FinancialRole
 
 
 class CsvLayout(StrEnum):
@@ -27,6 +28,22 @@ def _balance_text(transaction: SyntheticTransaction) -> str:
     return format(transaction.balance_after, ".2f")
 
 
+def _financial_role(transaction: SyntheticTransaction) -> FinancialRole:
+    """Return ground-truth role metadata for a generated fictional row."""
+    if transaction.transaction_type == "transfer":
+        return (
+            FinancialRole.TRANSFER_IN
+            if transaction.amount > 0
+            else FinancialRole.TRANSFER_OUT
+        )
+    return FinancialRole.INCOME if transaction.amount > 0 else FinancialRole.EXPENSE
+
+
+def _category_id(transaction: SyntheticTransaction) -> str:
+    """Return the stable Version 1 identifier for a generated category name."""
+    return "_".join(transaction.category.casefold().split())
+
+
 def _canonical_row(transaction: SyntheticTransaction) -> dict[str, object]:
     return {
         "transaction_date": transaction.transaction_date.isoformat(),
@@ -39,6 +56,8 @@ def _canonical_row(transaction: SyntheticTransaction) -> dict[str, object]:
         "account": transaction.account,
         "transaction_type": transaction.transaction_type,
         "category": transaction.category,
+        "category_id": _category_id(transaction),
+        "financial_role": _financial_role(transaction).value,
         "is_recurring": transaction.is_recurring,
         "recurring_series": transaction.recurring_series or "",
         "anomaly_type": transaction.anomaly_type or "",

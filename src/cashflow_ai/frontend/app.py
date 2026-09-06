@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Protocol
+from typing import Protocol, cast
 
 import streamlit as st
 
@@ -12,7 +12,6 @@ from cashflow_ai.frontend.components import (
     loading_state,
     render_empty_state,
     render_error,
-    render_feature_card,
     render_forecast_disclaimer,
     render_page_header,
     render_privacy_notice,
@@ -32,14 +31,25 @@ from cashflow_ai.frontend.session import (
     save_session_state,
 )
 from cashflow_ai.frontend.styles import apply_app_styles
-from cashflow_ai.frontend.transaction_page import render_transaction_page
-from cashflow_ai.schemas.api import HealthResponse, ReadinessResponse
+from cashflow_ai.frontend.transaction_page import (
+    TransactionApi,
+    _dashboard_boundary_transactions,
+    _render_dashboard,
+    render_transaction_page,
+)
+from cashflow_ai.schemas.api import (
+    AccountResponse,
+    HealthResponse,
+    Page,
+    ReadinessResponse,
+    UserProfileResponse,
+)
 
 _NAVIGATION_WIDGET_KEY = "cashflow_main_navigation"
 
 
 class StatusApi(Protocol):
-    """Narrow API surface required by the foundation home page."""
+    """Local API surface required by the functional home dashboard."""
 
     def health(self) -> HealthResponse:
         """Return local API liveness."""
@@ -49,14 +59,22 @@ class StatusApi(Protocol):
         """Return local database readiness."""
         ...
 
+    def current_profile(self) -> UserProfileResponse:
+        """Return the single local profile."""
+        ...
+
+    def list_accounts(self, profile_id: str) -> Page[AccountResponse]:
+        """Return account metadata for the local profile."""
+        ...
+
 
 def render_home(client: StatusApi) -> None:
-    """Render a clear starting point while keeping service details secondary."""
+    """Render the real personal-finance dashboard after a quiet readiness check."""
     render_page_header(
-        "CashFlow AI",
-        "Know where your money is heading.",
-        "Bring your transactions together, understand your spending, and explore "
-        "what your balance could look like next.",
+        "Dashboard",
+        "Your money at a glance.",
+        "Track verified cash balances, monthly movement, and spending without "
+        "sending financial data off this device.",
     )
 
     try:
@@ -72,37 +90,73 @@ def render_home(client: StatusApi) -> None:
     render_service_status(ready=ready)
     if not ready:
         st.caption("Run `make db-upgrade` once, then refresh this page.")
+        return
 
-    cards = st.columns(3)
-    with cards[0]:
-        render_feature_card(
-            "+",
-            "Add your history",
-            "Import a statement and check every transaction before it is used.",
-        )
-    with cards[1]:
-        render_feature_card(
-            "◎",
-            "Understand spending",
-            "See income, expenses, categories, recurring bills, and unusual activity.",
-        )
-    with cards[2]:
-        render_feature_card(
-            "↗",
-            "Plan what comes next",
-            "Explore likely balances, budgets, goals, and private what-if scenarios.",
-        )
+    try:
+        profile = client.current_profile()
+        accounts = client.list_accounts(profile.profile_id).items
+    except ApiClientError as error:
+        if error.problem_code != "profile_not_found":
+            render_error(error)
+        else:
+            render_empty_state(
+                "Start your private dashboard",
+                "Create a local profile, add an account, and review a statement.",
+            )
+            st.button(
+                "Add your first statement",
+                type="primary",
+                on_click=_navigate_to,
+                args=(PageId.IMPORT,),
+            )
+        return
 
-    st.subheader("Start with a statement")
-    st.write(
-        "Use a CSV export for the complete saved workflow, or review a digital or "
-        "scanned PDF locally. You stay in control before anything is accepted."
+    if not accounts:
+        render_empty_state(
+            "No accounts yet",
+            "Add an account and confirm a statement to populate this dashboard.",
+        )
+        st.button(
+            "Add a statement",
+            type="primary",
+            on_click=_navigate_to,
+            args=(PageId.IMPORT,),
+        )
+        return
+
+    transaction_client = cast(TransactionApi, client)
+    try:
+        with loading_state("Loading your verified financial history…"):
+            boundaries = _dashboard_boundary_transactions(
+                transaction_client,
+                profile_id=profile.profile_id,
+                accounts=accounts,
+            )
+    except ApiClientError as error:
+        render_error(error)
+        st.caption(
+            "The dashboard could not load transaction boundaries. Your imported "
+            "source rows were not changed."
+        )
+        return
+    _render_dashboard(
+        transaction_client,
+        profile_id=profile.profile_id,
+        accounts=accounts,
+        transactions=boundaries,
     )
-    st.button(
-        "Add a statement",
-        type="primary",
+    actions = st.columns(2)
+    actions[0].button(
+        "Review all transactions",
+        on_click=_navigate_to,
+        args=(PageId.TRANSACTIONS,),
+        use_container_width=True,
+    )
+    actions[1].button(
+        "Add another statement",
         on_click=_navigate_to,
         args=(PageId.IMPORT,),
+        use_container_width=True,
     )
     render_privacy_notice()
     render_forecast_disclaimer()

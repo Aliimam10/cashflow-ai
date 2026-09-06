@@ -464,10 +464,12 @@ If selected, one in-memory estimator is fitted on all eligible rows. Otherwise t
 recorded executable baseline remains active, including a recent-mean fallback when
 there is too little evaluation data. Both receive a target-free row produced from the
 latest eight known weeks plus a cutoff-bound recurring-outflow projection, and may
-predict exactly the next unobserved Monday only. Runtime history retains availability
-timestamps; inference fails closed if any fitted outcome or recurring input was not
-known before that Monday. No model artefact, registry entry, multi-week forecast run,
-API, or UI is created yet.
+predict the next adjacent unobserved Monday. A later path start may use only the
+recent-mean safety fallback: it reads the latest eight consecutive covered weeks,
+does not synthesize intervening zero weeks, and requires all eight outcomes to have
+been known before that future start. Runtime history retains availability timestamps;
+inference fails closed if required history or recurring input was not known in time.
+No model artefact, registry entry, multi-week forecast run, API, or UI is created yet.
 
 ## Forecast uncertainty and balance-path boundary
 
@@ -485,6 +487,12 @@ distributed by the observed weekday spending profile to produce daily balance
 intervals. A fallback model, limited calibration evidence, and stale balance,
 transaction, or coverage evidence remain visible; configured multipliers widen the
 range rather than disguising the limitation.
+
+For a future Monday separated from the latest complete covered week, the path never
+fills the intervening period with zero spending. It starts at the requested future
+Monday with the last four complete weeks' average, reports
+`recent_history_gap` and `low_confidence_model`, widens its empirical range, and does
+not claim interval performance for the overridden advanced model.
 
 One-off signed scenario events and a discretionary-spending multiplier exist only in
 the returned path. This stage does not write `scenarios`, `forecast_runs`, model

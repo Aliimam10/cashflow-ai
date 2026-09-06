@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import calendar
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from typing import Any
 
 from cashflow_ai.frontend.forecast_workflow import (
@@ -46,6 +46,7 @@ def planning_request(
     as_of_date: date,
     horizon_days: int,
     payday_days: tuple[int, ...],
+    knowledge_cutoff_at: datetime | None = None,
 ) -> PlanningApiRequest:
     """Build aligned server-side forecasts for one planning calculation."""
     return PlanningApiRequest(
@@ -61,6 +62,7 @@ def planning_request(
                 as_of_date=as_of_date,
                 horizon_days=horizon_days,
                 payday_days=payday_days,
+                knowledge_cutoff_at=knowledge_cutoff_at,
             )
             for account_id in account_ids
         ),
@@ -75,6 +77,7 @@ def scenario_request(
     horizon_days: int,
     payday_days: tuple[int, ...],
     scenario: FinancialScenario,
+    knowledge_cutoff_at: datetime | None = None,
 ) -> ScenarioApiRequest:
     """Build one aligned, explicitly hypothetical scenario request."""
     forecast = forecast_request(
@@ -83,6 +86,7 @@ def scenario_request(
         as_of_date=as_of_date,
         horizon_days=horizon_days,
         payday_days=payday_days,
+        knowledge_cutoff_at=knowledge_cutoff_at,
     )
     return ScenarioApiRequest(
         forecast=forecast,
@@ -96,14 +100,18 @@ def scenario_request(
 
 
 def anomaly_request(
-    *, profile_id: str, account_ids: tuple[str, ...], as_of_date: date
+    *,
+    profile_id: str,
+    account_ids: tuple[str, ...],
+    as_of_date: date,
+    knowledge_cutoff_at: datetime | None = None,
 ) -> AnomalyDetectionPlan:
     """Build one conservative point-in-time anomaly review scan."""
     return AnomalyDetectionPlan(
         user_profile_id=profile_id,
         account_ids=account_ids,
         as_of_date=as_of_date,
-        knowledge_cutoff_at=complete_day_cutoff(as_of_date),
+        knowledge_cutoff_at=(knowledge_cutoff_at or complete_day_cutoff(as_of_date)),
         policy=AnomalyDetectionPolicy(),
     )
 

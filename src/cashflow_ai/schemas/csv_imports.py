@@ -79,6 +79,24 @@ class CsvPreview(_CsvContract):
     total_data_rows: PositiveInt
     truncated: bool
     suggestions: CsvColumnSuggestions
+    suggested_date_column: ColumnName | None = None
+    suggested_statement_period: DateRange | None = None
+
+    @model_validator(mode="after")
+    def validate_date_suggestion(self) -> CsvPreview:
+        """Keep an inferred period tied to a real source column."""
+        has_column = self.suggested_date_column is not None
+        has_period = self.suggested_statement_period is not None
+        if has_column != has_period:
+            msg = "CSV date suggestions require both a column and statement period"
+            raise ValueError(msg)
+        if self.suggested_date_column is not None and not any(
+            self.suggested_date_column.casefold() == column.casefold()
+            for column in self.columns
+        ):
+            msg = "suggested CSV date column must exist in the source headings"
+            raise ValueError(msg)
+        return self
 
 
 class CsvDocument(_CsvContract):

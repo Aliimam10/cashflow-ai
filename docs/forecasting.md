@@ -42,9 +42,19 @@ for the week immediately after its latest complete target.
 This makes a practical limitation visible: uploading a year-old statement today does
 not prove that CashFlow AI knew those values throughout that year. Its historical
 weeks have today's availability, so the service will not backdate them to manufacture
-a June-to-August backtest. They can support future forecasts once the required eight
-consecutive outcomes are known before a future Monday; a genuine historical backtest
-requires contemporaneous imports/audits or another trustworthy timestamped snapshot.
+a June-to-August backtest. The advanced model therefore remains ineligible when no
+honest historical folds exist. The same upload can still support a cautious future
+path once its latest eight complete weeks are known before a future Monday: if the
+latest covered week is not adjacent to that Monday, the path uses the recent
+four-week-mean fallback, leaves uncovered dates unknown, widens uncertainty, and
+returns a `recent_history_gap` warning. A genuine historical backtest still requires
+contemporaneous imports/audits or another trustworthy timestamped snapshot.
+
+The interactive UI keeps two dates separate. **Statement history ends** bounds the
+transaction dates being summarised. The **knowledge cutoff** is the UTC click time
+and determines which imports, reviews, balances, and recurrence confirmations were
+actually available. Using the previous midnight for both would incorrectly hide an
+import completed later the same day.
 
 ## Manual verification
 
@@ -69,6 +79,15 @@ Expected output includes `gap retained`. You may safely vary `--weeks` (minimum 
 `--test-weeks` while leaving eight lag weeks plus training and validation, and
 `--gap-week` from zero through `weeks - 1`; invalid combinations fail with a readable
 argument error. All inputs are synthetic.
+
+For the integrated local UI, follow the isolated dashboard commands in
+`docs/frontend.md`, open **Forecast & plans**, select **Balance forecast**, and click
+**Generate forecast**. The generated one-year student statement is expected to use
+`recent rolling mean` with `recent history gap`, `low confidence model`, and
+`limited residual history` warnings. It must return a daily path rather than an API
+error, and it must not claim held-out model or interval performance. Future salary
+or bill occurrences remain absent until the user refreshes recurring patterns and
+explicitly confirms them.
 
 ## Primary model and manual verification
 

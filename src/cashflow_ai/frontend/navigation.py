@@ -28,9 +28,9 @@ class NavigationItem(BaseModel):
 NAVIGATION_ITEMS = (
     NavigationItem(
         page_id=PageId.HOME,
-        title="Overview",
+        title="Dashboard",
         icon="⌂",
-        summary="Start here and see what CashFlow AI can help you do.",
+        summary="See verified balances, spending, and monthly cash movement.",
     ),
     NavigationItem(
         page_id=PageId.IMPORT,

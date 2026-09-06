@@ -109,6 +109,11 @@ def _preview(*, separate_amounts: bool = False) -> CsvPreview:
             credit_amount=("Credit",) if separate_amounts else (),
             running_balance=("Balance",),
         ),
+        suggested_date_column="Date",
+        suggested_statement_period=DateRange(
+            start_date=date(2025, 9, 1),
+            end_date=date(2026, 8, 31),
+        ),
     )
 
 
@@ -458,6 +463,9 @@ def test_csv_preview_failure_and_both_mapping_layouts(
         UploadedDocument("synthetic.csv", b"synthetic", "text/csv"),
     )
     assert choices.call_count == 8
+    assert ui.date_input.call_args_list[0].kwargs["value"] == date(2025, 9, 1)
+    assert ui.date_input.call_args_list[1].kwargs["value"] == date(2026, 8, 31)
+    assert "aaaaaaaaaaaa_Date" in ui.date_input.call_args_list[0].kwargs["key"]
 
     choices.reset_mock(side_effect=True)
     choices.side_effect = [
@@ -479,6 +487,46 @@ def test_csv_preview_failure_and_both_mapping_layouts(
         UploadedDocument("synthetic.csv", b"synthetic", "text/csv"),
     )
     assert choices.call_count == 9
+
+
+def test_csv_form_requires_manual_dates_when_preview_cannot_infer_them(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = _ui(monkeypatch)
+    client = MagicMock()
+    client.preview_csv.return_value = _preview().model_copy(
+        update={
+            "suggested_date_column": None,
+            "suggested_statement_period": None,
+        }
+    )
+    monkeypatch.setattr(
+        page,
+        "_column_choice",
+        MagicMock(
+            side_effect=[
+                "Date",
+                "Description",
+                "Amount",
+                None,
+                "Balance",
+                None,
+                None,
+                None,
+            ]
+        ),
+    )
+    _configure_csv_form(ui)
+
+    page._render_csv_workflow(
+        client,
+        _account(),
+        UploadedDocument("synthetic.csv", b"synthetic", "text/csv"),
+    )
+
+    assert any(
+        "could not be detected" in call.args[0] for call in ui.warning.call_args_list
+    )
 
 
 def test_csv_submission_requires_confirmation_and_valid_coverage(

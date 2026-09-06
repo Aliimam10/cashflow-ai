@@ -22,6 +22,7 @@ from cashflow_ai.frontend.import_workflow import (
     parse_gap_ranges,
     pdf_review_rows,
     suggested_column_index,
+    suggested_csv_statement_period,
 )
 from cashflow_ai.schemas.api import PdfSourceType
 from cashflow_ai.schemas.csv_imports import (
@@ -255,6 +256,11 @@ def _csv_preview() -> CsvPreview:
             description=("Description",),
             signed_amount=("Amount",),
         ),
+        suggested_date_column="Date",
+        suggested_statement_period=DateRange(
+            start_date=date(2025, 9, 1),
+            end_date=date(2026, 8, 31),
+        ),
     )
 
 
@@ -267,6 +273,21 @@ def test_upload_kind_routes_only_pdfs_to_pdf_adapters() -> None:
     assert UploadKind.OCR_PDF.pdf_source_type is PdfSourceType.OCR_PDF
     with pytest.raises(ValueError, match="do not have"):
         _ = UploadKind.CSV.pdf_source_type
+
+
+def test_csv_statement_period_uses_full_file_suggestion_for_selected_column() -> None:
+    preview = _csv_preview()
+
+    assert suggested_csv_statement_period(
+        preview,
+        "date",
+        fallback_date=date(2026, 9, 5),
+    ) == (date(2025, 9, 1), date(2026, 8, 31), True)
+    assert suggested_csv_statement_period(
+        preview,
+        "Posting Date",
+        fallback_date=date(2026, 9, 5),
+    ) == (date(2026, 9, 5), date(2026, 9, 5), False)
 
 
 def test_optional_form_values_are_parsed_without_changing_source_data() -> None:

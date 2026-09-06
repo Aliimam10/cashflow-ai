@@ -66,7 +66,7 @@ def coverage_chart(coverage: DataCoverageIndicator) -> dict[str, Any]:
                 "type": "nominal",
                 "scale": {
                     "domain": ["Fully covered", "Partially covered", "Missing"],
-                    "range": ["#2e7d32", "#f9a825", "#c62828"],
+                    "range": ["#52D98F", "#F5A623", "#FF6B78"],
                 },
             },
             "tooltip": ["status", "start", "end"],
@@ -106,7 +106,7 @@ def balance_chart(analytics: CashFlowAnalytics) -> dict[str, Any]:
 
 
 def category_chart(analytics: CashFlowAnalytics) -> dict[str, Any]:
-    """Return an observed-only category-spending bar chart."""
+    """Return the requested observed-only category-spending donut."""
     values = [
         {
             "category": item.category_name or "Uncategorised",
@@ -117,26 +117,52 @@ def category_chart(analytics: CashFlowAnalytics) -> dict[str, Any]:
     ]
     return {
         "data": {"values": values},
-        "mark": "bar",
+        "mark": {
+            "type": "arc",
+            "innerRadius": 58,
+            "outerRadius": 105,
+            "cornerRadius": 4,
+            "padAngle": 0.02,
+        },
         "encoding": {
-            "x": {
+            "theta": {
                 "field": "amount",
                 "type": "quantitative",
-                "title": f"Observed spending ({analytics.currency.value})",
             },
-            "y": {
+            "color": {
                 "field": "category",
                 "type": "nominal",
-                "sort": "-x",
-                "title": None,
+                "sort": "-theta",
+                "scale": {
+                    "range": [
+                        "#5B8DEF",
+                        "#52D98F",
+                        "#F5A623",
+                        "#A78BFA",
+                        "#38BDF8",
+                        "#FF6B78",
+                        "#94A0B2",
+                    ]
+                },
+                "legend": {"title": None, "orient": "bottom"},
             },
-            "tooltip": ["category", "amount", "transactions"],
+            "tooltip": [
+                "category",
+                {
+                    "field": "amount",
+                    "type": "quantitative",
+                    "title": f"Spending ({analytics.currency.value})",
+                    "format": ",.2f",
+                },
+                "transactions",
+            ],
         },
+        "view": {"stroke": None},
     }
 
 
 def monthly_cash_flow_chart(analytics: CashFlowAnalytics) -> dict[str, Any]:
-    """Return observed monthly income and expense bars without filling gaps."""
+    """Return monthly income/expense bars with a net-cash-flow pulse line."""
     values = [
         {
             "month": item.month.isoformat(),
@@ -149,22 +175,68 @@ def monthly_cash_flow_chart(analytics: CashFlowAnalytics) -> dict[str, Any]:
         for flow, amount in (
             ("Income", item.totals.total_income),
             ("Expenses", item.totals.total_expenses),
+            ("Net cash flow", item.totals.net_cash_flow),
         )
     ]
     return {
         "data": {"values": values},
-        "mark": "bar",
-        "encoding": {
-            "x": {"field": "month", "type": "temporal", "title": "Month"},
-            "y": {
-                "field": "amount",
-                "type": "quantitative",
-                "title": f"Observed amount ({analytics.currency.value})",
+        "layer": [
+            {
+                "transform": [
+                    {"filter": "datum.flow !== 'Net cash flow'"},
+                ],
+                "mark": {
+                    "type": "bar",
+                    "cornerRadiusTopLeft": 3,
+                    "cornerRadiusTopRight": 3,
+                },
+                "encoding": {
+                    "x": {
+                        "field": "month",
+                        "type": "temporal",
+                        "timeUnit": "yearmonth",
+                        "title": "Month",
+                    },
+                    "y": {
+                        "field": "amount",
+                        "type": "quantitative",
+                        "title": f"Observed amount ({analytics.currency.value})",
+                    },
+                    "color": {
+                        "field": "flow",
+                        "type": "nominal",
+                        "scale": {
+                            "domain": ["Income", "Expenses"],
+                            "range": ["#52D98F", "#F5A623"],
+                        },
+                        "legend": {"title": None, "orient": "bottom"},
+                    },
+                    "xOffset": {"field": "flow"},
+                    "tooltip": ["month", "flow", "amount", "coverage"],
+                },
             },
-            "color": {"field": "flow", "type": "nominal"},
-            "xOffset": {"field": "flow"},
-            "tooltip": ["month", "flow", "amount", "coverage"],
-        },
+            {
+                "transform": [
+                    {"filter": "datum.flow === 'Net cash flow'"},
+                ],
+                "mark": {
+                    "type": "line",
+                    "point": {"filled": True, "size": 48},
+                    "strokeWidth": 2.5,
+                    "color": "#5B8DEF",
+                },
+                "encoding": {
+                    "x": {
+                        "field": "month",
+                        "type": "temporal",
+                        "timeUnit": "yearmonth",
+                    },
+                    "y": {"field": "amount", "type": "quantitative"},
+                    "tooltip": ["month", "flow", "amount", "coverage"],
+                },
+            },
+        ],
+        "resolve": {"scale": {"y": "shared"}},
     }
 
 
@@ -185,7 +257,14 @@ def cadence_chart(analytics: CashFlowAnalytics) -> dict[str, Any]:
         "mark": {"type": "arc", "innerRadius": 45},
         "encoding": {
             "theta": {"field": "amount", "type": "quantitative"},
-            "color": {"field": "cadence", "type": "nominal"},
+            "color": {
+                "field": "cadence",
+                "type": "nominal",
+                "scale": {
+                    "domain": ["Recurring", "Discretionary", "Unclassified"],
+                    "range": ["#5B8DEF", "#F5A623", "#697587"],
+                },
+            },
             "tooltip": ["cadence", "amount"],
         },
     }

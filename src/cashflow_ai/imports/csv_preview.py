@@ -19,6 +19,7 @@ from cashflow_ai.schemas.csv_imports import (
     CsvPreview,
     CsvPreviewRow,
 )
+from cashflow_ai.schemas.statements import DateRange
 
 DEFAULT_MAX_CSV_BYTES: Final = 10 * 1024 * 1024
 DEFAULT_PREVIEW_ROWS: Final = 25
@@ -46,6 +47,7 @@ class CsvImportErrorCode(StrEnum):
     UNSUPPORTED_MIME_TYPE = "unsupported_mime_type"
     ACCOUNT_NOT_FOUND = "account_not_found"
     ACCOUNT_CURRENCY_MISMATCH = "account_currency_mismatch"
+    TRANSACTION_OUTSIDE_COVERAGE = "transaction_outside_coverage"
 
 
 class CsvImportError(ValueError):
@@ -93,7 +95,10 @@ _COLUMN_ALIASES: Final[dict[str, frozenset[str]]] = {
 
 
 def _normalise_heading(value: str) -> str:
-    return " ".join(re.sub(r"[^\w]+", " ", value.casefold()).split())
+    # Python's ``\w`` includes underscores, while bank exports commonly use
+    # snake_case for the same headings that other exports write with spaces.
+    separated = value.casefold().replace("_", " ")
+    return " ".join(re.sub(r"[^\w]+", " ", separated).split())
 
 
 def _safe_filename(filename: str) -> str:
@@ -193,6 +198,35 @@ def _suggest_columns(columns: Iterable[str]) -> CsvColumnSuggestions:
     return CsvColumnSuggestions.model_validate(matches)
 
 
+def _suggest_statement_period(
+    document: CsvDocument,
+) -> tuple[str | None, DateRange | None]:
+    """Infer full-file bounds from the first recognised transaction-date column."""
+    if not document.suggestions.transaction_date:
+        return None, None
+
+    # Import locally to retain one bank-date parser without a package import cycle.
+    from cashflow_ai.imports.normalisation import (
+        TransactionNormalisationError,
+        parse_date_value,
+    )
+
+    column = document.suggestions.transaction_date[0]
+    column_index = document.columns.index(column)
+    parsed_dates = []
+    for row in document.rows:
+        try:
+            parsed_dates.append(parse_date_value(row.values[column_index]))
+        except TransactionNormalisationError:
+            continue
+    if not parsed_dates:
+        return None, None
+    return column, DateRange(
+        start_date=min(parsed_dates),
+        end_date=max(parsed_dates),
+    )
+
+
 def preview_csv(
     content: bytes,
     filename: str,
@@ -213,6 +247,7 @@ def preview_csv(
         )
     document = parse_csv_document(content, filename, max_bytes=max_bytes)
     preview = document.rows[:preview_rows]
+    date_column, statement_period = _suggest_statement_period(document)
     return CsvPreview(
         source_filename=document.source_filename,
         byte_size=document.byte_size,
@@ -224,6 +259,8 @@ def preview_csv(
         total_data_rows=len(document.rows),
         truncated=len(document.rows) > len(preview),
         suggestions=document.suggestions,
+        suggested_date_column=date_column,
+        suggested_statement_period=statement_period,
     )
 
 

@@ -342,6 +342,7 @@ def _analytics(*, totals: bool = True) -> MagicMock:
             total_income=Decimal("1000.00"),
             total_expenses=Decimal("400.00"),
             net_cash_flow=Decimal("600.00"),
+            unknown_transaction_count=1,
         )
         if totals
         else None
@@ -363,7 +364,17 @@ def test_dashboard_validates_scope_and_renders_freshness_and_charts(
     monkeypatch.setattr(page, "category_chart", MagicMock(return_value={}))
     monkeypatch.setattr(page, "cadence_chart", MagicMock(return_value={}))
     monkeypatch.setattr(page, "balance_chart", MagicMock(return_value={}))
+    hero = MagicMock()
+    monkeypatch.setattr(page, "_render_cash_balance_hero", hero)
     accounts = (_account(), _account("account-2"))
+
+    page._render_dashboard(
+        client,
+        profile_id="profile-1",
+        accounts=accounts,
+        transactions=(),
+    )
+    client.cash_flow.assert_not_called()
 
     ui.multiselect.return_value = []
     ui.date_input.return_value = (date(2026, 8, 1), date(2026, 8, 31))
@@ -381,14 +392,14 @@ def test_dashboard_validates_scope_and_renders_freshness_and_charts(
         client,
         profile_id="profile-1",
         accounts=accounts,
-        transactions=(),
+        transactions=(_transaction(),),
     )
     ui.date_input.return_value = (date(2026, 8, 2), date(2026, 8, 1))
     page._render_dashboard(
         client,
         profile_id="profile-1",
         accounts=accounts,
-        transactions=(),
+        transactions=(_transaction(),),
     )
 
     ui.multiselect.return_value = ["account-1", "account-2"]
@@ -416,6 +427,7 @@ def test_dashboard_validates_scope_and_renders_freshness_and_charts(
     scope = client.cash_flow.call_args.args[0]
     assert scope.view is AnalyticsView.CONSOLIDATED
     assert client.freshness.call_count == 2
+    assert hero.called
     assert ui.vega_lite_chart.call_count == 3
     ui.dataframe.assert_called_once()
 
@@ -431,13 +443,14 @@ def test_dashboard_validates_scope_and_renders_freshness_and_charts(
         client,
         profile_id="profile-1",
         accounts=accounts,
-        transactions=(),
+        transactions=(_transaction(),),
     )
     assert client.cash_flow.call_args.args[0].view is AnalyticsView.ACCOUNT
 
     no_optional = _analytics()
     no_optional.balance_history = ()
     no_optional.largest_transactions = ()
+    no_optional.totals.unknown_transaction_count = 0
     client.cash_flow.return_value = no_optional
     client.freshness.return_value = SimpleNamespace(
         mode=FinancialDataMode.ACTIVE_FORECASTING,
@@ -447,8 +460,181 @@ def test_dashboard_validates_scope_and_renders_freshness_and_charts(
         client,
         profile_id="profile-1",
         accounts=accounts,
-        transactions=(),
+        transactions=(_transaction(),),
     )
+
+
+def test_dashboard_rejects_mixed_currency_and_isolates_api_failures(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = _ui(monkeypatch)
+    client = MagicMock()
+    euro_payload = _account("account-eur").model_dump()
+    euro_payload["currency"] = "EUR"
+    euro = AccountResponse.model_construct(**euro_payload)
+    accounts = (_account(), euro)
+    ui.multiselect.return_value = ["account-1", "account-eur"]
+
+    page._render_dashboard(
+        client,
+        profile_id="profile-1",
+        accounts=accounts,
+        transactions=(_transaction(),),
+    )
+
+    client.cash_flow.assert_not_called()
+    assert "one currency" in ui.warning.call_args.args[0]
+
+    ui.multiselect.return_value = ["account-1"]
+    ui.date_input.return_value = (date(2026, 8, 1), date(2026, 8, 31))
+    failure = ApiClientError(
+        ApiClientErrorCode.API_REJECTED_REQUEST,
+        "the local API rejected the request",
+        problem_code="synthetic_problem",
+    )
+    client.cash_flow.side_effect = failure
+    display_error = MagicMock()
+    monkeypatch.setattr(page, "render_error", display_error)
+
+    page._render_dashboard(
+        client,
+        profile_id="profile-1",
+        accounts=accounts,
+        transactions=(_transaction(),),
+    )
+
+    display_error.assert_called_once_with(failure)
+
+    client.cash_flow.side_effect = None
+    client.cash_flow.return_value = _analytics()
+    client.freshness.side_effect = failure
+    monkeypatch.setattr(page, "_render_cash_balance_hero", MagicMock())
+    freshness_column = MagicMock()
+
+    def columns(count: int) -> tuple[MagicMock, ...]:
+        if count == 1:
+            return (freshness_column,)
+        return tuple(MagicMock() for _index in range(count))
+
+    ui.columns.side_effect = columns
+
+    page._render_dashboard(
+        client,
+        profile_id="profile-1",
+        accounts=accounts,
+        transactions=(_transaction(),),
+    )
+
+    freshness_column.metric.assert_called_with("Synthetic account-1", "Needs attention")
+    assert "synthetic_problem" in freshness_column.caption.call_args.args[0]
+
+
+def test_cash_balance_hero_uses_controlled_verified_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = _ui(monkeypatch)
+    analytics = MagicMock()
+    hero = SimpleNamespace(
+        cash_balance_label="£1,200.00",
+        earliest_latest_observation_date=date(2026, 8, 31),
+        latest_observation_date=date(2026, 8, 31),
+        change_label="+£200.00",
+        change_percent_label="+20.0%",
+        change_tone="positive",
+    )
+    monkeypatch.setattr(page, "cash_balance_hero", MagicMock(return_value=hero))
+    monkeypatch.setattr(
+        page,
+        "pulse_line_html",
+        MagicMock(return_value='<div class="cf-pulse"></div>'),
+    )
+
+    page._render_cash_balance_hero(analytics)
+
+    rendered = ui.markdown.call_args.args[0]
+    assert "VERIFIED CASH BALANCE" in rendered
+    assert "£1,200.00" in rendered
+    assert "31 Aug 2026" in rendered
+    assert "+20.0%" in rendered
+
+    hero.earliest_latest_observation_date = date(2026, 8, 15)
+    page._render_cash_balance_hero(analytics)
+    rendered = ui.markdown.call_args.args[0]
+    assert "Latest account balances observed" in rendered
+    assert "15 Aug 2026 to 31 Aug 2026" in rendered
+
+    hero.earliest_latest_observation_date = None
+    hero.latest_observation_date = None
+    hero.change_percent_label = None
+    page._render_cash_balance_hero(analytics)
+    assert "No verified balance date" in ui.markdown.call_args.args[0]
+
+
+def test_recent_activity_is_bounded_escaped_and_failure_is_isolated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = _ui(monkeypatch)
+    client = MagicMock()
+    unsafe = _transaction().model_copy(
+        update={"description": "<script>unsafe</script>", "amount": Decimal("0.00")}
+    )
+    inflow = _transaction().model_copy(
+        update={"transaction_id": "transaction-in", "amount": Decimal("25.00")}
+    )
+    outflow = _transaction().model_copy(
+        update={"transaction_id": "transaction-out", "amount": Decimal("-5.00")}
+    )
+    client.search_transactions.return_value = Page[TransactionResponse](
+        items=(unsafe, inflow, outflow), limit=6, offset=0, total=3
+    )
+
+    page._render_recent_transactions(
+        client,
+        profile_id="profile-1",
+        account_ids=("account-1",),
+        account_names={"account-1": "Cash & bills"},
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 31),
+    )
+
+    request = client.search_transactions.call_args.args[0]
+    assert request.start_date == date(2026, 8, 1)
+    assert client.search_transactions.call_args.kwargs["limit"] == 6
+    rendered = ui.markdown.call_args.args[0]
+    assert "&lt;script&gt;unsafe&lt;/script&gt;" in rendered
+    assert "Cash &amp; bills" in rendered
+    assert "is-neutral" in rendered
+    assert "is-positive" in rendered
+    assert "is-negative" in rendered
+
+    client.search_transactions.return_value = Page[TransactionResponse](
+        items=(), limit=6, offset=0, total=0
+    )
+    ui.markdown.reset_mock()
+    page._render_recent_transactions(
+        client,
+        profile_id="profile-1",
+        account_ids=("account-1",),
+        account_names={},
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 31),
+    )
+    ui.markdown.assert_not_called()
+
+    client.search_transactions.side_effect = ApiClientError(
+        ApiClientErrorCode.API_REJECTED_REQUEST,
+        "the local API rejected the request",
+        problem_code="synthetic_problem",
+    )
+    page._render_recent_transactions(
+        client,
+        profile_id="profile-1",
+        account_ids=("account-1",),
+        account_names={},
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 31),
+    )
+    assert "synthetic_problem" in ui.caption.call_args.args[0]
 
 
 def test_dashboard_range_and_page_orchestration_are_data_minimised(
@@ -460,6 +646,15 @@ def test_dashboard_range_and_page_orchestration_are_data_minimised(
     )
     today_start, today_end = page._dashboard_range(())
     assert today_start == today_end == date.today()
+    period_key = page._dashboard_period_key(
+        ("account-1",), date(2025, 9, 1), date(2026, 8, 31)
+    )
+    assert period_key == page._dashboard_period_key(
+        ("account-1",), date(2025, 9, 1), date(2026, 8, 31)
+    )
+    assert period_key != page._dashboard_period_key(
+        ("account-1",), date(2025, 9, 1), date(2026, 9, 1)
+    )
 
     client = MagicMock()
     oldest = _transaction().model_copy(
@@ -504,8 +699,17 @@ def test_dashboard_range_and_page_orchestration_are_data_minimised(
         accounts=(_account(),),
     ) == (newest,)
 
+    client.search_transactions.return_value = Page[TransactionResponse](
+        items=(newest,), limit=1, offset=0, total=1
+    )
+    assert page._dashboard_boundary_transactions(
+        client,
+        profile_id="profile-1",
+        accounts=(_account(), _account("account-2")),
+    ) == (newest,)
+
     ui = _ui(monkeypatch)
-    ui.tabs.return_value = (nullcontext(), nullcontext(), nullcontext())
+    ui.segmented_control.return_value = "Dashboard"
     client = MagicMock()
     client.current_profile.return_value = _profile()
     client.list_accounts.return_value = Page[AccountResponse](
@@ -514,10 +718,14 @@ def test_dashboard_range_and_page_orchestration_are_data_minimised(
     client.list_categories.return_value = Page[CategorySummary](
         items=(_category(),), limit=100, offset=0, total=1
     )
-    monkeypatch.setattr(page, "_render_transaction_table", MagicMock(return_value=()))
-    monkeypatch.setattr(page, "_render_corrections", MagicMock())
-    monkeypatch.setattr(page, "_render_role_reviews", MagicMock())
-    monkeypatch.setattr(page, "_render_duplicate_reviews", MagicMock())
+    transaction_table = MagicMock(return_value=())
+    corrections = MagicMock()
+    role_reviews = MagicMock()
+    duplicate_reviews = MagicMock()
+    monkeypatch.setattr(page, "_render_transaction_table", transaction_table)
+    monkeypatch.setattr(page, "_render_corrections", corrections)
+    monkeypatch.setattr(page, "_render_role_reviews", role_reviews)
+    monkeypatch.setattr(page, "_render_duplicate_reviews", duplicate_reviews)
     dashboard = MagicMock()
     monkeypatch.setattr(page, "_render_dashboard", dashboard)
     dashboard_boundaries = MagicMock(return_value=(oldest, newest))
@@ -535,6 +743,18 @@ def test_dashboard_range_and_page_orchestration_are_data_minimised(
         accounts=(_account(),),
         transactions=(oldest, newest),
     )
+    ui.segmented_control.return_value = "Transactions"
+    page.render_transaction_page(client, session)
+    transaction_table.assert_called_once()
+    corrections.assert_called_once()
+    role_reviews.assert_not_called()
+    duplicate_reviews.assert_not_called()
+
+    ui.segmented_control.return_value = "Needs review"
+    page.render_transaction_page(client, session)
+    role_reviews.assert_called_once()
+    duplicate_reviews.assert_called_once()
+    assert dashboard_boundaries.call_count == 1
 
     client.list_accounts.return_value = Page[AccountResponse](
         items=(), limit=100, offset=0, total=0

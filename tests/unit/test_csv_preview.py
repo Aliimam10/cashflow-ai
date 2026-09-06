@@ -82,6 +82,10 @@ def test_utf8_signed_amount_preview_is_limited_but_counts_every_row() -> None:
     assert preview.suggestions.currency == ("Currency",)
     assert preview.suggestions.external_id == ("Transaction ID",)
     assert preview.suggestions.transaction_type == ("Type",)
+    assert preview.suggested_date_column == "Transaction Date"
+    assert preview.suggested_statement_period is not None
+    assert preview.suggested_statement_period.start_date == date(2026, 7, 1)
+    assert preview.suggested_statement_period.end_date == date(2026, 7, 2)
 
 
 def test_windows_1252_semicolon_file_suggests_separate_amount_columns() -> None:
@@ -100,6 +104,75 @@ def test_windows_1252_semicolon_file_suggests_separate_amount_columns() -> None:
     assert preview.suggestions.posting_date == ("Posting Date",)
     assert preview.suggestions.debit_amount == ("Paid Out",)
     assert preview.suggestions.credit_amount == ("Paid In",)
+    assert preview.suggested_date_column == "Date"
+    assert preview.suggested_statement_period is not None
+    assert preview.suggested_statement_period.start_date == date(2026, 7, 1)
+    assert preview.suggested_statement_period.end_date == date(2026, 7, 1)
+
+
+def test_preview_date_bounds_use_the_full_file_and_ignore_invalid_rows() -> None:
+    content = (
+        b"Date,Description,Amount\n"
+        b"31/08/2026,Latest,-1.00\n"
+        b"not-a-date,Rejected,-2.00\n"
+        b"2025-09-01,Earliest,-3.00\n"
+    )
+
+    preview = preview_csv(content, "statement.csv", preview_rows=1)
+
+    assert preview.truncated is True
+    assert preview.suggested_statement_period is not None
+    assert preview.suggested_statement_period.start_date == date(2025, 9, 1)
+    assert preview.suggested_statement_period.end_date == date(2026, 8, 31)
+
+
+def test_snake_case_bank_headers_are_recognised_for_date_detection() -> None:
+    content = (
+        b"transaction_date,description,amount,running_balance\n"
+        b"2025-09-01,Synthetic income,1000.00,1000.00\n"
+        b"2026-08-31,Synthetic rent,-100.00,900.00\n"
+    )
+
+    preview = preview_csv(content, "synthetic_history.csv")
+
+    assert preview.suggestions.transaction_date == ("transaction_date",)
+    assert preview.suggestions.running_balance == ("running_balance",)
+    assert preview.suggested_date_column == "transaction_date"
+    assert preview.suggested_statement_period is not None
+    assert preview.suggested_statement_period.start_date == date(2025, 9, 1)
+    assert preview.suggested_statement_period.end_date == date(2026, 8, 31)
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        b"When,Description,Amount\n2026-01-01,Example,-1.00\n",
+        b"Date,Description,Amount\nnot-a-date,Example,-1.00\n",
+    ],
+)
+def test_preview_omits_a_period_without_a_recognised_readable_date_column(
+    content: bytes,
+) -> None:
+    preview = preview_csv(content, "statement.csv")
+
+    assert preview.suggested_date_column is None
+    assert preview.suggested_statement_period is None
+
+
+def test_preview_date_suggestion_contract_requires_a_real_paired_column() -> None:
+    preview = preview_csv(
+        b"Date,Description,Amount\n2026-01-01,Example,-1.00\n",
+        "statement.csv",
+    )
+    payload = preview.model_dump()
+    payload["suggested_statement_period"] = None
+    with pytest.raises(ValidationError, match="both a column and statement period"):
+        type(preview).model_validate(payload)
+
+    payload = preview.model_dump()
+    payload["suggested_date_column"] = "Missing"
+    with pytest.raises(ValidationError, match="must exist"):
+        type(preview).model_validate(payload)
 
 
 @pytest.mark.parametrize(

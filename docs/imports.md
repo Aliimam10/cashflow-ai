@@ -59,6 +59,14 @@ filename. It performs no filesystem writes. The adapter:
 - suggests common date, description, amount, debit, credit, balance, identifier,
   currency, and transaction-type headings.
 
+When a transaction-date heading is recognised, preview also suggests a statement
+period from every readable date in the full in-memory document, including rows after
+the visible preview. This suggestion remains editable and requires confirmation. At
+confirmation, the service rejects the whole import before any write if a readable
+transaction date falls outside the confirmed bounds or inside a declared missing
+period. Invalid date rows retain the existing quarantine behaviour and never become
+verified evidence or silently define coverage.
+
 Failures use stable `CsvImportErrorCode` values so a later API or interface can
 show useful messages without parsing exception text.
 

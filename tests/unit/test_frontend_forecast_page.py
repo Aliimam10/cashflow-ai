@@ -28,13 +28,18 @@ from cashflow_ai.schemas.forecast_paths import (
     WeeklySpendingPath,
 )
 from cashflow_ai.schemas.forecasting import ForecastBaselineName
-from cashflow_ai.schemas.freshness import FreshnessWarningCode
+from cashflow_ai.schemas.freshness import (
+    FinancialDataFreshness,
+    FinancialDataMode,
+    FreshnessWarningCode,
+    VerifiedBalanceEvidence,
+)
 from cashflow_ai.schemas.recurrence import (
     RecurrenceFrequency,
     RecurrenceStatus,
     RecurringPaymentCandidate,
 )
-from cashflow_ai.schemas.statements import BalanceSnapshotSource
+from cashflow_ai.schemas.statements import BalanceSnapshotSource, DateRange
 from cashflow_ai.schemas.transactions import Currency, Direction, FinancialRole
 
 NOW = datetime(2026, 8, 30, 20, tzinfo=UTC)
@@ -61,6 +66,38 @@ def _account(identifier: str = "synthetic-account") -> AccountResponse:
         institution_label="Example Bank",
         is_active=True,
         created_at=NOW,
+    )
+
+
+def _freshness(*, coverage: bool = True) -> FinancialDataFreshness:
+    latest_coverage = (
+        DateRange(start_date=date(2026, 6, 1), end_date=date(2026, 8, 29))
+        if coverage
+        else None
+    )
+    return FinancialDataFreshness(
+        account_id="account-2",
+        assessed_on=date(2026, 8, 29),
+        mode=(
+            FinancialDataMode.ACTIVE_FORECASTING
+            if coverage
+            else FinancialDataMode.ARCHIVE
+        ),
+        latest_transaction_date=date(2026, 8, 29),
+        latest_verified_balance=VerifiedBalanceEvidence(
+            balance=Decimal("1000.00"),
+            currency=Currency.GBP,
+            as_of_date=date(2026, 8, 29),
+            recorded_at=NOW,
+            source=BalanceSnapshotSource.RUNNING_BALANCE,
+        ),
+        transaction_age_days=0,
+        balance_age_days=0,
+        data_freshness_days=0,
+        latest_contiguous_coverage=latest_coverage,
+        contiguous_coverage_days=90 if coverage else 0,
+        coverage_age_days=0 if coverage else None,
+        warnings=() if coverage else (FreshnessWarningCode.NO_VERIFIED_COVERAGE,),
     )
 
 
@@ -133,6 +170,7 @@ def _path(*, occurrences: bool = True) -> BalanceForecastPath:
             ForecastPathWarningCode.LOW_CONFIDENCE_MODEL,
             ForecastPathWarningCode.STALE_DATA,
             ForecastPathWarningCode.LIMITED_RESIDUAL_HISTORY,
+            ForecastPathWarningCode.RECENT_HISTORY_GAP,
         ),
         freshness_warnings=(FreshnessWarningCode.BALANCE_STALE,),
         recurring_occurrences=recurring,
@@ -274,6 +312,7 @@ def test_forecast_controls_and_all_result_states(
     ui.multiselect.return_value = [1, 15]
     ui.button.return_value = False
     client = MagicMock()
+    client.freshness.return_value = _freshness()
     accounts = (_account(), _account("account-2"))
     assert (
         page._render_forecast(
@@ -325,6 +364,77 @@ def test_forecast_controls_and_all_result_states(
     page._render_forecast_result(quiet_path, _comparison())
     ui.dataframe.assert_not_called()
     page._render_model_information(_comparison(scored=True))
+
+
+def test_forecast_freshness_fallback_and_safe_api_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = _ui(monkeypatch)
+    ui.selectbox.return_value = "synthetic-account"
+    ui.date_input.return_value = date(2026, 8, 29)
+    ui.select_slider.return_value = 30
+    ui.multiselect.return_value = [1, 15]
+    ui.button.return_value = False
+    client = MagicMock()
+    client.freshness.side_effect = ApiClientError(
+        ApiClientErrorCode.CONNECTION_FAILED, "safe failure"
+    )
+    page._render_forecast(
+        client,
+        profile_id="synthetic-profile",
+        accounts=(_account(),),
+        default_account_id=None,
+        requested_at=NOW,
+    )
+    assert "statement boundary" in ui.caption.call_args.args[0]
+
+    client.freshness.side_effect = None
+    client.freshness.return_value = _freshness(coverage=False)
+    page._render_forecast(
+        client,
+        profile_id="synthetic-profile",
+        accounts=(_account(),),
+        default_account_id=None,
+        requested_at=NOW,
+    )
+
+    ui.button.return_value = True
+    client.evaluate_forecast.side_effect = ApiClientError(
+        ApiClientErrorCode.API_REJECTED_REQUEST,
+        "safe failure",
+        problem_code="too_few_complete_weeks",
+    )
+    assert (
+        page._render_forecast(
+            client,
+            profile_id="synthetic-profile",
+            accounts=(_account(),),
+            default_account_id=None,
+            requested_at=NOW,
+        )
+        == "synthetic-account"
+    )
+
+    display_error = MagicMock()
+    monkeypatch.setattr(page, "render_error", display_error)
+    for code in ("forecast_evidence_misaligned", "too_few_complete_weeks"):
+        page._render_forecast_error(
+            ApiClientError(
+                ApiClientErrorCode.API_REJECTED_REQUEST,
+                "safe failure",
+                problem_code=code,
+            )
+        )
+    page._render_forecast_error(
+        ApiClientError(
+            ApiClientErrorCode.API_REJECTED_REQUEST,
+            "safe failure",
+            problem_code="balance_not_found",
+        )
+    )
+    generic = ApiClientError(ApiClientErrorCode.REQUEST_TIMED_OUT, "safe failure")
+    page._render_forecast_error(generic)
+    display_error.assert_called_once_with(generic)
 
 
 def test_page_handles_no_accounts_success_and_safe_api_failure(

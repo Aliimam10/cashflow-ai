@@ -1,4 +1,4 @@
-.PHONY: setup format format-check lint typecheck test test-safeguards test-containers coverage pre-commit check check-import check-ocr api ui demo-api demo-data demo-statements demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade docker-config docker-build docker-up docker-down
+.PHONY: setup format format-check lint typecheck test test-safeguards test-containers coverage pre-commit check check-import check-ocr api ui demo-api demo-data demo-dashboard demo-dashboard-api demo-statements demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade docker-config docker-build docker-up docker-down
 
 setup:
 	uv sync --dev
@@ -49,6 +49,14 @@ demo-api:
 
 demo-data:
 	uv run python scripts/generate_demo_data.py --profile all
+
+demo-dashboard:
+	uv run python scripts/generate_demo_data.py --profile student --start-date 2025-09-01 --years 1 --layout canonical
+	CASHFLOW_DATABASE_URL=sqlite:///data/cashflow-demo.db uv run alembic upgrade head
+	CASHFLOW_DATABASE_URL=sqlite:///data/cashflow-demo.db uv run python -m cashflow_ai.demo_data.dashboard
+
+demo-dashboard-api:
+	CASHFLOW_DATABASE_URL=sqlite:///data/cashflow-demo.db uv run cashflow-api
 
 demo-statements:
 	uv run python scripts/generate_demo_statements.py

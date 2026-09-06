@@ -18,6 +18,7 @@ from cashflow_ai.frontend.components import (
 )
 from cashflow_ai.frontend.forecast_workflow import (
     forecast_chart,
+    forecast_freshness_policy,
     forecast_request,
     recurrence_request,
 )
@@ -33,6 +34,7 @@ from cashflow_ai.frontend.transaction_workflow import money_text
 from cashflow_ai.schemas.api import AccountResponse, Page, UserProfileResponse
 from cashflow_ai.schemas.api_decisions import (
     BalanceForecastRequest,
+    FinancialDataFreshnessRequest,
     ForecastEvaluationRequest,
     RecurrenceDetectionRequest,
 )
@@ -44,6 +46,7 @@ from cashflow_ai.schemas.forecast_paths import (
     BalanceForecastPath,
     ForecastPathWarningCode,
 )
+from cashflow_ai.schemas.freshness import FinancialDataFreshness
 from cashflow_ai.schemas.recurrence import (
     RecurrenceReview,
     RecurrenceReviewAction,
@@ -95,6 +98,12 @@ class ForecastApi(PlanningApi, Protocol):
         """Evaluate the candidate model against chronological baselines."""
         ...
 
+    def freshness(
+        self, request: FinancialDataFreshnessRequest
+    ) -> FinancialDataFreshness:
+        """Return current statement, transaction, and balance evidence."""
+        ...
+
 
 def _render_recurring(
     client: ForecastApi,
@@ -102,6 +111,7 @@ def _render_recurring(
     profile_id: str,
     account_names: dict[str, str],
     as_of: date,
+    knowledge_cutoff_at: datetime | None = None,
 ) -> None:
     st.subheader("Recurring payments")
     st.caption(
@@ -114,6 +124,7 @@ def _render_recurring(
                 recurrence_request(
                     profile_id=profile_id,
                     as_of_date=as_of,
+                    knowledge_cutoff_at=knowledge_cutoff_at,
                 )
             )
     else:
@@ -163,13 +174,24 @@ def _render_recurring(
                 st.success(f"Recurring pattern marked {reviewed.status.value}.")
 
 
-def _render_model_information(comparison: ForecastModelComparison) -> None:
+def _render_model_information(
+    comparison: ForecastModelComparison,
+    *,
+    path_model: object | None = None,
+) -> None:
     st.markdown("**Model information**")
     selected, baseline, samples = st.columns(3)
-    selected.metric("Selected", comparison.selected_model.value.replace("_", " "))
+    selected.metric(
+        "Evaluation result", comparison.selected_model.value.replace("_", " ")
+    )
     baseline.metric("Best baseline", comparison.best_baseline.value.replace("_", " "))
     samples.metric("Training weeks", comparison.training_sample_count)
     st.caption(comparison.selection_reason)
+    if path_model is not None and path_model != comparison.selected_model:
+        st.caption(
+            "Safety override: this balance path used the recent four-week average "
+            "because the latest covered week and the future start are not adjacent."
+        )
     if comparison.final_test is None:
         st.caption("No held-out score is claimed because model history is limited.")
         return
@@ -199,13 +221,13 @@ def _render_forecast_result(
 
     source, cutoff, model = st.columns(3)
     source.metric("Current balance source", path.opening_balance.source.value)
-    cutoff.metric("History through", path.plan.knowledge_cutoff_at.date().isoformat())
+    cutoff.metric("Calculated at", path.plan.knowledge_cutoff_at.date().isoformat())
     model.metric("Selected model", path.selected_model.value.replace("_", " "))
     st.caption(
         f"Opening balance: {money_text(path.opening_balance.balance, currency)} as of "
         f"{path.opening_balance.as_of_date.isoformat()}."
     )
-    _render_model_information(comparison)
+    _render_model_information(comparison, path_model=path.selected_model)
 
     if ForecastPathWarningCode.LOW_CONFIDENCE_MODEL in path.warnings:
         st.warning(
@@ -219,6 +241,12 @@ def _render_forecast_result(
         st.warning(f"Some account information is old or incomplete: {reasons}.")
     if ForecastPathWarningCode.LIMITED_RESIDUAL_HISTORY in path.warnings:
         st.info("Few past forecast errors are available, so uncertainty is cautious.")
+    if ForecastPathWarningCode.RECENT_HISTORY_GAP in path.warnings:
+        st.warning(
+            "The latest statement stops before the forecast week. Missing days were "
+            "not counted as zero; this path uses the recent four-week average and a "
+            "wider uncertainty range."
+        )
 
     st.markdown("**Upcoming confirmed flows**")
     if not path.recurring_occurrences:
@@ -238,12 +266,33 @@ def _render_forecast_result(
     )
 
 
+def _render_forecast_error(error: ApiClientError) -> None:
+    """Translate forecast prerequisites without exposing response bodies."""
+    if error.problem_code in {
+        "forecast_evidence_misaligned",
+        "too_few_complete_weeks",
+    }:
+        st.error(
+            "A forecast needs at least eight consecutive complete weeks of "
+            "confirmed history before the next forecast Monday. Import a longer or "
+            "more recent statement, then try again."
+        )
+    elif error.problem_code == "balance_not_found":
+        st.error(
+            "No confirmed balance was available for this forecast. Import a "
+            "statement with running balances or confirm a statement balance."
+        )
+    else:
+        render_error(error)
+
+
 def _render_forecast(
     client: ForecastApi,
     *,
     profile_id: str,
     accounts: tuple[AccountResponse, ...],
     default_account_id: str | None,
+    requested_at: datetime | None = None,
 ) -> str:
     st.subheader("Your projected balance")
     account_names = {item.account_id: item.name for item in accounts}
@@ -259,11 +308,39 @@ def _render_forecast(
         index=selected_index,
         format_func=account_names.__getitem__,
     )
-    latest_complete_date = datetime.now(UTC).date() - timedelta(days=1)
+    request_time = requested_at or datetime.now(UTC)
+    latest_complete_date = request_time.date() - timedelta(days=1)
+    history_end = latest_complete_date
+    try:
+        freshness = client.freshness(
+            FinancialDataFreshnessRequest(
+                account_id=account_id,
+                as_of_date=latest_complete_date,
+                policy=forecast_freshness_policy(),
+            )
+        )
+    except ApiClientError:
+        st.caption(
+            "The latest statement boundary could not be loaded. Choose the end date "
+            "shown on your statement."
+        )
+    else:
+        coverage = freshness.latest_contiguous_coverage
+        if coverage is not None:
+            history_end = min(coverage.end_date, latest_complete_date)
+            st.caption(
+                "Latest continuous statement history: "
+                f"{coverage.start_date.isoformat()} to "
+                f"{coverage.end_date.isoformat()}."
+            )
     as_of = st.date_input(
-        "Use spending history through",
-        value=latest_complete_date,
+        "Statement history ends",
+        value=history_end,
         max_value=latest_complete_date,
+        help=(
+            "This controls the transaction period. The API separately records what "
+            "was actually known when you click Generate forecast."
+        ),
     )
     horizon = st.select_slider(
         "Forecast horizon",
@@ -292,15 +369,20 @@ def _render_forecast(
             as_of_date=as_of,
             horizon_days=horizon,
             payday_days=payday_days,
+            knowledge_cutoff_at=request_time,
         )
-        with loading_state("Evaluating models and simulating future balances…"):
-            evaluation = client.evaluate_forecast(
-                ForecastEvaluationRequest(
-                    dataset_plan=request.dataset_plan,
-                    model_policy=request.model_policy,
+        try:
+            with loading_state("Evaluating models and simulating future balances…"):
+                evaluation = client.evaluate_forecast(
+                    ForecastEvaluationRequest(
+                        dataset_plan=request.dataset_plan,
+                        model_policy=request.model_policy,
+                    )
                 )
-            )
-            path = client.balance_forecast(request)
+                path = client.balance_forecast(request)
+        except ApiClientError as error:
+            _render_forecast_error(error)
+            return account_id
         _render_forecast_result(path, evaluation.comparison)
     return account_id
 
@@ -326,18 +408,23 @@ def render_forecast_page(
             )
             return session
         categories = client.list_categories().items
-        latest_complete_date = datetime.now(UTC).date() - timedelta(days=1)
+        request_time = datetime.now(UTC)
+        latest_complete_date = request_time.date() - timedelta(days=1)
         selected_view = st.selectbox(
             "What would you like to do?",
             tuple(ForecastView),
             format_func=lambda item: item.value,
         )
-        as_of = st.date_input(
-            "Use transactions up to",
-            value=latest_complete_date,
-            max_value=latest_complete_date,
-            help="Choose the latest fully completed day covered by your statement.",
-        )
+        as_of = latest_complete_date
+        if selected_view not in {ForecastView.FORECAST, ForecastView.MODELS}:
+            as_of = st.date_input(
+                "Use transactions up to",
+                value=latest_complete_date,
+                max_value=latest_complete_date,
+                help=(
+                    "Choose the latest fully completed day covered by your statement."
+                ),
+            )
         account_names = {item.account_id: item.name for item in accounts}
         selected_account = session.account_id or accounts[0].account_id
         if selected_view is ForecastView.FORECAST:
@@ -346,6 +433,7 @@ def render_forecast_page(
                 profile_id=profile.profile_id,
                 accounts=accounts,
                 default_account_id=session.account_id,
+                requested_at=request_time,
             )
         elif selected_view is ForecastView.RECURRING:
             _render_recurring(
@@ -353,6 +441,7 @@ def render_forecast_page(
                 profile_id=profile.profile_id,
                 account_names=account_names,
                 as_of=as_of,
+                knowledge_cutoff_at=request_time,
             )
         elif selected_view is ForecastView.PLANNING:
             render_budgets_and_goals(
@@ -362,6 +451,7 @@ def render_forecast_page(
                 accounts=accounts,
                 categories=categories,
                 as_of=as_of,
+                knowledge_cutoff_at=request_time,
             )
         elif selected_view is ForecastView.SCENARIOS:
             render_scenarios(
@@ -370,6 +460,7 @@ def render_forecast_page(
                 accounts=accounts,
                 categories=categories,
                 as_of=as_of,
+                knowledge_cutoff_at=request_time,
             )
         elif selected_view is ForecastView.ANOMALIES:
             render_anomalies(
@@ -377,6 +468,7 @@ def render_forecast_page(
                 profile_id=profile.profile_id,
                 accounts=accounts,
                 as_of=as_of,
+                knowledge_cutoff_at=request_time,
             )
         else:
             render_models(client)

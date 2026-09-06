@@ -1,6 +1,6 @@
 """Tests for pure planning, scenario, and anomaly frontend projections."""
 
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -19,6 +19,7 @@ from cashflow_ai.schemas.scenarios import FinancialScenario, FinancialScenarioTy
 
 def test_period_and_request_builders_keep_user_scope_and_cutoffs_aligned() -> None:
     as_of = date(2026, 8, 30)
+    clicked_at = datetime(2026, 9, 5, 12, tzinfo=UTC)
     month = calendar_month(date(2026, 2, 12))
     week = monday_week(date(2026, 9, 2))
     planning = planning_request(
@@ -27,6 +28,7 @@ def test_period_and_request_builders_keep_user_scope_and_cutoffs_aligned() -> No
         as_of_date=as_of,
         horizon_days=60,
         payday_days=(1, 15),
+        knowledge_cutoff_at=clicked_at,
     )
     scenario = FinancialScenario(
         scenario_id="synthetic-scenario",
@@ -44,11 +46,13 @@ def test_period_and_request_builders_keep_user_scope_and_cutoffs_aligned() -> No
         horizon_days=30,
         payday_days=(1, 15),
         scenario=scenario,
+        knowledge_cutoff_at=clicked_at,
     )
     anomaly = anomaly_request(
         profile_id="synthetic-profile",
         account_ids=("account-1",),
         as_of_date=as_of,
+        knowledge_cutoff_at=clicked_at,
     )
 
     assert (month.start_date, month.end_date) == (
@@ -64,11 +68,14 @@ def test_period_and_request_builders_keep_user_scope_and_cutoffs_aligned() -> No
         "account-2",
     )
     assert all(item.path_plan.horizon_days == 60 for item in planning.forecasts)
+    assert all(
+        item.path_plan.knowledge_cutoff_at == clicked_at for item in planning.forecasts
+    )
     assert comparison.scenario is scenario
     assert comparison.planning_plan.account_ids == ("account-1",)
     assert comparison.forecast.path_plan.horizon_days == 30
     assert anomaly.account_ids == ("account-1",)
-    assert anomaly.knowledge_cutoff_at.date() == date(2026, 8, 31)
+    assert anomaly.knowledge_cutoff_at == clicked_at
 
 
 def test_chart_and_signal_explanations_are_data_minimised() -> None:

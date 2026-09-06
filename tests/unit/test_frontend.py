@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from contextlib import nullcontext
+from datetime import UTC, datetime
 from unittest.mock import MagicMock
 
 import pytest
@@ -25,7 +26,15 @@ from cashflow_ai.frontend.session import (
     load_session_state,
     save_session_state,
 )
-from cashflow_ai.schemas.api import HealthResponse, ReadinessResponse
+from cashflow_ai.schemas.accounts import AccountType
+from cashflow_ai.schemas.api import (
+    AccountResponse,
+    HealthResponse,
+    Page,
+    ReadinessResponse,
+    UserProfileResponse,
+)
+from cashflow_ai.schemas.transactions import Currency
 
 
 def _settings() -> Settings:
@@ -60,6 +69,20 @@ class StubStatusApi:
             database_connection=True,
             database_schema=self.ready,
         )
+
+    def current_profile(self) -> UserProfileResponse:
+        return UserProfileResponse(
+            profile_id="synthetic-profile",
+            display_name="Synthetic User",
+            base_currency=Currency.GBP,
+            timezone="UTC",
+            created_at=datetime(2026, 8, 1, tzinfo=UTC),
+            updated_at=datetime(2026, 8, 1, tzinfo=UTC),
+        )
+
+    def list_accounts(self, profile_id: str) -> Page[AccountResponse]:
+        assert profile_id == "synthetic-profile"
+        return Page[AccountResponse](items=(), limit=100, offset=0, total=0)
 
 
 def test_navigation_metadata_and_data_minimised_session_state() -> None:
@@ -158,6 +181,12 @@ def test_application_styles_are_installed_as_static_css(
     styles.apply_app_styles()
 
     assert "cf-page-header" in styles.APP_STYLES
+    for colour in ("#080B10", "#0F1419", "#171D26", "#1E2736", "#5B8DEF"):
+        assert colour in styles.APP_STYLES
+    assert '"JetBrains Mono"' in styles.APP_STYLES
+    assert '"DM Sans"' in styles.APP_STYLES
+    assert "@keyframes cf-draw-pulse" in styles.APP_STYLES
+    assert "prefers-reduced-motion" in styles.APP_STYLES
     assert 'data-testid="stToolbar"' in styles.APP_STYLES
     ui.markdown.assert_called_once_with(styles.APP_STYLES, unsafe_allow_html=True)
 
@@ -177,25 +206,128 @@ def test_home_renders_backend_status(
     monkeypatch.setattr(app, "render_forecast_disclaimer", disclaimer)
     page_header = MagicMock()
     status = MagicMock()
-    feature = MagicMock()
+    empty = MagicMock()
     monkeypatch.setattr(app, "render_page_header", page_header)
     monkeypatch.setattr(app, "render_service_status", status)
-    monkeypatch.setattr(app, "render_feature_card", feature)
+    monkeypatch.setattr(app, "render_empty_state", empty)
 
     app.render_home(StubStatusApi(ready=ready))
 
     page_header.assert_called_once()
     status.assert_called_once_with(ready=ready)
-    assert feature.call_count == 3
-    ui.button.assert_called_once()
     if ready:
-        assert not ui.caption.called
+        empty.assert_called_once()
+        ui.button.assert_called_once()
     else:
         ui.caption.assert_called_once_with(
             "Run `make db-upgrade` once, then refresh this page."
         )
-    privacy.assert_called_once_with()
-    disclaimer.assert_called_once_with()
+        empty.assert_not_called()
+        ui.button.assert_not_called()
+    privacy.assert_not_called()
+    disclaimer.assert_not_called()
+
+
+def test_home_renders_functional_dashboard_when_history_exists(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = MagicMock()
+    ui.columns.return_value = (MagicMock(), MagicMock())
+    monkeypatch.setattr(app, "st", ui)
+    monkeypatch.setattr(app, "loading_state", lambda message: nullcontext())
+    monkeypatch.setattr(app, "render_page_header", MagicMock())
+    monkeypatch.setattr(app, "render_service_status", MagicMock())
+    monkeypatch.setattr(app, "render_privacy_notice", MagicMock())
+    monkeypatch.setattr(app, "render_forecast_disclaimer", MagicMock())
+    boundaries = MagicMock(return_value=(MagicMock(),))
+    dashboard = MagicMock()
+    monkeypatch.setattr(app, "_dashboard_boundary_transactions", boundaries)
+    monkeypatch.setattr(app, "_render_dashboard", dashboard)
+    client = MagicMock()
+    client.health.return_value = HealthResponse(version="1.0.0")
+    client.readiness.return_value = ReadinessResponse(
+        status="ready",
+        database_connection=True,
+        database_schema=True,
+    )
+    profile = StubStatusApi().current_profile()
+    account = AccountResponse(
+        account_id="synthetic-account",
+        user_profile_id="synthetic-profile",
+        name="Synthetic Current",
+        account_type=AccountType.CURRENT,
+        currency=Currency.GBP,
+        institution_label=None,
+        is_active=True,
+        created_at=datetime(2026, 8, 1, tzinfo=UTC),
+    )
+    client.current_profile.return_value = profile
+    client.list_accounts.return_value = Page[AccountResponse](
+        items=(account,), limit=100, offset=0, total=1
+    )
+
+    app.render_home(client)
+
+    boundaries.assert_called_once_with(
+        client,
+        profile_id="synthetic-profile",
+        accounts=(account,),
+    )
+    dashboard.assert_called_once()
+    assert ui.columns.return_value[0].button.called
+    assert ui.columns.return_value[1].button.called
+
+
+def test_home_isolates_transaction_boundary_api_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = MagicMock()
+    monkeypatch.setattr(app, "st", ui)
+    monkeypatch.setattr(app, "loading_state", lambda message: nullcontext())
+    monkeypatch.setattr(app, "render_page_header", MagicMock())
+    monkeypatch.setattr(app, "render_service_status", MagicMock())
+    display_error = MagicMock()
+    monkeypatch.setattr(app, "render_error", display_error)
+    failure = ApiClientError(
+        ApiClientErrorCode.API_REJECTED_REQUEST,
+        "the local API rejected the request",
+        problem_code="synthetic_problem",
+    )
+    monkeypatch.setattr(
+        app,
+        "_dashboard_boundary_transactions",
+        MagicMock(side_effect=failure),
+    )
+    client = MagicMock()
+    client.health.return_value = HealthResponse(version="1.0.0")
+    client.readiness.return_value = ReadinessResponse(
+        status="ready",
+        database_connection=True,
+        database_schema=True,
+    )
+    client.current_profile.return_value = StubStatusApi().current_profile()
+    client.list_accounts.return_value = Page[AccountResponse](
+        items=(
+            AccountResponse(
+                account_id="synthetic-account",
+                user_profile_id="synthetic-profile",
+                name="Synthetic Current",
+                account_type=AccountType.CURRENT,
+                currency=Currency.GBP,
+                institution_label=None,
+                is_active=True,
+                created_at=datetime(2026, 8, 1, tzinfo=UTC),
+            ),
+        ),
+        limit=100,
+        offset=0,
+        total=1,
+    )
+
+    app.render_home(client)
+
+    display_error.assert_called_once_with(failure)
+    assert "source rows were not changed" in ui.caption.call_args.args[0]
 
 
 def test_home_displays_safe_connection_failure(
@@ -221,6 +353,44 @@ def test_home_displays_safe_connection_failure(
         "Start CashFlow AI with `make api`, then refresh this page."
     )
     ui.columns.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("problem_code", "expects_onboarding"),
+    [("profile_not_found", True), ("database_unavailable", False)],
+)
+def test_home_isolates_profile_setup_and_profile_api_failures(
+    problem_code: str,
+    expects_onboarding: bool,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = MagicMock()
+    display_error = MagicMock()
+    empty = MagicMock()
+    monkeypatch.setattr(app, "st", ui)
+    monkeypatch.setattr(app, "loading_state", lambda message: nullcontext())
+    monkeypatch.setattr(app, "render_page_header", MagicMock())
+    monkeypatch.setattr(app, "render_service_status", MagicMock())
+    monkeypatch.setattr(app, "render_error", display_error)
+    monkeypatch.setattr(app, "render_empty_state", empty)
+    client = MagicMock()
+    client.readiness.return_value = ReadinessResponse(
+        status="ready",
+        database_connection=True,
+        database_schema=True,
+    )
+    failure = ApiClientError(
+        ApiClientErrorCode.API_REJECTED_REQUEST,
+        "the local API rejected the request",
+        problem_code=problem_code,
+    )
+    client.current_profile.side_effect = failure
+
+    app.render_home(client)
+
+    assert empty.called is expects_onboarding
+    assert ui.button.called is expects_onboarding
+    assert display_error.called is not expects_onboarding
 
 
 @pytest.mark.parametrize(
@@ -336,7 +506,7 @@ def test_application_main_restores_and_saves_navigation(
     assert radio_call.kwargs["index"] == 0
     assert radio_call.kwargs["label_visibility"] == "collapsed"
     assert radio_call.kwargs["key"] == app._NAVIGATION_WIDGET_KEY
-    assert radio_call.kwargs["format_func"]("Overview") == "⌂  Overview"
+    assert radio_call.kwargs["format_func"]("Dashboard") == "⌂  Dashboard"
     apply_styles.assert_called_once_with()
     assert ui.session_state[SESSION_KEY]["selected_page"] == "import"
     assert ui.session_state[SESSION_KEY]["account_id"] == "account-1"

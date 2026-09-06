@@ -37,6 +37,26 @@ def test_request_defaults_are_cutoff_safe_and_user_horizon_is_preserved() -> Non
     tuesday_cutoff = complete_day_cutoff(date(2026, 9, 1))
     assert forecast_monday_after(tuesday_cutoff) == date(2026, 9, 7)
 
+    clicked_at = datetime(2026, 9, 5, 12, tzinfo=UTC)
+    current = forecast_request(
+        profile_id="synthetic-profile",
+        account_id="synthetic-account",
+        as_of_date=as_of,
+        horizon_days=30,
+        payday_days=(1, 15),
+        knowledge_cutoff_at=clicked_at,
+    )
+    current_recurrence = recurrence_request(
+        profile_id="synthetic-profile",
+        as_of_date=as_of,
+        knowledge_cutoff_at=clicked_at,
+    )
+    assert current.dataset_plan.period.end_date == as_of
+    assert current.dataset_plan.knowledge_cutoff_at == clicked_at
+    assert current.path_plan.knowledge_cutoff_at == clicked_at
+    assert current.path_plan.forecast_start == date(2026, 9, 7)
+    assert current_recurrence.knowledge_cutoff_at == clicked_at
+
 
 def test_forecast_chart_keeps_expected_and_interval_values_distinct() -> None:
     path = SimpleNamespace(

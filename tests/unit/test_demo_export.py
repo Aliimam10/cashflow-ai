@@ -39,6 +39,8 @@ def test_all_csv_layouts_are_exported(tmp_path: Path) -> None:
         "account",
         "transaction_type",
         "category",
+        "category_id",
+        "financial_role",
         "is_recurring",
         "recurring_series",
         "anomaly_type",
@@ -47,6 +49,21 @@ def test_all_csv_layouts_are_exported(tmp_path: Path) -> None:
     }
     assert any(row["anomaly_type"] == "exact_duplicate" for row in canonical_rows)
     assert any(row["recurring_series"] == "" for row in canonical_rows)
+    assert {row["category_id"] for row in canonical_rows} >= {
+        "income",
+        "housing",
+        "eating_out",
+    }
+    assert {row["financial_role"] for row in canonical_rows} == {"income", "expense"}
+
+    worker_rows = read_rows(
+        export_dataset(
+            generate_dataset(SyntheticProfile.SALARIED_WORKER, years=1),
+            tmp_path / "worker",
+            layouts=[CsvLayout.CANONICAL],
+        )[CsvLayout.CANONICAL]
+    )
+    assert any(row["financial_role"] == "transfer_out" for row in worker_rows)
 
     debit_credit_rows = read_rows(paths[CsvLayout.DEBIT_CREDIT])
     assert any(row["Debit"] and not row["Credit"] for row in debit_credit_rows)

@@ -26,6 +26,7 @@ from cashflow_ai.imports.normalisation import (
     calculate_source_fingerprint,
     map_csv_row,
     normalise_transaction,
+    parse_date_value,
 )
 from cashflow_ai.invalidation import invalidate_derived_results_in_session
 from cashflow_ai.persistence.base import utc_now
@@ -74,6 +75,45 @@ from cashflow_ai.schemas.statements import (
 from cashflow_ai.schemas.transactions import Currency, Direction, FinancialRole
 
 ALLOWED_CSV_MIME_TYPES: Final = frozenset({"text/csv", "application/csv", "text/plain"})
+
+
+def _validate_transaction_dates_within_coverage(
+    document: CsvDocument,
+    plan: CsvImportPlan,
+) -> None:
+    """Reject contradictory coverage before any source row is persisted."""
+    coverage = plan.statement_context.coverage
+    for row in document.rows:
+        original, _identity = map_csv_row(
+            document.columns,
+            row,
+            plan,
+            source_document_hash=document.file_hash,
+        )
+        try:
+            transaction_date = parse_date_value(
+                original.transaction_date_text,
+                "transaction date",
+            )
+        except TransactionNormalisationError:
+            # Invalid dates are quarantined by the normal import loop and never
+            # become verified evidence, so they cannot establish known coverage.
+            continue
+        outside_bounds = not (
+            coverage.statement_start_date
+            <= transaction_date
+            <= coverage.statement_end_date
+        )
+        inside_declared_gap = any(
+            gap.start_date <= transaction_date <= gap.end_date
+            for gap in coverage.missing_periods
+        )
+        if outside_bounds or inside_declared_gap:
+            raise CsvImportError(
+                CsvImportErrorCode.TRANSACTION_OUTSIDE_COVERAGE,
+                "a parsed CSV transaction falls outside the confirmed statement "
+                f"coverage at source row {row.source_row_number}",
+            )
 
 
 def _coverage_from_record(record: StatementCoverageRecord) -> StatementCoverage:
@@ -537,6 +577,7 @@ def persist_confirmed_csv(
             CsvImportErrorCode.PREVIEW_CHANGED,
             "uploaded CSV bytes changed after the confirmed preview",
         )
+    _validate_transaction_dates_within_coverage(document, plan)
     received_at = utc_now()
     if confirmation.confirmed_at > received_at:
         raise CsvImportError(

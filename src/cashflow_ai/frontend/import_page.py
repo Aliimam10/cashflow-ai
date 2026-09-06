@@ -27,6 +27,7 @@ from cashflow_ai.frontend.import_workflow import (
     optional_text,
     pdf_review_rows,
     suggested_column_index,
+    suggested_csv_statement_period,
 )
 from cashflow_ai.frontend.session import FrontendSessionState
 from cashflow_ai.schemas.accounts import AccountType
@@ -157,6 +158,10 @@ _IMPORT_GUIDANCE = {
     "preview_changed": "The file changed after preview. Review the current file again.",
     "file_changed": "The PDF changed after review. Review the current file again.",
     "account_currency_mismatch": "Choose an account using the statement currency.",
+    "transaction_outside_coverage": (
+        "Use the date range detected from the CSV, or correct the statement range "
+        "so it includes every transaction outside a declared gap."
+    ),
 }
 
 
@@ -453,9 +458,33 @@ def _render_csv_workflow(
             key="csv_transaction_type",
         )
 
-        first_day = date.today().replace(day=1)
-        start_date = st.date_input("Statement start", value=first_day)
-        end_date = st.date_input("Statement end", value=date.today())
+        today = date.today()
+        suggested_start, suggested_end, dates_detected = suggested_csv_statement_period(
+            preview,
+            cast(str, transaction_date_column),
+            fallback_date=today,
+        )
+        date_key = f"{preview.file_hash[:12]}_{transaction_date_column}"
+        start_date = st.date_input(
+            "Statement start",
+            value=suggested_start,
+            key=f"csv_statement_start_v2_{date_key}",
+        )
+        end_date = st.date_input(
+            "Statement end",
+            value=suggested_end,
+            key=f"csv_statement_end_v2_{date_key}",
+        )
+        if dates_detected:
+            st.caption(
+                "Detected from every readable transaction date in the uploaded "
+                "CSV. Check these dates against the statement before importing."
+            )
+        else:
+            st.warning(
+                "A complete date range could not be detected for this column. "
+                "Enter the statement dates before importing."
+            )
         coverage_status = st.selectbox(
             "Coverage status",
             tuple(CoverageStatus),

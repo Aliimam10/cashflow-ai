@@ -868,6 +868,50 @@ def test_future_client_confirmation_time_fails_before_persistence(
         assert session.scalar(select(func.count()).select_from(ImportBatchRecord)) == 0
 
 
+@pytest.mark.parametrize(
+    "coverage",
+    [
+        StatementCoverage(
+            statement_start_date=date(2026, 7, 2),
+            statement_end_date=date(2026, 7, 31),
+            status=CoverageStatus.COMPLETE,
+        ),
+        StatementCoverage(
+            statement_start_date=date(2026, 7, 1),
+            statement_end_date=date(2026, 7, 31),
+            status=CoverageStatus.GAPPED,
+            missing_periods=(
+                DateRange(
+                    start_date=date(2026, 7, 2),
+                    end_date=date(2026, 7, 2),
+                ),
+            ),
+        ),
+    ],
+)
+def test_import_rejects_transaction_dates_contradicting_confirmed_coverage(
+    factory: sessionmaker[Session],
+    coverage: StatementCoverage,
+) -> None:
+    plan = import_plan()
+    context = plan.statement_context.model_copy(update={"coverage": coverage})
+    contradictory_plan = plan.model_copy(update={"statement_context": context})
+
+    with pytest.raises(CsvImportError, match="source row") as error:
+        persist_confirmed_csv(
+            factory,
+            CSV_CONTENT,
+            "synthetic-statement.csv",
+            mime_type="text/csv",
+            plan=contradictory_plan,
+            confirmation=confirmation(),
+        )
+
+    assert error.value.code is CsvImportErrorCode.TRANSACTION_OUTSIDE_COVERAGE
+    with session_scope(factory) as session:
+        assert session.scalar(select(func.count()).select_from(ImportBatchRecord)) == 0
+
+
 def test_repeated_file_returns_existing_batch_without_writing_again(
     factory: sessionmaker[Session],
 ) -> None:

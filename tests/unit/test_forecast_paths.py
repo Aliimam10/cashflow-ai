@@ -377,6 +377,110 @@ def test_low_data_reports_limited_residual_history_without_fake_coverage(
     )
 
 
+def test_recent_coverage_gap_uses_widened_recent_mean_without_zero_filling(
+    factory: sessionmaker[Session],
+) -> None:
+    dataset = _daily_dataset()
+    _seed_evidence(factory, dataset)
+    trained = train_primary_forecaster(dataset, policy=_policy())
+    adjacent_start = dataset.weekly_targets[-1].week_start + timedelta(weeks=1)
+    plan = _path_plan(
+        dataset,
+        forecast_start=adjacent_start + timedelta(weeks=1),
+    )
+
+    result = build_balance_forecast_path(
+        factory,
+        dataset=dataset,
+        trained=trained,
+        plan=plan,
+    )
+
+    expected_recent_mean = (
+        sum(
+            (item.discretionary_spending for item in dataset.weekly_targets[-4:]),
+            start=Decimal("0"),
+        )
+        / 4
+    )
+    assert result.selected_model is ForecastBaselineName.RECENT_ROLLING_MEAN
+    assert result.weekly_spending[0].week_start == plan.forecast_start
+    assert result.weekly_spending[0].expected_discretionary_spending == (
+        expected_recent_mean
+    )
+    assert all(item.week_start != adjacent_start for item in result.weekly_spending)
+    assert ForecastPathWarningCode.LOW_CONFIDENCE_MODEL in result.warnings
+    assert ForecastPathWarningCode.RECENT_HISTORY_GAP in result.warnings
+    assert result.interval_performance is None
+
+    expense = RecurringForecastOccurrence(
+        candidate_id="gap-expense",
+        occurrence_date=plan.forecast_start,
+        signed_amount=Decimal("-25.00"),
+        financial_role=FinancialRole.EXPENSE,
+        known_at=plan.knowledge_cutoff_at,
+    )
+    income = RecurringForecastOccurrence(
+        candidate_id="gap-income",
+        occurrence_date=plan.forecast_start,
+        signed_amount=Decimal("100.00"),
+        financial_role=FinancialRole.INCOME,
+        known_at=plan.knowledge_cutoff_at,
+    )
+    row = path_module._future_gap_fallback_row(
+        dataset=dataset,
+        plan=plan,
+        occurrences=(expense, income),
+    )
+    assert row.known_recurring_outflow == Decimal("25.00")
+
+
+def test_recent_gap_fallback_requires_eight_consecutive_timely_weeks() -> None:
+    dataset = _daily_dataset()
+    plan = _path_plan(
+        dataset,
+        forecast_start=dataset.weekly_targets[-1].week_start + timedelta(weeks=2),
+    )
+    short = dataset.model_copy(update={"weekly_targets": dataset.weekly_targets[-7:]})
+    with pytest.raises(ForecastPathError, match="eight consecutive"):
+        path_module._future_gap_fallback_row(
+            dataset=short,
+            plan=plan,
+            occurrences=(),
+        )
+
+    history = list(dataset.weekly_targets[-8:])
+    history[1] = history[1].model_copy(
+        update={
+            "week_start": history[1].week_start + timedelta(weeks=1),
+            "week_end": history[1].week_end + timedelta(weeks=1),
+        }
+    )
+    nonconsecutive = dataset.model_copy(update={"weekly_targets": tuple(history)})
+    with pytest.raises(ForecastPathError, match="eight consecutive"):
+        path_module._future_gap_fallback_row(
+            dataset=nonconsecutive,
+            plan=plan,
+            occurrences=(),
+        )
+
+    origin = datetime.combine(plan.forecast_start, time.min, tzinfo=UTC)
+    late_history = dataset.model_copy(
+        update={
+            "weekly_targets": (
+                *dataset.weekly_targets[:-1],
+                dataset.weekly_targets[-1].model_copy(update={"known_at": origin}),
+            )
+        }
+    )
+    with pytest.raises(ForecastPathError, match="known before"):
+        path_module._future_gap_fallback_row(
+            dataset=late_history,
+            plan=plan,
+            occurrences=(),
+        )
+
+
 def test_path_service_rejects_missing_or_misaligned_evidence(
     factory: sessionmaker[Session],
 ) -> None:
