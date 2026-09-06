@@ -23,6 +23,7 @@ from cashflow_ai.schemas.normalisation import (
     SourceRecordIdentity,
 )
 from cashflow_ai.schemas.transactions import (
+    CanonicalTransaction,
     Currency,
     Direction,
     FinancialRole,
@@ -280,7 +281,10 @@ def calculate_source_fingerprint(
     )
 
 
-def _canonical_fingerprint(draft: TransactionDraft) -> str:
+def calculate_canonical_fingerprint(
+    draft: TransactionDraft | CanonicalTransaction,
+) -> str:
+    """Return the duplicate-matching identity of a complete canonical draft."""
     account_id = cast(str, draft.account_id)
     transaction_date = cast(date, draft.transaction_date)
     amount = cast(Decimal, draft.amount)
@@ -344,7 +348,7 @@ def normalise_transaction(
         parser=parser,
         source_identity=source_identity,
         source_fingerprint=calculate_source_fingerprint(source_identity, original),
-        canonical_fingerprint=_canonical_fingerprint(draft),
+        canonical_fingerprint=calculate_canonical_fingerprint(draft),
     )
 
 

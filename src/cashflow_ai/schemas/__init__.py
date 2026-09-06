@@ -237,6 +237,7 @@ from cashflow_ai.schemas.pdf_imports import (
     PdfTransactionCandidate,
     TextPdfPreview,
 )
+from cashflow_ai.schemas.pdf_persistence import PdfImportSummary, PdfRecordLocation
 from cashflow_ai.schemas.planning import (
     Budget,
     BudgetCreate,
@@ -491,7 +492,9 @@ __all__ = [
     "OriginalTransactionValues",
     "ParserIdentity",
     "PdfExtractionLayout",
+    "PdfImportSummary",
     "PdfPageExtraction",
+    "PdfRecordLocation",
     "PdfTransactionCandidate",
     "PlanningBalanceProjection",
     "PlanningEvaluationPlan",

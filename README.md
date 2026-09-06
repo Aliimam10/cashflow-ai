@@ -5,22 +5,27 @@
 ![Version 1.0.0](https://img.shields.io/badge/version-1.0.0-2E8B57.svg)
 
 CashFlow AI is a local-first personal cash-flow forecasting, budgeting, and
-financial-insight application. It imports transaction CSV files, reviews digital or
-scanned PDF bank statements, normalises and categorises transactions, identifies
-recurring and unusual activity, and produces explainable balance forecasts with
-uncertainty.
+financial-insight application. It recommends structured CSV exports and can also
+review embedded-text digital PDF statements before normalising and categorising
+transactions, identifying recurring and unusual activity, and producing explainable
+balance forecasts with uncertainty.
 
 ## What a local user can do
 
 - Review and persist CSV statements without losing the original source rows.
-- Extract digital or scanned PDFs locally, correct OCR, and reconcile balances before
-  approval; PDF approval remains in memory in Version 1.
+- Reconstruct an embedded-text digital PDF locally, correct every extracted row,
+  require balance reconciliation within the documented one-penny tolerance, and
+  persist the approved statement without losing page-level source evidence. The
+  current HTTP/UI workflow is not connected to this new PDF persistence boundary
+  yet.
 - Correct categories and explicitly distinguish expenses, income, internal transfers,
   refunds, reimbursements, withdrawals, and exclusions.
 - View coverage-aware analytics, recurring payments, cautious balance forecasts,
   budgets, goals, safe-spending estimates, scenarios, and unusual-activity reviews.
-- Keep statements, SQLite data, OCR processing, and model artefacts on the local
-  machine without supplying bank credentials.
+- Keep statements, SQLite data, and model artefacts on the local machine without
+  supplying bank credentials. The older OCR backend remains available for internal
+  regression testing, but scanned statements are not the intended normal Version 1
+  import path.
 
 Start with the [Version 1 user guide](docs/user_guide.md), see the
 [architecture and data-flow diagrams](docs/diagrams.md), or read the
@@ -30,9 +35,10 @@ The repository currently contains the **project foundation, quality tooling,
 typed configuration, structured logging, reproducible synthetic demo data,
 canonical transaction and statement contracts, safe CSV preview and mapping,
 transaction normalisation, conservative duplicate/overlap detection, a migrated
-local SQLite persistence layer, atomic confirmed CSV imports, and review-only
-embedded-text and scanned-PDF extraction, plus statement reconciliation and
-explicit PDF review contracts, verified balance snapshots, and a conservative
+local SQLite persistence layer, atomic confirmed CSV imports, deterministic
+embedded-text PDF table/spatial reconstruction, statement reconciliation, explicit
+PDF review contracts, and atomic approved digital-PDF persistence, plus verified
+balance snapshots and a conservative
 financial-data freshness assessment, plus user-confirmed financial-role
 suggestions for transfers, refunds, and reimbursements, and deterministic
 coverage-aware cash-flow analytics, and explainable deterministic transaction
@@ -45,15 +51,19 @@ coverage-gated Isolation Forest now identify unusual transactions without claimi
 fraud. A loopback-only FastAPI boundary now exposes profile/account setup, safe
 statement preview and confirmation, verified transactions, categorisation and
 financial-role review, analytics, recurrence, forecasting, anomaly detection,
-budgets, goals, scenarios, data freshness, and model information. PDF persistence
-remains absent. The Streamlit frontend now provides local profile and account setup
-plus review-gated CSV, digital-PDF, and scanned-PDF workflows over its typed API
+budgets, goals, scenarios, data freshness, and model information. The current PDF
+HTTP route still returns an in-memory approval; connecting it to the new persistence
+service belongs to the next interface checkpoint. The Streamlit frontend currently
+provides local profile and account setup plus its existing review-gated CSV,
+digital-PDF, and scanned-PDF workflows over its typed API
 client. It also provides verified-transaction search and corrections, explicit
 role/duplicate review, and coverage-aware cash-flow dashboards. Forecast/planning
 screens now add recurring review, uncertainty-aware forecasts, budgets, goals,
 safe-spending estimates, isolated scenarios, anomaly feedback, and aggregate model
-evaluation. PDF persistence and production model lifecycle management are not
-implemented yet. The application is now packaged as one local Docker image with
+evaluation. The normal Version 1 interface will be reduced to CSV and digital PDF in
+the next checkpoint; the current scanned-PDF control is a legacy interface, not a new
+support claim. Production model lifecycle management is not implemented yet. The
+application is now packaged as one local Docker image with
 separate FastAPI and Streamlit services, persistent private SQLite/model volumes,
 bundled Tesseract OCR, and read-only GitHub Actions quality and image-build gates.
 
@@ -70,10 +80,10 @@ and model limitations visible.
 The application is a Python modular monolith:
 
 ```text
-CSV, digital PDF, scanned PDF, and synthetic demo data
+CSV, embedded-text digital PDF, and synthetic demo data
                        |
                        v
-        Source extraction and user confirmation
+   Source extraction, reconciliation, and confirmation
                        |
                        v
           Validation and normalisation
@@ -115,13 +125,13 @@ pages.
   stored with the import. Accepted unique rows with a running balance also
   create dated balance snapshots, and an unexpected failure rolls everything
   back.
-- Digital PDFs downloaded from online banking can now be validated and parsed
-  in memory using embedded text, recognised tables, or a conservative generic
-  fallback. Candidates retain their source page and require review; no PDF row
-  is persisted yet.
-- Camera-captured or scanned PDFs can now be rendered and processed with local
-  Tesseract OCR. Raw recognised lines, page and line confidence, rotation, and
-  preprocessing metadata are retained for review.
+- Digital PDFs downloaded from online banking can now be validated and parsed in
+  memory using embedded text, recognised tables, or deterministic spatial
+  reconstruction. Recognised headings can be mapped automatically; otherwise the
+  lower-level result requests an explicit date, description, amount/debit-credit,
+  and optional balance-column mapping. Unknown layouts fail safely rather than
+  guessing. This is generic layout handling, not verified compatibility with every
+  bank or statement version.
 - Every PDF produces a reviewable draft. The user must confirm the recognised
   dates, descriptions, amounts, and balances before transactions are imported.
   The shared review service calculates opening balance plus signed transactions
@@ -132,6 +142,13 @@ pages.
   to another account or currency or assign its category or financial role, and
   both approved and rejected rows keep their complete original extraction
   lineage.
+- Once every row and balance is approved, a digital PDF is persisted as one atomic
+  unit. The exact bytes are hash-bound, all accepted and rejected source rows retain
+  page/record provenance and approval evidence, exact duplicates are skipped,
+  probable duplicates stay outside verified calculations, statement coverage and
+  balance snapshots are written together, and dependent results are invalidated.
+  Persistence fails closed unless opening-to-closing arithmetic and any supplied
+  running-balance sequence reconcile.
 - Opening and closing balance evidence retains the raw amount text, exact PDF
   hash and source adapter, page and line, extraction provenance, and OCR
   confidence where applicable. Confirmed or corrected balances remain in the
@@ -139,7 +156,7 @@ pages.
   unavailable. The statement period is also confirmed or corrected and retained,
   so a later balance snapshot can use the actual statement boundary instead of a
   guessed last-transaction date.
-- All three input paths converge on the same canonical transaction contracts;
+- CSV and digital-PDF paths converge on the same canonical transaction contracts;
   PDFs are not trusted merely because they can be converted to tabular text.
 
 ### Implemented balance and freshness boundary
@@ -271,10 +288,12 @@ feedback. The separate local registry owns database model metadata and explicit
 active-model selection.
 
 The Streamlit import workspace calls the CSV preview, confirmation, and persistence
-services through the typed local API. Text-based and scanned-PDF preview extraction
-use the same interface, while the shared PDF correction and confirmation boundary
-still returns only an in-memory approval. It does not currently write an approved or
-rejected PDF row to the database.
+services through the typed local API. The backend now also owns a strict atomic
+digital-PDF persistence service, but the current HTTP PDF confirmation route and
+Streamlit page still stop at an in-memory approval. The next interface checkpoint
+will connect that service, expose generic spatial mapping, recommend CSV as the
+stable default, and hide the legacy scanned-PDF control while retaining internal OCR
+regression coverage.
 
 ## Development setup
 
@@ -282,7 +301,8 @@ Prerequisites:
 
 - Python 3.12
 - [`uv`](https://docs.astral.sh/uv/)
-- Tesseract OCR on `PATH` for scanned or camera-captured PDF extraction
+- Tesseract OCR on `PATH` only when exercising the internal scanned-PDF regression
+  path
 
 On macOS, install the local OCR executable with:
 
@@ -354,6 +374,40 @@ make demo-data
 Generated files are written under `data/demo/generated/` and are intentionally
 ignored because they can be reproduced from source. Run the CLI with `--help`
 to select a profile, date range, seed, output directory, or CSV layout.
+
+Run the complete synthetic digital-PDF backend pipeline in its default
+oldest-first source order:
+
+```bash
+make demo-pdf-import
+```
+
+Exercise the equally supported newest-first statement order with:
+
+```bash
+uv run python scripts/demo_digital_pdf_import.py --order newest-first
+```
+
+Both commands build a fictional embedded-text PDF in memory, reconstruct and review
+two rows, reconcile an opening balance of £100.00 to a closing balance of £127.50,
+persist two raw rows and two verified transactions, expose two transactions to
+analytics with two financial roles still pending, and remove the temporary database.
+The output ends with these aggregate facts (the `source_order` reflects the selected
+command):
+
+```text
+digital_pdf_demo=passed
+source_order=oldest-first
+spatial_state=ready
+review_rows=2
+reconciliation=reconciled
+persisted_raw_rows=2
+verified_transactions=2
+analytics_transactions=2
+financial_roles_pending=2
+imported_transactions=2
+temporary_database_removed=true
+```
 
 Prepare a fully labelled, isolated student database for manual dashboard testing:
 
@@ -481,9 +535,13 @@ The implementation was delivered incrementally. The project foundation,
 quality tooling, typed settings, structured logging, privacy-safe synthetic
 data, canonical data contracts, CSV preview/mapping, transaction cleaning,
 duplicate/statement-overlap detection, and SQLite persistence are configured.
-Confirmed CSV imports, text-PDF extraction, and local scanned-PDF OCR are
-implemented. Statement balance reconciliation and targeted PDF review are also
-implemented. Verified balance tracking and financial-data freshness assessment
+Confirmed CSV imports, embedded-text PDF table/spatial reconstruction, statement
+balance reconciliation, targeted PDF review, and strict atomic approved digital-PDF
+persistence are implemented. The generic PDF path does not claim named-bank or
+universal layout compatibility. The existing OCR backend remains available for
+internal regression testing, while removal of scanned-PDF controls from the normal
+interface belongs to the next checkpoint. Verified balance tracking and
+financial-data freshness assessment
 are implemented as Python service boundaries. Conservative financial-role
 suggestions, explicit user decisions, and role-change audit history are also
 implemented. Coverage-aware cash-flow analytics and gap-preserving balance
@@ -511,13 +569,15 @@ loopback-only FastAPI application now exposes profile/account setup, CSV/PDF rev
 confirmed CSV imports, verified transactions, categorisation and financial-role
 decisions, coverage-aware analytics, recurrence, forecasting, anomaly detection,
 budgets, goals, scenario comparisons, derived-data freshness, and model information
-with bounded pagination and generated OpenAPI documentation. PDF approval is still
-returned only in memory. Streamlit navigation, its typed API client, home/status,
+with bounded pagination and generated OpenAPI documentation. Its current PDF route
+still returns approval only in memory even though the lower-level persistence service
+now exists. Streamlit navigation, its typed API client, home/status,
 data-minimised session state, profile/account setup, and review-gated CSV/PDF import
 are now implemented. Transaction review and the first coverage-aware dashboard are
 also implemented. The forecast and planning interface is now implemented. Synthetic
-cross-boundary CSV/forecast and OCR/reconciliation tests now harden privacy, security,
-and ingestion failure behaviour; PDF approval remains non-persistent by design.
+cross-boundary CSV/forecast, OCR/reconciliation, and digital-PDF persistence tests now
+harden privacy, security, and ingestion failure behaviour. Current transport/UI PDF
+approval remains non-persistent until the next checkpoint wires it to the service.
 Reproducible local containers now package the API, interface, SQLite storage, model
 storage, and Tesseract without introducing a remote service. GitHub Actions repeats
 the locked quality, coverage, migration, image, import, and OCR build checks. The
@@ -528,11 +588,12 @@ synthetic screenshot review, and final pull-request review.
 
 ## Future roadmap
 
-Post-Version 1 work may add atomic PDF persistence, broader bank-layout evaluation,
-additional currencies and account types, stronger user-managed retention and backup
-controls, accessibility testing, and production-grade authentication/TLS only if a
-remote deployment is explicitly approved. Better models remain candidates until they
-beat the documented baselines on leakage-safe evidence.
+Future work may connect the current API/UI to atomic digital-PDF persistence, evaluate
+specific bank layouts only when suitable privacy-safe evidence exists, add additional
+currencies and account types, strengthen user-managed retention and backup controls,
+test accessibility, and add production-grade authentication/TLS only if a remote
+deployment is explicitly approved. Better models remain candidates until they beat
+the documented baselines on leakage-safe evidence.
 
 No feature listed here should be considered available until its implementation
 and evaluation are present in the repository.

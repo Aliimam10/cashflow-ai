@@ -17,7 +17,11 @@ from cashflow_ai.imports import (
     calculate_file_hash,
     extract_text_pdf,
 )
-from cashflow_ai.imports.text_pdf import _rows_from_tables, _rows_from_text
+from cashflow_ai.imports.text_pdf import (
+    _rows_from_tables,
+    _rows_from_text,
+    _transaction_signals,
+)
 from cashflow_ai.schemas import (
     ExtractionMethod,
     PdfExtractionLayout,
@@ -276,6 +280,11 @@ def test_table_and_text_row_cleanup_handles_unsupported_structures() -> None:
     )
     assert len(text_rows) == 1
     assert text_rows[0].values[1] == "VALID"
+
+
+def test_row_accounting_treats_dated_content_without_money_as_unresolved() -> None:
+    assert _transaction_signals("01/08/2026 possible source row")
+    assert not _transaction_signals("01/08/2026")
 
 
 @pytest.mark.parametrize(
