@@ -260,10 +260,16 @@ tests assert that keeping creates verified evidence, rejecting preserves raw sou
 values, suggestions remain advisory, unknown coverage is visibly distinct, and
 application-managed session state contains no financial response data.
 
+The digital-PDF interface checkpoint adds route and UI coverage for automatic ready,
+file-bound mapping-required, and unsupported-layout results; exact-file atomic
+confirmation; duplicate/coverage summaries; unconfirmed CSV download generation; and
+the absence of OCR controls and routes from normal UI/OpenAPI surfaces. Existing
+internal OCR extraction, review, correction, and reconciliation tests continue to
+pass.
+
 The manual verification starts a migrated SQLite database, FastAPI, and Streamlit on
-loopback. It creates fictional metadata, persistently imports a generated CSV,
-approves a generated digital PDF without claiming persistence, and exercises the
-local OCR review path when Tesseract is installed. This establishes the tested
-workflow for the supported synthetic layouts; it does not establish universal
-bank-statement compatibility, browser security, accessibility conformance,
-authentication, or forecast quality.
+loopback. It creates fictional metadata, persistently imports a generated CSV or
+digital PDF, and exercises a deliberately headerless fictional PDF through explicit
+column mapping. This establishes the tested workflow for the supported synthetic
+layouts; it does not establish universal bank-statement compatibility, browser
+security, accessibility conformance, authentication, or forecast quality.

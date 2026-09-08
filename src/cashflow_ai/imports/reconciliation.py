@@ -443,26 +443,21 @@ def _validate_protected_correction(
 
 
 def _confirmed_statement_coverage(
-    review: StatementReview,
     approval: StatementApproval,
-) -> StatementCoverage | None:
+) -> StatementCoverage:
     confirmed = approval.confirmed_statement_coverage
-    if confirmed is None and (
-        review.statement_coverage is not None or review.balance_evidence
-    ):
+    if confirmed is None:
         raise StatementReviewError(
             StatementReviewErrorCode.COVERAGE_UNCONFIRMED,
-            "confirm or correct the statement period before approving balances",
+            "confirm or correct the statement period before approving a PDF import",
         )
     return confirmed
 
 
 def _validate_transactions_within_coverage(
-    coverage: StatementCoverage | None,
+    coverage: StatementCoverage,
     rows: list[ApprovedReviewRow],
 ) -> None:
-    if coverage is None:
-        return
     for row in rows:
         transaction_date = row.transaction.transaction_date
         outside_bounds = (
@@ -542,7 +537,7 @@ def approve_statement_review(
         )
 
     decisions = _reviews_by_fingerprint(review, approval)
-    confirmed_coverage = _confirmed_statement_coverage(review, approval)
+    confirmed_coverage = _confirmed_statement_coverage(approval)
     confirmed_balances = _confirmed_balances(review, approval)
     approved_rows: list[ApprovedReviewRow] = []
     rejected_rows: list[StatementReviewRow] = []

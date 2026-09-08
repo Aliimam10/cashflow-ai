@@ -166,6 +166,8 @@ def test_csv_row_preserves_originals_and_cleans_a_signed_amount() -> None:
         ("04-07-2026", date(2026, 7, 4)),
         ("04 Jul 2026", date(2026, 7, 4)),
         ("04 July 2026", date(2026, 7, 4)),
+        ("04 Jul 26", date(2026, 7, 4)),
+        ("04 July 26", date(2026, 7, 4)),
     ],
 )
 def test_supported_iso_and_uk_dates(date_text: str, expected: date) -> None:
@@ -178,6 +180,13 @@ def test_supported_iso_and_uk_dates(date_text: str, expected: date) -> None:
 
     assert transaction.draft.transaction_date == expected
     assert transaction.draft.posting_date is None
+
+
+def test_ambiguous_twentieth_century_short_year_is_rejected() -> None:
+    with pytest.raises(TransactionNormalisationError) as error:
+        normalise_direct(original_values(transaction_date_text="04 Jul 99"))
+
+    assert error.value.code is NormalisationErrorCode.INVALID_DATE
 
 
 def test_invalid_date_is_rejected() -> None:

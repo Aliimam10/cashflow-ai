@@ -36,6 +36,29 @@ def _digital_pdf() -> bytes:
     return _finish_pdf(document)
 
 
+def _mapping_pdf() -> bytes:
+    """Build a fictional headerless debit/credit layout for manual mapping."""
+    document = pymupdf.open()  # type: ignore[no-untyped-call]
+    page = document.new_page(width=595, height=842)
+    page.insert_text((35, 35), "Fictional mapping statement", fontsize=10)
+    page.insert_text(
+        (35, 55),
+        "Statement period: 01 August 2026 to 31 August 2026",
+        fontsize=9,
+    )
+    page.insert_text((35, 72), "Opening balance: GBP 1000.00", fontsize=9)
+    positions = (35.0, 145.0, 340.0, 410.0, 485.0)
+    rows = (
+        ("01/08/2026", "SYNTHETIC RENT", "-400.00", "600.00", "1.00"),
+        ("15/08/2026", "SYNTHETIC PAY", "+1000.00", "1600.00", "2.00"),
+    )
+    for row_index, row in enumerate(rows):
+        for value, x in zip(row, positions, strict=True):
+            page.insert_text((x, 110 + row_index * 25), value, fontsize=9)
+    page.insert_text((35, 180), "Closing balance: GBP 1600.00", fontsize=9)
+    return _finish_pdf(document)
+
+
 def _scanned_pdf() -> bytes:
     image = Image.new("RGB", (1800, 1200), "white")
     drawing = ImageDraw.Draw(image)
@@ -67,11 +90,12 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Write both fictional statement variants and report their paths."""
+    """Write fictional statement variants and report their paths."""
     output_directory = build_parser().parse_args(argv).output_dir
     output_directory.mkdir(parents=True, exist_ok=True)
     statements = {
         "fictional_digital_statement.pdf": _digital_pdf(),
+        "fictional_mapping_statement.pdf": _mapping_pdf(),
         "fictional_scanned_statement.pdf": _scanned_pdf(),
     }
     for filename, content in statements.items():

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 from collections.abc import Iterable, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
@@ -19,6 +20,13 @@ from cashflow_ai.imports.normalisation import (
     normalise_transaction,
     parse_amount_value,
     parse_date_value,
+)
+from cashflow_ai.imports.spatial_pdf import (
+    MappedSpatialRecord,
+    SpatialColumnMapping,
+    SpatialPdfError,
+    SpatialPdfState,
+    reconstruct_spatial_pdf,
 )
 from cashflow_ai.schemas.imports import (
     ExtractionMethod,
@@ -53,7 +61,11 @@ DEFAULT_MIN_EMBEDDED_CHARACTERS: Final = 20
 MAX_PAGE_TEXT_CHARACTERS: Final = 1_000_000
 PDF_EXTRACTOR_IDENTITY: Final = ParserIdentity(
     name="cashflow_text_pdf_extractor",
-    version="1.0.0",
+    version="1.1.0",
+)
+SPATIAL_PDF_EXTRACTOR_IDENTITY: Final = ParserIdentity(
+    name="cashflow_spatial_pdf_extractor",
+    version="1.1.0",
 )
 
 
@@ -103,6 +115,11 @@ class _ExtractedRow:
     method: ExtractionMethod
     columns: tuple[str, ...]
     values: tuple[str, ...]
+    source_columns: tuple[str, ...] = ()
+    source_values: tuple[str, ...] = ()
+
+
+type _TransactionSignal = tuple[int, str, tuple[str, ...]]
 
 
 _HEADER_ALIASES: Final[dict[str, frozenset[str]]] = {
@@ -128,9 +145,21 @@ _HEADER_ALIASES: Final[dict[str, frozenset[str]]] = {
     "transaction_type": frozenset({"transaction type", "type"}),
 }
 _PAGE_NUMBER = re.compile(r"^(?:page\s+)?\d+(?:\s+(?:of|/)\s*\d+)?$", re.I)
+_PAGINATION_SUFFIX = re.compile(
+    r"^(?:page\s+)?(?P<page>\d+)\s+(?:of|/)\s*(?P<total>\d+)$",
+    re.I,
+)
+_MAX_PAGINATION_HEADER_LINES: Final = 5
 _DATE_TOKEN = (
-    r"(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{4}|"
-    r"\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})"
+    r"(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-](?:\d{4}|\d{2})|"
+    r"\d{1,2}\s+[A-Za-z]{3,9}\s+(?:\d{4}|\d{2}))"
+)
+_LEADING_TRANSACTION_DATE = re.compile(rf"^\s*(?:{_DATE_TOKEN})\b", re.I)
+_MONEY_SIGNAL = re.compile(
+    r"(?<![A-Za-z0-9])(?:GBP\s*|£\s*)?[+-]?(?:\(\s*)?"
+    r"\d+(?:[ ,]\d{3})*(?:[.,]\d{2})(?:\s*\))?"
+    r"(?:\s*(?:CR|DR))?(?![A-Za-z0-9])",
+    re.I,
 )
 _PERIOD_PATTERNS: Final = (
     re.compile(
@@ -373,8 +402,107 @@ def _rows_from_text(text: str, page_number: int) -> list[_ExtractedRow]:
     return rows
 
 
+def _normalise_signal_value(value: str) -> str:
+    return re.sub(r"\s+", "", value.casefold()).replace(",", "")
+
+
+def _transaction_signals(
+    text: str,
+    *,
+    page_number: int = 0,
+) -> Counter[_TransactionSignal]:
+    """Identify transaction-like lines without retaining them beyond extraction."""
+    signals: Counter[_TransactionSignal] = Counter()
+    for line in text.splitlines():
+        date_match = _LEADING_TRANSACTION_DATE.match(line)
+        if date_match is None:
+            continue
+        remainder = line[date_match.end() :]
+        if not any(character.isalnum() for character in remainder):
+            continue
+        amounts = tuple(
+            sorted(
+                _normalise_signal_value(match.group())
+                for match in _MONEY_SIGNAL.finditer(line, pos=date_match.end())
+            )
+        )
+        signals[
+            (page_number, _normalise_signal_value(date_match.group()), amounts)
+        ] += 1
+    return signals
+
+
+def _table_transaction_signals(
+    tables: Sequence[Sequence[Sequence[str | None]]],
+    *,
+    page_number: int,
+) -> Counter[_TransactionSignal]:
+    """Identify transaction-like rows across tables, including unmapped ones."""
+    signals: Counter[_TransactionSignal] = Counter()
+    for table in tables:
+        for row in table:
+            signals.update(
+                _transaction_signals(
+                    " ".join(_clean_cell(cell) for cell in row),
+                    page_number=page_number,
+                )
+            )
+    return signals
+
+
+def _proven_pagination_signals(
+    page_texts: tuple[str, ...],
+) -> Counter[_TransactionSignal]:
+    """Identify a repeated, page-ordered header date plus pagination bundle."""
+    if len(page_texts) < 2:
+        return Counter()
+    signals: list[_TransactionSignal] = []
+    page_dates: set[str] = set()
+    for page_number, text in enumerate(page_texts, start=1):
+        matches: list[_TransactionSignal] = []
+        nonempty_lines = tuple(line for line in text.splitlines() if line.strip())
+        for line in nonempty_lines[:_MAX_PAGINATION_HEADER_LINES]:
+            date_match = _LEADING_TRANSACTION_DATE.match(line)
+            if date_match is None:
+                continue
+            suffix = _PAGINATION_SUFFIX.fullmatch(line[date_match.end() :].strip())
+            if (
+                suffix is None
+                or int(suffix.group("page")) != page_number
+                or int(suffix.group("total")) != len(page_texts)
+            ):
+                continue
+            date_value = _normalise_signal_value(date_match.group())
+            matches.append((page_number, date_value, ()))
+            page_dates.add(date_value)
+        if len(matches) != 1:
+            return Counter()
+        signals.extend(matches)
+    if len(page_dates) != 1:
+        return Counter()
+    return Counter(signals)
+
+
+def _accounted_transaction_signals(
+    rows: Sequence[_ExtractedRow],
+) -> Counter[_TransactionSignal]:
+    """Identify transaction signals represented by returned source rows."""
+    signals: Counter[_TransactionSignal] = Counter()
+    for row in rows:
+        values = row.source_values or row.values
+        signals.update(
+            _transaction_signals(
+                " ".join(value.replace("\n", " ") for value in values),
+                page_number=row.page_number,
+            )
+        )
+    return signals
+
+
 def _mapped_original(row: _ExtractedRow) -> OriginalTransactionValues:
     mapping = cast(dict[str, int], _header_mapping(row.columns))
+    source_columns = row.source_columns or row.columns
+    source_values = row.source_values or row.values
 
     def value(target: str) -> str | None:
         extracted = _cell(row.values, mapping, target)
@@ -393,7 +521,7 @@ def _mapped_original(row: _ExtractedRow) -> OriginalTransactionValues:
         transaction_type_text=value("transaction_type"),
         raw_fields=tuple(
             SourceFieldValue(column=column, value=value)
-            for column, value in zip(row.columns, row.values, strict=True)
+            for column, value in zip(source_columns, source_values, strict=True)
         ),
     )
 
@@ -404,6 +532,7 @@ def _candidate_from_row(
     file_hash: str,
     account_id: str,
     account_currency: Currency,
+    parser: ParserIdentity = PDF_EXTRACTOR_IDENTITY,
 ) -> PdfTransactionCandidate:
     original = _mapped_original(row)
     identity = SourceRecordIdentity(
@@ -421,7 +550,7 @@ def _candidate_from_row(
             account_id=account_id,
             account_currency=account_currency,
             source_identity=identity,
-            parser=PDF_EXTRACTOR_IDENTITY,
+            parser=parser,
         )
         draft = normalised.draft
         canonical_fingerprint = normalised.canonical_fingerprint
@@ -442,7 +571,7 @@ def _candidate_from_row(
             source_type=SourceType.DIGITAL_PDF,
             method=row.method,
             page_number=row.page_number,
-            parser=PDF_EXTRACTOR_IDENTITY,
+            parser=parser,
         ),
         issues=issues,
         review_status=ReviewStatus.NEEDS_REVIEW,
@@ -576,11 +705,13 @@ def _extract_rows_and_pages(
     tuple[PdfPageExtraction, ...],
     frozenset[PdfExtractionLayout],
     tuple[ImportIssue, ...],
+    Counter[_TransactionSignal],
 ]:
     all_rows: list[_ExtractedRow] = []
     pages: list[PdfPageExtraction] = []
     layouts: set[PdfExtractionLayout] = set()
     issues: list[ImportIssue] = []
+    transaction_signals: Counter[_TransactionSignal] = Counter()
     try:
         with pdfplumber.open(BytesIO(content)) as pdf:
             for page_number, (page, raw_text, character_count) in enumerate(
@@ -588,12 +719,17 @@ def _extract_rows_and_pages(
                 start=1,
             ):
                 tables = page.extract_tables()
+                layout_text = page.extract_text(layout=True) or raw_text
+                transaction_signals.update(
+                    _table_transaction_signals(tables, page_number=page_number)
+                    | _transaction_signals(layout_text, page_number=page_number)
+                    | _transaction_signals(raw_text, page_number=page_number)
+                )
                 table_rows = _rows_from_tables(tables, page_number)
                 if table_rows:
                     rows = table_rows
                     layouts.add(PdfExtractionLayout.TABLE)
                 else:
-                    layout_text = page.extract_text(layout=True) or raw_text
                     rows = _rows_from_text(layout_text, page_number)
                     if rows:
                         layouts.add(PdfExtractionLayout.GENERIC_TEXT)
@@ -606,7 +742,7 @@ def _extract_rows_and_pages(
                         tables_found=len(tables),
                     )
                 )
-    except Exception as error:
+    except Exception:
         issues.append(
             _issue(
                 "table_extraction_failed",
@@ -616,11 +752,15 @@ def _extract_rows_and_pages(
         all_rows.clear()
         pages.clear()
         layouts.clear()
+        transaction_signals.clear()
         for page_number, (raw_text, character_count) in enumerate(
             zip(page_texts, character_counts, strict=True),
             start=1,
         ):
             rows = _rows_from_text(raw_text, page_number)
+            transaction_signals.update(
+                _transaction_signals(raw_text, page_number=page_number)
+            )
             all_rows.extend(rows)
             if rows:
                 layouts.add(PdfExtractionLayout.GENERIC_TEXT)
@@ -632,12 +772,6 @@ def _extract_rows_and_pages(
                     tables_found=0,
                 )
             )
-        if not all_rows:
-            raise PdfImportError(
-                PdfImportErrorCode.NO_TRANSACTIONS,
-                "no supported transaction rows were found in embedded PDF text",
-            ) from error
-
     if PdfExtractionLayout.GENERIC_TEXT in layouts:
         issues.append(
             _issue(
@@ -645,7 +779,105 @@ def _extract_rows_and_pages(
                 "one or more pages used a generic text layout and require close review",
             )
         )
-    return tuple(all_rows), tuple(pages), frozenset(layouts), tuple(issues)
+    transaction_signals -= _proven_pagination_signals(page_texts)
+    return (
+        tuple(all_rows),
+        tuple(pages),
+        frozenset(layouts),
+        tuple(issues),
+        transaction_signals,
+    )
+
+
+def _row_from_spatial(record: MappedSpatialRecord) -> _ExtractedRow:
+    """Project a spatial record onto the existing source-value boundary."""
+    if record.signed_amount_text is not None:
+        columns = ["Date", "Description", "Amount"]
+        values = [
+            record.transaction_date_text,
+            record.description_text,
+            record.signed_amount_text,
+        ]
+    else:
+        columns = ["Date", "Description", "Debit", "Credit"]
+        values = [
+            record.transaction_date_text,
+            record.description_text,
+            record.debit_amount_text or "",
+            record.credit_amount_text or "",
+        ]
+    if record.running_balance_text is not None:
+        columns.append("Balance")
+        values.append(record.running_balance_text)
+    return _ExtractedRow(
+        page_number=record.source.page_number,
+        page_record_number=record.source.page_record_number,
+        method=ExtractionMethod.PDF_TEXT,
+        columns=tuple(columns),
+        values=tuple(values),
+        source_columns=tuple(cell.column_id for cell in record.source.cells),
+        source_values=tuple(cell.text for cell in record.source.cells),
+    )
+
+
+def _spatial_rows(
+    content: bytes,
+    *,
+    mapping: SpatialColumnMapping | None,
+    max_pages: int,
+    min_embedded_characters: int,
+    expected_transaction_signals: Counter[_TransactionSignal],
+) -> tuple[_ExtractedRow, ...]:
+    """Return only complete, explicitly mapped spatial rows or fail closed."""
+    try:
+        result = reconstruct_spatial_pdf(
+            content,
+            mapping=mapping,
+            max_pages=max_pages,
+            min_embedded_characters=min_embedded_characters,
+        )
+    except SpatialPdfError as error:
+        raise PdfImportError(
+            PdfImportErrorCode.NO_TRANSACTIONS,
+            "the embedded PDF layout could not be reconstructed safely",
+        ) from error
+    if result.state is SpatialPdfState.MAPPING_REQUIRED:
+        raise PdfImportError(
+            PdfImportErrorCode.NO_TRANSACTIONS,
+            "the embedded PDF layout requires explicit column mapping",
+        )
+    if result.state is not SpatialPdfState.READY:
+        raise PdfImportError(
+            PdfImportErrorCode.NO_TRANSACTIONS,
+            "the embedded PDF layout is unsupported; use a CSV export instead",
+        )
+    if not result.records:
+        raise PdfImportError(
+            PdfImportErrorCode.NO_TRANSACTIONS,
+            "the embedded PDF layout contained no complete transaction rows",
+        )
+    spatial_signals: Counter[_TransactionSignal] = Counter()
+    for record in result.records:
+        amounts = tuple(
+            sorted(
+                _normalise_signal_value(match.group())
+                for cell in record.source.cells
+                for match in _MONEY_SIGNAL.finditer(cell.text.replace("\n", " "))
+            )
+        )
+        spatial_signals[
+            (
+                record.source.page_number,
+                _normalise_signal_value(record.transaction_date_text),
+                amounts,
+            )
+        ] += 1
+    if expected_transaction_signals - spatial_signals:
+        raise PdfImportError(
+            PdfImportErrorCode.NO_TRANSACTIONS,
+            "not every transaction-like PDF source line could be accounted for",
+        )
+    return tuple(_row_from_spatial(record) for record in result.records)
 
 
 def extract_text_pdf(
@@ -658,6 +890,7 @@ def extract_text_pdf(
     max_bytes: int = DEFAULT_MAX_PDF_BYTES,
     max_pages: int = DEFAULT_MAX_PDF_PAGES,
     min_embedded_characters: int = DEFAULT_MIN_EMBEDDED_CHARACTERS,
+    spatial_mapping: SpatialColumnMapping | None = None,
 ) -> TextPdfPreview:
     """Validate and extract a review-only preview from a digital bank PDF."""
     if max_bytes < 1 or max_pages < 1 or min_embedded_characters < 1:
@@ -694,15 +927,44 @@ def extract_text_pdf(
         max_pages=max_pages,
         min_embedded_characters=min_embedded_characters,
     )
-    rows, pages, layouts, extraction_issues = _extract_rows_and_pages(
-        content,
-        page_texts,
-        character_counts,
+    rows, pages, layouts, extraction_issues, transaction_signals = (
+        _extract_rows_and_pages(
+            content,
+            page_texts,
+            character_counts,
+        )
     )
-    if not rows:
-        raise PdfImportError(
-            PdfImportErrorCode.NO_TRANSACTIONS,
-            "no supported transaction rows were found in embedded PDF text",
+    accounted_transaction_signals = _accounted_transaction_signals(rows)
+    incomplete_row_accounting = bool(
+        transaction_signals - accounted_transaction_signals
+    )
+    used_spatial_reconstruction = not rows or incomplete_row_accounting
+    if used_spatial_reconstruction:
+        rows = _spatial_rows(
+            content,
+            mapping=spatial_mapping,
+            max_pages=max_pages,
+            min_embedded_characters=min_embedded_characters,
+            expected_transaction_signals=transaction_signals,
+        )
+        layouts = frozenset({PdfExtractionLayout.GENERIC_TEXT})
+        extraction_issues = (
+            *extraction_issues,
+            _issue(
+                "spatial_reconstruction_fallback",
+                "positioned PDF text was reconstructed and requires close review",
+            ),
+            *(
+                (
+                    _issue(
+                        "source_row_accounting_fallback",
+                        "standard extraction omitted transaction-like source lines; "
+                        "the complete document was reconstructed instead",
+                    ),
+                )
+                if incomplete_row_accounting
+                else ()
+            ),
         )
 
     file_hash = calculate_file_hash(content)
@@ -712,6 +974,11 @@ def extract_text_pdf(
             file_hash=file_hash,
             account_id=account_id.strip(),
             account_currency=account_currency,
+            parser=(
+                SPATIAL_PDF_EXTRACTOR_IDENTITY
+                if used_spatial_reconstruction
+                else PDF_EXTRACTOR_IDENTITY
+            ),
         )
         for row in rows
     )

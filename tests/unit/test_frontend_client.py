@@ -25,7 +25,6 @@ from cashflow_ai.schemas.analytics import AnalyticsScope, AnalyticsView
 from cashflow_ai.schemas.api import (
     AccountCreate,
     HealthResponse,
-    PdfSourceType,
     TransactionSearchRequest,
     UserProfileCreate,
 )
@@ -51,6 +50,7 @@ from cashflow_ai.schemas.hybrid_categorisation import (
     CategoryFeedbackAction,
 )
 from cashflow_ai.schemas.model_registry import ModelTask
+from cashflow_ai.schemas.pdf_api import DigitalPdfColumnMapping
 from cashflow_ai.schemas.reconciliation import StatementApproval
 from cashflow_ai.schemas.recurrence import RecurrenceReview, RecurrenceReviewAction
 from cashflow_ai.schemas.statements import (
@@ -59,6 +59,7 @@ from cashflow_ai.schemas.statements import (
     ImportContext,
     StatementCoverage,
 )
+from cashflow_ai.schemas.transactions import Currency
 
 
 class ExampleRequest(BaseModel):
@@ -229,22 +230,22 @@ def test_client_supports_onboarding_and_review_gated_upload_contracts() -> None:
         "requires_debit_credit_sign_confirmation": False,
         "requires_statement_approval": True,
     }
-    approved = {
+    review_result = {
+        "state": "ready",
         "file_hash": "a" * 64,
-        "source_type": "digital_pdf",
-        "approved_at": "2026-08-02T12:00:00Z",
-        "date_format": None,
-        "sign_convention": None,
-        "statement_coverage": None,
-        "coverage_was_edited": False,
-        "balances": None,
-        "balance_evidence": [],
-        "balance_was_edited": False,
-        "document_issues": [],
-        "rows": [],
-        "rejected_rows": [],
-        "rejected_source_fingerprints": [],
-        "reconciliation": review["reconciliation"],
+        "reason_code": "review_ready",
+        "guidance": "Review the fictional extraction.",
+        "review": review,
+    }
+    pdf_summary = {
+        "import_batch_id": "synthetic-pdf-batch",
+        "file_hash": "a" * 64,
+        "rows_read": 1,
+        "imported_transactions": 1,
+        "exact_duplicates_skipped": 0,
+        "probable_duplicates": 0,
+        "rejected_rows": 0,
+        "coverage": {"previous_statement_count": 0},
     }
 
     def handler(request: httpx2.Request) -> httpx2.Response:
@@ -309,9 +310,9 @@ def test_client_supports_onboarding_and_review_gated_upload_contracts() -> None:
                 },
             )
         if path.endswith("/pdf/review"):
-            return httpx2.Response(200, json=review)
+            return httpx2.Response(200, json=review_result)
         assert path.endswith("/pdf/confirm")
-        return httpx2.Response(200, json=approved)
+        return httpx2.Response(200, json=pdf_summary)
 
     document = UploadedDocument(
         filename="synthetic.csv",
@@ -360,24 +361,29 @@ def test_client_supports_onboarding_and_review_gated_upload_contracts() -> None:
         content=b"%PDF-synthetic",
         mime_type="application/pdf",
     )
+    pdf_mapping = DigitalPdfColumnMapping(
+        file_hash="a" * 64,
+        structure_digest="c" * 64,
+        transaction_date="column_1",
+        description="column_2",
+        signed_amount="column_3",
+    )
     prepared = client.prepare_pdf_review(
         pdf_document,
-        source_type=PdfSourceType.DIGITAL_PDF,
         account_id="synthetic-account",
         account_currency=created_account.currency,
-        ocr_confidence_threshold=0.85,
+        mapping=pdf_mapping,
     )
     confirmed = client.confirm_pdf(
         pdf_document,
-        source_type=PdfSourceType.DIGITAL_PDF,
         account_id="synthetic-account",
         account_currency=created_account.currency,
-        ocr_confidence_threshold=0.85,
         approval=StatementApproval(
             file_hash="a" * 64,
             approved_at=datetime(2026, 8, 2, tzinfo=UTC),
             statement_approved=True,
         ),
+        mapping=pdf_mapping,
     )
     client.close()
 
@@ -386,13 +392,48 @@ def test_client_supports_onboarding_and_review_gated_upload_contracts() -> None:
     assert ocr.available is True
     assert preview.rows[0].values[1] == "SYNTHETIC SHOP"
     assert summary.new_transactions == 1
-    assert prepared.rows[0].working_draft.amount == Decimal("-10.00")
-    assert confirmed.rows == ()
+    assert prepared.review is not None
+    assert prepared.review.rows[0].working_draft.amount == Decimal("-10.00")
+    assert confirmed.imported_transactions == 1
     assert all(
         "multipart/form-data" in request.headers["content-type"]
         for request in requests[4:]
     )
     assert "SYNTHETIC SHOP" not in repr(document)
+
+
+def test_pdf_client_omits_optional_mapping_until_user_selects_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = ApiClient(
+        "http://127.0.0.1:8765",
+        transport=httpx2.MockTransport(
+            lambda request: httpx2.Response(500, request=request)
+        ),
+    )
+    request = MagicMock(return_value=MagicMock())
+    monkeypatch.setattr(client, "_request", request)
+    document = UploadedDocument("synthetic.pdf", b"%PDF", "application/pdf")
+    approval = StatementApproval(
+        file_hash="a" * 64,
+        approved_at=datetime(2026, 8, 2, tzinfo=UTC),
+        statement_approved=True,
+    )
+
+    client.prepare_pdf_review(
+        document,
+        account_id="synthetic-account",
+        account_currency=Currency.GBP,
+    )
+    client.confirm_pdf(
+        document,
+        account_id="synthetic-account",
+        account_currency=Currency.GBP,
+        approval=approval,
+    )
+
+    assert "mapping_json" not in request.call_args_list[0].kwargs["form"]
+    assert "mapping_json" not in request.call_args_list[1].kwargs["form"]
 
 
 def test_client_exposes_typed_transaction_review_and_dashboard_requests(

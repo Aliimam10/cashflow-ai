@@ -20,11 +20,12 @@ from cashflow_ai.frontend.import_workflow import (
     optional_money,
     optional_text,
     parse_gap_ranges,
+    pdf_mapping_rows,
+    pdf_review_csv_bytes,
     pdf_review_rows,
     suggested_column_index,
     suggested_csv_statement_period,
 )
-from cashflow_ai.schemas.api import PdfSourceType
 from cashflow_ai.schemas.csv_imports import (
     CsvColumnSuggestions,
     CsvEncoding,
@@ -45,6 +46,12 @@ from cashflow_ai.schemas.normalisation import (
     OriginalTransactionValues,
     SourceFieldValue,
     SourceRecordIdentity,
+)
+from cashflow_ai.schemas.pdf_api import (
+    DigitalPdfColumn,
+    DigitalPdfColumnRole,
+    DigitalPdfMappingPreview,
+    DigitalPdfMappingRow,
 )
 from cashflow_ai.schemas.reconciliation import (
     ReconciliationStatus,
@@ -264,15 +271,12 @@ def _csv_preview() -> CsvPreview:
     )
 
 
-def test_upload_kind_routes_only_pdfs_to_pdf_adapters() -> None:
+def test_upload_kind_exposes_only_csv_and_digital_pdf() -> None:
+    assert tuple(UploadKind) == (UploadKind.CSV, UploadKind.DIGITAL_PDF)
     assert UploadKind.CSV.extensions == ("csv",)
     assert UploadKind.CSV.mime_type == "text/csv"
     assert UploadKind.DIGITAL_PDF.extensions == ("pdf",)
     assert UploadKind.DIGITAL_PDF.mime_type == "application/pdf"
-    assert UploadKind.DIGITAL_PDF.pdf_source_type is PdfSourceType.DIGITAL_PDF
-    assert UploadKind.OCR_PDF.pdf_source_type is PdfSourceType.OCR_PDF
-    with pytest.raises(ValueError, match="do not have"):
-        _ = UploadKind.CSV.pdf_source_type
 
 
 def test_csv_statement_period_uses_full_file_suggestion_for_selected_column() -> None:
@@ -374,6 +378,53 @@ def test_pdf_table_uses_field_or_provenance_confidence() -> None:
     assert text_row["minimum confidence"] is None
     assert ocr_row["minimum confidence"] == 0.65
     assert ocr_row["review reasons"] == "low_ocr_confidence"
+
+
+def test_pdf_mapping_rows_and_unconfirmed_csv_retain_review_provenance() -> None:
+    preview = DigitalPdfMappingPreview(
+        file_hash=HASH_A,
+        structure_digest=HASH_B,
+        page_count=1,
+        columns=(
+            DigitalPdfColumn(
+                column_id="column_1",
+                header_text="Date",
+                role_hint=DigitalPdfColumnRole.TRANSACTION_DATE,
+            ),
+            DigitalPdfColumn(
+                column_id="column_2",
+                header_text="Details",
+                role_hint=DigitalPdfColumnRole.DESCRIPTION,
+            ),
+            DigitalPdfColumn(
+                column_id="column_3",
+                header_text="Amount",
+                role_hint=DigitalPdfColumnRole.SIGNED_AMOUNT,
+            ),
+        ),
+        sample_rows=(
+            DigitalPdfMappingRow(
+                page_number=1,
+                page_record_number=1,
+                values=("01/08/2026", "SYNTHETIC SHOP", "-10.00"),
+            ),
+        ),
+        total_rows=1,
+        truncated=False,
+    )
+
+    assert pdf_mapping_rows(preview) == (
+        {
+            "Page": 1,
+            "Row": 1,
+            "Date [column_1]": "01/08/2026",
+            "Details [column_2]": "SYNTHETIC SHOP",
+            "Amount [column_3]": "-10.00",
+        },
+    )
+    csv_bytes = pdf_review_csv_bytes(_review())
+    assert b"source_page,source_record,review_status" in csv_bytes
+    assert b"2026-08-01,,SYNTHETIC SHOP,-10.00,90.00,GBP,1,1,extracted" in csv_bytes
 
 
 @pytest.mark.parametrize(

@@ -16,11 +16,18 @@ from cashflow_ai import __version__
 from cashflow_ai.imports import (
     OcrEngine,
     PdfImportError,
+    PdfImportErrorCode,
     PytesseractOcrEngine,
+    SpatialColumnMapping,
+    SpatialPdfError,
+    SpatialPdfState,
     approve_statement_review,
+    calculate_file_hash,
     extract_ocr_pdf,
     extract_text_pdf,
+    persist_approved_pdf,
     prepare_statement_review,
+    reconstruct_spatial_pdf,
 )
 from cashflow_ai.invalidation import invalidate_derived_results_in_session
 from cashflow_ai.persistence.base import new_id, utc_now
@@ -70,7 +77,17 @@ from cashflow_ai.schemas.duplicates import (
 from cashflow_ai.schemas.imports import ReviewStatus, SourceType, VerificationStatus
 from cashflow_ai.schemas.invalidation import SourceDataChangeType
 from cashflow_ai.schemas.ocr_imports import OcrPdfPreview
+from cashflow_ai.schemas.pdf_api import (
+    DigitalPdfColumn,
+    DigitalPdfColumnMapping,
+    DigitalPdfColumnRole,
+    DigitalPdfMappingPreview,
+    DigitalPdfMappingRow,
+    DigitalPdfReviewResult,
+    DigitalPdfReviewState,
+)
 from cashflow_ai.schemas.pdf_imports import TextPdfPreview
+from cashflow_ai.schemas.pdf_persistence import PdfImportSummary
 from cashflow_ai.schemas.reconciliation import (
     ApprovedStatement,
     StatementApproval,
@@ -129,6 +146,9 @@ class ApiServiceErrorCode(StrEnum):
     DUPLICATE_CANDIDATE_UNAVAILABLE = "duplicate_candidate_unavailable"
     INVALID_DUPLICATE_REVIEW_TIME = "invalid_duplicate_review_time"
     INVALID_STORED_METADATA = "invalid_stored_metadata"
+    INVALID_PDF_MAPPING = "invalid_pdf_mapping"
+    PDF_MAPPING_CHANGED = "pdf_mapping_changed"
+    PDF_REVIEW_NOT_READY = "pdf_review_not_ready"
 
 
 class ApiServiceError(ValueError):
@@ -374,6 +394,237 @@ def preview_ocr_statement(
         account_id=account_id,
         account_currency=account_currency,
         engine=engine_factory(),
+    )
+
+
+_PDF_MAPPING_SAMPLE_LIMIT = 20
+
+
+def _mapping_preview(
+    content: bytes,
+    *,
+    file_hash: str,
+) -> DigitalPdfMappingPreview | None:
+    """Return bounded in-memory spatial evidence when a table can be mapped."""
+    result = reconstruct_spatial_pdf(content)
+    table = result.table
+    if table is None or not table.records:
+        return None
+    columns = tuple(
+        DigitalPdfColumn(
+            column_id=column.column_id,
+            header_text=column.header_text or column.column_id,
+            role_hint=(
+                None
+                if column.role_hint is None
+                else DigitalPdfColumnRole(column.role_hint.value)
+            ),
+        )
+        for column in table.columns
+    )
+    sample_records = table.records[:_PDF_MAPPING_SAMPLE_LIMIT]
+    return DigitalPdfMappingPreview(
+        file_hash=file_hash,
+        structure_digest=table.structure_digest,
+        page_count=table.page_count,
+        columns=columns,
+        sample_rows=tuple(
+            DigitalPdfMappingRow(
+                page_number=row.page_number,
+                page_record_number=row.page_record_number,
+                values=tuple(row.value(column.column_id) for column in table.columns),
+            )
+            for row in sample_records
+        ),
+        total_rows=len(table.records),
+        truncated=len(sample_records) < len(table.records),
+    )
+
+
+def _spatial_mapping_from_contract(
+    content: bytes,
+    mapping: DigitalPdfColumnMapping,
+) -> SpatialColumnMapping:
+    """Bind a client-selected mapping to the exact reconstructed PDF table."""
+    file_hash = calculate_file_hash(content)
+    if mapping.file_hash != file_hash:
+        raise ApiServiceError(
+            ApiServiceErrorCode.PDF_MAPPING_CHANGED,
+            "the PDF changed after its columns were reviewed",
+        )
+    try:
+        result = reconstruct_spatial_pdf(content)
+    except SpatialPdfError as error:
+        raise ApiServiceError(
+            ApiServiceErrorCode.INVALID_PDF_MAPPING,
+            "the selected PDF columns do not form a valid transaction mapping",
+        ) from error
+    table = result.table
+    if table is None or table.structure_digest != mapping.structure_digest:
+        raise ApiServiceError(
+            ApiServiceErrorCode.PDF_MAPPING_CHANGED,
+            "the PDF table changed after its columns were reviewed",
+        )
+    selected = {
+        value
+        for value in (
+            mapping.transaction_date,
+            mapping.description,
+            mapping.signed_amount,
+            mapping.debit_amount,
+            mapping.credit_amount,
+            mapping.running_balance,
+        )
+        if value is not None
+    }
+    if not selected.issubset({column.column_id for column in table.columns}):
+        raise ApiServiceError(
+            ApiServiceErrorCode.INVALID_PDF_MAPPING,
+            "the selected PDF mapping references an unavailable column",
+        )
+    return SpatialColumnMapping(
+        transaction_date=mapping.transaction_date,
+        description=mapping.description,
+        signed_amount=mapping.signed_amount,
+        debit_amount=mapping.debit_amount,
+        credit_amount=mapping.credit_amount,
+        running_balance=mapping.running_balance,
+    )
+
+
+def _unsupported_pdf_result(
+    *,
+    file_hash: str,
+    reason_code: str,
+) -> DigitalPdfReviewResult:
+    return DigitalPdfReviewResult(
+        state=DigitalPdfReviewState.UNSUPPORTED_LAYOUT,
+        file_hash=file_hash,
+        reason_code=reason_code,
+        guidance=(
+            "This digital PDF cannot be reconstructed safely. Download a CSV "
+            "export from the bank and import that instead."
+        ),
+        recommended_format="csv",
+    )
+
+
+def review_digital_pdf_statement(
+    factory: sessionmaker[Session],
+    content: bytes,
+    filename: str,
+    *,
+    mime_type: str,
+    account_id: str,
+    account_currency: Currency,
+    mapping: DigitalPdfColumnMapping | None = None,
+) -> DigitalPdfReviewResult:
+    """Return a ready review, bounded mapping prompt, or safe CSV fallback."""
+    _require_import_account(factory, account_id=account_id, currency=account_currency)
+    file_hash = calculate_file_hash(content)
+    spatial_mapping = (
+        None if mapping is None else _spatial_mapping_from_contract(content, mapping)
+    )
+    try:
+        preview = extract_text_pdf(
+            content,
+            filename,
+            mime_type=mime_type,
+            account_id=account_id,
+            account_currency=account_currency,
+            spatial_mapping=spatial_mapping,
+        )
+    except PdfImportError as error:
+        if error.code is PdfImportErrorCode.OCR_REQUIRED:
+            return _unsupported_pdf_result(
+                file_hash=file_hash,
+                reason_code="image_only_or_scanned_pdf",
+            )
+        if error.code is not PdfImportErrorCode.NO_TRANSACTIONS:
+            raise
+        try:
+            reconstruction = reconstruct_spatial_pdf(
+                content,
+                mapping=spatial_mapping,
+            )
+            mapping_preview = _mapping_preview(content, file_hash=file_hash)
+        except SpatialPdfError:
+            return _unsupported_pdf_result(
+                file_hash=file_hash,
+                reason_code="unsafe_spatial_reconstruction",
+            )
+        if (
+            reconstruction.state is SpatialPdfState.MAPPING_REQUIRED
+            and mapping_preview is not None
+        ):
+            return DigitalPdfReviewResult(
+                state=DigitalPdfReviewState.MAPPING_REQUIRED,
+                file_hash=file_hash,
+                reason_code=reconstruction.reason_code,
+                guidance=(
+                    "Match the reconstructed columns to transaction fields, then "
+                    "review the exact PDF again."
+                ),
+                mapping_preview=mapping_preview,
+            )
+        return _unsupported_pdf_result(
+            file_hash=file_hash,
+            reason_code=(
+                reconstruction.reason_code
+                if reconstruction.state is SpatialPdfState.UNSUPPORTED_LAYOUT
+                else "unsafe_transaction_row_accounting"
+            ),
+        )
+    review = prepare_statement_review(preview)
+    return DigitalPdfReviewResult(
+        state=DigitalPdfReviewState.READY,
+        file_hash=file_hash,
+        reason_code="review_ready",
+        guidance=(
+            "Review every extracted value, statement date, sign, coverage and "
+            "balance before confirming the import."
+        ),
+        review=review,
+    )
+
+
+def confirm_digital_pdf_statement(
+    factory: sessionmaker[Session],
+    content: bytes,
+    filename: str,
+    *,
+    mime_type: str,
+    account_id: str,
+    account_currency: Currency,
+    approval: StatementApproval,
+    mapping: DigitalPdfColumnMapping | None = None,
+) -> PdfImportSummary:
+    """Re-extract, approve and atomically persist one exact digital PDF."""
+    result = review_digital_pdf_statement(
+        factory,
+        content,
+        filename,
+        mime_type=mime_type,
+        account_id=account_id,
+        account_currency=account_currency,
+        mapping=mapping,
+    )
+    if result.state is not DigitalPdfReviewState.READY or result.review is None:
+        raise ApiServiceError(
+            ApiServiceErrorCode.PDF_REVIEW_NOT_READY,
+            "the digital PDF must reach a ready review state before confirmation",
+        )
+    approved = approve_statement_review(result.review, approval)
+    spatial_mapping = (
+        None if mapping is None else _spatial_mapping_from_contract(content, mapping)
+    )
+    return persist_approved_pdf(
+        factory,
+        content,
+        filename,
+        mime_type=mime_type,
+        statement=approved,
+        spatial_mapping=spatial_mapping,
     )
 
 

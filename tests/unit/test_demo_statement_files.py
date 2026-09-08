@@ -7,8 +7,15 @@ import sys
 from pathlib import Path
 
 import pymupdf
+import pytest
 
-from cashflow_ai.imports import extract_text_pdf
+from cashflow_ai.imports import (
+    PdfImportError,
+    PdfImportErrorCode,
+    SpatialPdfState,
+    extract_text_pdf,
+    reconstruct_spatial_pdf,
+)
 
 
 def test_demo_statement_generator_creates_digital_and_scanned_pdfs(
@@ -26,11 +33,14 @@ def test_demo_statement_generator_creates_digital_and_scanned_pdfs(
         text=True,
     )
     digital_path = tmp_path / "fictional_digital_statement.pdf"
+    mapping_path = tmp_path / "fictional_mapping_statement.pdf"
     scanned_path = tmp_path / "fictional_scanned_statement.pdf"
 
     assert digital_path.name in completed.stdout
+    assert mapping_path.name in completed.stdout
     assert scanned_path.name in completed.stdout
     assert digital_path.read_bytes().startswith(b"%PDF")
+    assert mapping_path.read_bytes().startswith(b"%PDF")
     assert scanned_path.read_bytes().startswith(b"%PDF")
 
     preview = extract_text_pdf(
@@ -42,6 +52,19 @@ def test_demo_statement_generator_creates_digital_and_scanned_pdfs(
     assert len(preview.candidates) == 2
     assert preview.statement_coverage is not None
     assert preview.statement_coverage.statement_start_date.isoformat() == "2026-08-01"
+
+    with pytest.raises(PdfImportError) as mapping_required:
+        extract_text_pdf(
+            mapping_path.read_bytes(),
+            filename=mapping_path.name,
+            mime_type="application/pdf",
+            account_id="synthetic-account",
+        )
+    assert mapping_required.value.code is PdfImportErrorCode.NO_TRANSACTIONS
+    assert (
+        reconstruct_spatial_pdf(mapping_path.read_bytes()).state
+        is SpatialPdfState.MAPPING_REQUIRED
+    )
 
     with pymupdf.open(  # type: ignore[no-untyped-call]
         stream=scanned_path.read_bytes(), filetype="pdf"

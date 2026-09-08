@@ -28,11 +28,20 @@ be data leakage. Existing forecast-model tests separately evaluate the advanced
 candidate with synthetic evidence that was genuinely available at each historical
 cutoff.
 
-PDF approval currently creates trusted in-memory rows, not a database import. This is
-an intentional atomicity and privacy boundary: balances, coverage, rejected rows, and
-raw lineage must eventually be persisted together. Until that unit of work exists,
-the integration test requires downstream analytics to report missing data rather
-than consume the OCR result. It must not be described as a persisted PDF import.
+The standard selectable-text digital-PDF route persists only through the atomic
+boundary that stores balances, coverage, rejected rows, and raw lineage together.
+The internal OCR regression flow deliberately ends with an in-memory approved result;
+it remains excluded from normal Version 1 support and downstream analytics. It must
+not be described as a persisted OCR import.
+
+Selectable-text PDF unit tests use fictional in-memory documents to reproduce
+accessibility labels embedded in transaction rows. They prove that complete repeated
+label bundles with stable geometry produce clean mapped fields while untouched cells
+retain the original labels. Missing, duplicated, shifted, partial, or mixed labelled
+rows must remain unresolved. Separate bridge tests exercise page-scoped
+cross-extractor accounting, including repeated signals, conflicting or omitted rows,
+and date text adjacent to pagination; ambiguous numeric text must never be silently
+discarded as a page number.
 
 ## Safeguard coverage map
 
@@ -51,6 +60,8 @@ than consume the OCR result. It must not be described as a persisted PDF import.
 | CSV/PDF size and render limits | `test_csv_errors_have_stable_http_statuses_and_no_body_echo`, `test_empty_oversized_unsigned_and_malformed_files_are_rejected`, and `test_encrypted_page_count_and_render_size_limits_are_enforced` |
 | Sensitive errors and logs | the scanned-PDF workflow, `test_request_validation_never_echoes_private_input`, `test_http_database_and_unexpected_errors_are_sanitised`, and logging field allow-list tests |
 | Temporary OCR cleanup | both the scanned-PDF workflow and `test_scanned_pdf_is_rendered_preprocessed_and_converted_to_candidates` |
+| Accessibility-labelled PDF rows | fictional cases in `test_spatial_pdf.py` prove stable complete bundles are projected without changing raw cells and inconsistent bundles fail closed |
+| Page-scoped PDF row accounting | `test_text_pdf_spatial_bridge.py` and `test_text_pdf_extraction.py` cover omitted/conflicting signals and date-plus-pagination artefacts without accepting row counts alone |
 
 ## Manual verification
 
@@ -79,6 +90,16 @@ make check
 make pre-commit
 make check-import
 ```
+
+For a focused, fictional-only check of the spatial and row-accounting boundary, run:
+
+```bash
+uv run pytest -q --no-cov tests/unit/test_spatial_pdf.py \
+  tests/unit/test_text_pdf_spatial_bridge.py tests/unit/test_text_pdf_extraction.py
+```
+
+Expected result: all selected tests pass without creating an upload, database, or
+statement artefact.
 
 `make check` must finish with 100% statement and branch coverage. Do not bypass a
 failed privacy assertion or reduce the configured coverage threshold.

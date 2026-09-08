@@ -15,9 +15,10 @@ rather than dominating the home page. It provides:
   numbers;
 - CSV preview, column mapping, statement context, explicit confirmation, and an
   atomic import result;
-- digital-PDF extraction and local scanned/camera-PDF OCR review;
+- digital-PDF extraction, automatic or explicit spatial column mapping, and an
+  optional clearly unconfirmed CSV download;
 - targeted correction or rejection of uncertain PDF rows, balance and coverage
-  confirmation, reconciliation warnings, and final statement approval; and
+  confirmation, reconciliation warnings, and atomic final import; and
 - a transaction workspace with local search, account/date/category/role filters,
   explicit category and financial-role corrections, transfer/refund/reimbursement
   suggestions, and probable-duplicate decisions;
@@ -72,11 +73,12 @@ score, and signal-code reasons. It does not store descriptions, alter transactio
 or retrain the anomaly model. Model evaluation views contain aggregate registry
 metadata and never expose learned vocabulary or transaction-level predictions.
 
-CSV confirmation persists an import atomically through the established service. PDF
-approval remains an in-memory result because atomic PDF persistence has not been
-implemented. The page states this limitation after approval and never calls it a
-saved import. Free-text statement notes are reference-only metadata and do not alter
-categories, roles, analytics, or forecasts.
+CSV and digital-PDF confirmation persist imports atomically through their established
+services. A PDF mapping retains only column identifiers in widget state and is bound
+to the exact file hash and table digest; upload bytes and extracted rows are never
+copied into application-managed session state. The downloadable CSV is labelled
+unconfirmed and cannot bypass statement review. Free-text statement notes are
+reference-only metadata and do not alter categories, roles, analytics, or forecasts.
 
 ## Manual verification with fictional data
 
@@ -255,33 +257,30 @@ For the digital-PDF workflow, choose **Digital PDF** and upload
 `data/demo/generated/statements/fictional_digital_statement.pdf`. Expected values
 are a period of August 2026, opening balance `1000.00`, closing balance `1600.00`,
 two fictional rows, and reconciled arithmetic. Complete every displayed evidence
-confirmation and approve. The result must say that two rows were approved **in
-memory** and were **not saved**.
+confirmation and import. The result must report two new transactions; the transaction
+workspace must then list those rows.
 
-For the OCR path, first check the local dependency:
+To test manual mapping, use
+`data/demo/generated/statements/fictional_mapping_statement.pdf`. It deliberately has
+no headings. Map `column_1` to transaction date, `column_2` to description,
+`column_3` to signed amount, and `column_4` to running balance; leave `column_5`
+unmapped. Confirm the mapping, inspect the two rows and reconciled balances, then
+import. Re-uploading the first fictional statement should show exact-duplicate results
+rather than creating a second copy.
 
-```bash
-make check-ocr
-```
-
-If available, choose **Scanned / camera PDF** and upload
-`data/demo/generated/statements/fictional_scanned_statement.pdf`. Extraction must
-show visible progress and confidence-based review controls. Confirm or reject every
-targeted row rather than assuming OCR is correct. OCR output varies by installed
-Tesseract version, so the safe expected outcome is either a reviewable preview or a
-controlled extraction warning—never silent persistence. If Tesseract is absent, the
-page explains that local OCR is unavailable while CSV/digital PDF remain usable.
-
-Safe parameters to vary are the fictional names, the OCR review threshold, and the
-generated source choice. Do not use real data in screenshots, test fixtures, or bug
-reports.
+The standard UI contains no scanned/OCR choice. Developers can still run
+`make check-ocr` and the internal OCR regression suite; this does not constitute
+Version 1 product support. Safe parameters to vary are fictional account names and
+the generated digital source choice. Do not use real data in screenshots, fixtures,
+or bug reports.
 
 ## Current limitations
 
-- Approved PDF rows are not yet persisted; the original file must be retained and
-  re-reviewed after that later boundary is implemented.
-- Bank PDF layouts are not standardised. Digital extraction and OCR support the
-  tested conservative layouts, not every institution or scan quality.
+- Bank PDF layouts are not standardised. Digital extraction supports conservative
+  generic layouts, not every institution or statement version; unsupported documents
+  deliberately recommend CSV.
+- Image-only, scanned, encrypted, credit-card, business, and non-GBP statements are
+  outside the normal Version 1 import interface.
 - Budget/goal update and deletion, saved scenarios, and pagination controls are not
   implemented. Transaction, recurring, and planning searches currently return at
   most the first 100 matches.

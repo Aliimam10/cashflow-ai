@@ -23,6 +23,7 @@ from cashflow_ai.schemas.normalisation import (
     SourceRecordIdentity,
 )
 from cashflow_ai.schemas.transactions import (
+    CanonicalTransaction,
     Currency,
     Direction,
     FinancialRole,
@@ -31,7 +32,7 @@ from cashflow_ai.schemas.transactions import (
 
 NORMALISER_IDENTITY: Final = ParserIdentity(
     name="cashflow_transaction_normaliser",
-    version="1.0.0",
+    version="1.1.0",
 )
 _DATE_FORMATS: Final = (
     "%Y-%m-%d",
@@ -40,6 +41,7 @@ _DATE_FORMATS: Final = (
     "%d %b %Y",
     "%d %B %Y",
 )
+_TWO_DIGIT_YEAR_DATE_FORMATS: Final = ("%d %b %y", "%d %B %y")
 _BANK_PREFIX = re.compile(
     r"^(?:CARD PAYMENT(?: TO)?|DEBIT CARD(?: PURCHASE)?|POS(?: PURCHASE)?|"
     r"CONTACTLESS(?: PAYMENT)?|DIRECT DEBIT(?: TO)?|FASTER PAYMENT(?: TO)?|"
@@ -125,11 +127,14 @@ def _optional_clean_text(value: str | None) -> str | None:
 def parse_date_value(value: str, field_name: str = "date") -> date:
     """Parse one supported ISO or unambiguous UK date value."""
     cleaned = _clean_unicode_text(value)
-    for date_format in _DATE_FORMATS:
+    for date_format in (*_DATE_FORMATS, *_TWO_DIGIT_YEAR_DATE_FORMATS):
         try:
-            return datetime.strptime(cleaned, date_format).date()
+            parsed = datetime.strptime(cleaned, date_format).date()
         except ValueError:
             continue
+        if date_format in _TWO_DIGIT_YEAR_DATE_FORMATS and parsed.year < 2000:
+            continue
+        return parsed
     raise TransactionNormalisationError(
         NormalisationErrorCode.INVALID_DATE,
         f"{field_name} is not a supported UK or ISO date",
@@ -280,7 +285,10 @@ def calculate_source_fingerprint(
     )
 
 
-def _canonical_fingerprint(draft: TransactionDraft) -> str:
+def calculate_canonical_fingerprint(
+    draft: TransactionDraft | CanonicalTransaction,
+) -> str:
+    """Return the duplicate-matching identity of a complete canonical draft."""
     account_id = cast(str, draft.account_id)
     transaction_date = cast(date, draft.transaction_date)
     amount = cast(Decimal, draft.amount)
@@ -344,7 +352,7 @@ def normalise_transaction(
         parser=parser,
         source_identity=source_identity,
         source_fingerprint=calculate_source_fingerprint(source_identity, original),
-        canonical_fingerprint=_canonical_fingerprint(draft),
+        canonical_fingerprint=calculate_canonical_fingerprint(draft),
     )
 
 

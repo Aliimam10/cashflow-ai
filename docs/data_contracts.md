@@ -51,12 +51,28 @@ require a source row number. PDF candidates require a page number. OCR
 provenance additionally requires recognition confidence.
 
 Extraction methods must match their source: CSV row parsing, PDF embedded text,
-PDF table extraction, or OCR. PDF regions use non-negative page coordinates and
-positive dimensions.
+PDF table/spatial extraction, or OCR. PDF regions use non-negative page coordinates
+and positive dimensions.
+
+Spatial reconstruction keeps two distinct in-memory views. `SpatialPdfRecord.cells`
+contains the untouched positioned source text used for audit evidence. A mapped-cell
+projection may remove a deterministically proven accessibility-label bundle so that
+date, description, amount, and balance fields can be validated. The projection never
+overwrites the source cells, and persisted raw fields come from the untouched view.
+Both views remain private and are bound to their page/record lineage.
+
+Cross-extractor row-accounting evidence is page scoped and transient. It preserves
+the multiplicity of repeated date-and-money signals so that an identical row on a
+different page cannot hide a missing record. These comparison signals are validation
+state, not a substitute source row or a persisted transaction contract.
 
 Candidates move through `pending`, `needs_review`, `confirmed`, or `rejected`.
 The `confirmed` state is invalid unless explicit user confirmation is recorded;
 confirmation cannot be attached to any other state.
+
+Every approved PDF carries explicitly confirmed `StatementCoverage`. If no reliable
+statement-period label was extracted, the review interface proposes transaction-date
+bounds, but those bounds remain user-confirmed evidence rather than parser fact.
 
 ## Confidence and issues
 
@@ -357,6 +373,21 @@ the failure through at least one issue, and all candidates remain in
 The extraction layout is either `table` or `generic_text`. The latter is a
 review warning, not evidence that the layout was interpreted perfectly.
 
+## Spatial PDF reconstruction
+
+`SpatialPdfResult` is a lower-level discriminated reconstruction contract with
+`ready`, `mapping_required`, and `unsupported_layout` states. It contains no database
+operation. Its `SpatialPdfTable` retains positioned, page-bound cells and records,
+stable column identifiers, role hints, and a structure digest derived from geometry
+rather than statement text.
+
+`SpatialColumnMapping` requires a transaction-date column, a description column, and
+exactly one amount representation: one signed amount or separate debit and credit
+columns. Running balance is optional; selected column identifiers must be unique and
+present in the reconstructed table. `MappedSpatialRecord` preserves each source cell
+while projecting it onto those roles. Incomplete mapped records do not become trusted
+transactions merely because a mapping was supplied.
+
 ## Scanned-PDF OCR previews
 
 `OcrPdfPreview` is the non-persistent result of local scanned-statement OCR. It
@@ -410,7 +441,7 @@ approved period is mandatory even if extraction did not find one. Confirmed
 transactions cannot sit outside that period or inside an explicit coverage gap.
 A balance mismatch requires explicit acknowledgement.
 
-`ApprovedStatement` is the only review output eligible for later trusted use.
+`ApprovedStatement` is the only review output eligible for trusted persistence.
 Its approved rows retain the source identity and fingerprint, original values,
 extracted draft, provenance, OCR lines and field confidence, issues and review
 reasons beside the final canonical transaction. Its rejected rows retain their
@@ -420,8 +451,23 @@ whether those balances changed, confirmed statement coverage and whether it
 changed, final reconciliation, and approval time. The balances and period remain
 available when reconciliation is `unavailable`, so later persistence can date a
 closing snapshot from the statement end rather than the last transaction. This
-contract is an in-memory service result; it neither persists transactions nor
-defines a UI.
+contract is an in-memory review result; it neither persists transactions by itself
+nor defines a UI. `persist_approved_pdf` is the separate fail-closed consumer.
+
+## Approved digital-PDF persistence result
+
+`PdfRecordLocation` identifies one preserved PDF row by positive page and page-record
+numbers. `PdfImportSummary` binds its result to the import batch and exact document
+hash, accounts for every reviewed row as imported, exact duplicate, probable
+duplicate, or rejected, and returns matching locations plus statement coverage
+analysis. A repeated-file result is explicit and creates no duplicate evidence.
+
+The persistence input is the exact PDF bytes plus an `ApprovedStatement`; the trusted
+boundary re-extracts those bytes, and no client mapping or edited extraction payload
+is independently authoritative. Eligible rows must share one digital-PDF hash,
+account, and currency, retain valid source fingerprints and parser provenance, sit
+within confirmed coverage, and reconcile opening, signed transactions, running
+balances where supplied, and closing balance.
 
 ## Duplicate and statement-overlap results
 
@@ -458,11 +504,13 @@ one verified record per raw transaction. Deleting the local profile cascades to
 its private financial records; stable lookup rows use restrictive or nulling
 foreign keys where silent deletion would damage meaning.
 
-Rejected raw rows may omit a canonical fingerprint because invalid values must
+Rejected CSV/PDF raw rows may omit a canonical fingerprint because invalid values must
 not be converted into a fabricated canonical identity. Their exact source
 fingerprint, source location, raw payload, original mapped text, parser version,
-review state, and structured issues remain mandatory. Both opening and closing
-statement balances are persisted as balance snapshots, never as transactions.
+review state, and structured issues remain mandatory. Digital-PDF raw payloads also
+retain page/record provenance and the reviewed approval evidence. Both opening and
+closing statement balances are persisted as balance snapshots, never as transactions;
+accepted PDF running balances contribute at most one deterministic snapshot per day.
 
 ## Financial-role review contracts
 
@@ -727,6 +775,11 @@ contracts are JSON-encoded form fields and validated against their existing
 `CsvImportPlan`, `CsvImportConfirmation`, or `StatementApproval` models. PDF review
 and confirmation do not accept caller-supplied preview/review models as trusted
 input; the service reconstructs those contracts from the exact uploaded source.
+`DigitalPdfReviewResult` discriminates ready, mapping-required, and unsupported
+states. `DigitalPdfColumnMapping` binds selected column identifiers to both the file
+hash and spatial structure digest. Successful confirmation returns
+`PdfImportSummary` only after the strict atomic persistence boundary accounts for
+every extracted page/record row.
 
 `ApiProblem` contains a stable controlled code, a bounded safe message, optional PDF
 page numbers, and data-minimised validation issues. It cannot carry a rejected input

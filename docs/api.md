@@ -54,11 +54,9 @@ digital-PDF use must not fail merely because Tesseract is absent.
 | `GET /api/v1/accounts/{account_id}` | Read one account | None |
 | `POST /api/v1/imports/csv/preview` | Validate and preview an uploaded CSV | None |
 | `POST /api/v1/imports/csv/confirm` | Revalidate and atomically import an exact confirmed CSV | Confirmed import and retained source rows |
-| `POST /api/v1/imports/pdf/text/preview` | Extract an embedded-text PDF for review | None |
-| `POST /api/v1/imports/pdf/ocr/preview` | Extract a scanned PDF with local OCR | None |
-| `GET /api/v1/ocr/status` | Report local Tesseract availability | None |
-| `POST /api/v1/imports/pdf/review` | Re-extract a PDF and prepare targeted review decisions | None |
-| `POST /api/v1/imports/pdf/confirm` | Re-extract a PDF and apply explicit approval in memory | None |
+| `POST /api/v1/imports/pdf/text/preview` | Extract an embedded-text PDF for developer inspection | None |
+| `POST /api/v1/imports/pdf/review` | Return ready, mapping-required, or unsupported-layout digital-PDF review state | None |
+| `POST /api/v1/imports/pdf/confirm` | Re-extract and atomically persist an exact approved digital PDF | Confirmed import and retained source rows |
 | `GET /api/v1/imports/{import_batch_id}/context` | Read stored coverage, balances, flags, and inert notes | None |
 | `GET /api/v1/accounts/{account_id}/transactions` | List verified transactions | None |
 | `POST /api/v1/transactions/search` | Search/filter profile-owned verified transactions | None |
@@ -120,18 +118,23 @@ endpoint scopes profile and account ownership, uses server receipt time for dura
 audit/invalidation, and marks an import verified only after its last needs-review row
 is resolved.
 
-PDF preview and review are also stateless. Review requires the exact PDF plus its
-source path (`digital_pdf` or `ocr_pdf`), account, currency, and confidence
-threshold. Confirmation requires those exact inputs again plus a JSON-encoded
-`StatementApproval`. The server re-extracts the PDF and reconstructs the review on
-both calls; it does not trust a caller to return an altered preview or review
-object. The document hash and review contract then bind approval to that source.
+Digital-PDF review is also stateless. It requires the exact PDF plus account and
+currency. A safely recognised statement returns `ready`; a stable table with
+ambiguous headings returns `mapping_required` with at most 20 sample rows; an unsafe,
+image-only, or unsupported layout returns `unsupported_layout` and recommends CSV.
+Mapping JSON contains the exact file hash and reconstructed structure digest plus the
+user's date, description, amount/debit-credit, and optional balance selections.
 
-PDF confirmation returns an `ApprovedStatement` but deliberately does not write
-it to SQLite. Safe PDF persistence must later atomically store the import batch,
-every original extracted row, rejected evidence, approved transactions, confirmed
-coverage, and balance snapshots. Returning an approved in-memory result must not
-be described as a completed import.
+Confirmation requires the exact inputs again plus JSON-encoded `StatementApproval`
+and any mapping. The server re-extracts the PDF, reconstructs the review, applies only
+explicit decisions, and then re-extracts again inside the atomic persistence trust
+boundary. It stores the import batch, every accepted/rejected raw row, unique verified
+transactions, duplicate outcomes, confirmed coverage, balance snapshots, and
+invalidation together. It returns `PdfImportSummary`, not client-supplied evidence.
+
+The local OCR status, preview, review, and in-memory confirmation endpoints remain
+available for developer regression tests but use `include_in_schema=False`. They are
+not part of the normal Version 1 interface or its OpenAPI support surface.
 
 ## Decision-support contracts
 

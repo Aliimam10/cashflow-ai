@@ -497,7 +497,7 @@ def test_scanned_pdf_correction_preserves_evidence_and_downstream_gate(
         preview.raise_for_status()
         assert preview.json()["source_filename"] == "PRIVATE-SYNTHETIC-ACCOUNT.pdf"
         review = client.post(
-            "/api/v1/imports/pdf/review",
+            "/api/v1/imports/pdf/ocr/review",
             files={
                 "file": (
                     "../../PRIVATE-SYNTHETIC-ACCOUNT.pdf",
@@ -506,7 +506,6 @@ def test_scanned_pdf_correction_preserves_evidence_and_downstream_gate(
                 )
             },
             data={
-                "source_type": "ocr_pdf",
                 "account_id": account_id,
                 "account_currency": "GBP",
                 "ocr_confidence_threshold": "0.85",
@@ -536,7 +535,7 @@ def test_scanned_pdf_correction_preserves_evidence_and_downstream_gate(
             ],
         }
         approved = client.post(
-            "/api/v1/imports/pdf/confirm",
+            "/api/v1/imports/pdf/ocr/confirm",
             files={
                 "file": (
                     "../../PRIVATE-SYNTHETIC-ACCOUNT.pdf",
@@ -545,7 +544,6 @@ def test_scanned_pdf_correction_preserves_evidence_and_downstream_gate(
                 )
             },
             data={
-                "source_type": "ocr_pdf",
                 "account_id": account_id,
                 "account_currency": "GBP",
                 "ocr_confidence_threshold": "0.85",

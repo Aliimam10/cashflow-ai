@@ -23,8 +23,9 @@ account access, backups, and secure removal.
 - Use only synthetic fixtures, demonstrations, documentation images, and logs in Git.
 - Keep `.env`, uploads, raw/processed data, SQLite files and journals, exports, logs,
   and model artefacts ignored and outside the Docker context.
-- Verify that PDF/OCR bytes and recognised lines are not persisted or logged before
-  the future atomic PDF import boundary exists.
+- Verify that unapproved PDF/OCR bytes and recognised lines are never persisted or
+  logged, and that approved digital-PDF rows enter storage only through the atomic,
+  exact-file-bound persistence service.
 - Verify API responses expose canonical user-facing fields rather than raw payloads.
 - Inspect screenshots manually for names, institutions, account identifiers,
   balances, merchants, dates, filenames, browser history, and desktop notifications.
@@ -77,7 +78,8 @@ Repository rules:
 
 ## PDF and OCR handling
 
-- Process digital and scanned statements locally by default.
+- Process digital statements locally. Retain scanned-statement OCR only as an
+  internal regression path, not a normal Version 1 support claim.
 - Treat uploaded PDFs, extracted text, page images, OCR crops, and intermediate
   tables as private financial data.
 - Use generated safe filenames and never place an original filename or statement
@@ -88,10 +90,16 @@ Repository rules:
 - Do not send statement pages or OCR text to an external service without a
   separate, explicit privacy decision and user consent.
 
-The embedded-text PDF adapter processes uploaded bytes in memory. It returns
-page text and candidates only to the caller for a later local review and does
-not create temporary files, database records, or normal-log entries. Committed
-tests generate fictional PDFs in memory; the repository contains no real or
+The embedded-text PDF adapter and deterministic spatial reconstructor process uploaded
+bytes in memory. Extraction creates no temporary files, database records, or
+normal-log entries. Positioned words, cell text, and page previews remain private
+review data; the spatial structure digest is derived without copying that text.
+Untouched spatial cells and any accessibility-label-cleaned mapped projection are
+equally private and remain in memory. Page-scoped row-accounting signals can contain
+normalised dates and monetary text, so they are never logged, returned as diagnostics,
+or persisted independently of the approved raw-row evidence. Controlled failures
+report only stable codes and bounded explanations.
+Committed tests generate fictional PDFs in memory; the repository contains no real or
 redacted personal statement fixture.
 
 The OCR adapter also processes pages locally. PyMuPDF renders each page into an
@@ -116,14 +124,18 @@ remain paired with that evidence even when arithmetic reconciliation is
 unavailable. Approved rows retain their full raw lineage beside canonical values,
 and rejected rows retain their complete unchanged review evidence rather than
 being silently discarded. Only a statement-level approval bound to the exact
-document hash can produce trusted in-memory rows; this stage has no PDF database
-write or review UI, and unverified OCR candidates remain ineligible for every
-downstream calculation or model input.
+document hash can produce trusted rows. Unverified candidates remain ineligible for
+every downstream calculation or model input.
 
-The persistence boundary must not store an approved PDF balance in isolation.
-Until the complete PDF unit of work exists, balances remain inside the approved
-in-memory result so the source rows, rejected evidence, confirmed coverage, and
-document lineage cannot be separated from them.
+The digital-PDF persistence boundary re-extracts the exact bytes and rechecks the
+document hash, digital source type, page/record lineage, source fingerprints, explicit
+coverage, both balance endpoints, statement arithmetic, and running-balance
+continuity before writing. It uses one transaction for the import batch, all approved
+and rejected raw evidence, duplicate decisions, verified unique transactions,
+coverage, balance snapshots, and downstream invalidation. A failure rolls back all
+of it; an approved balance can never be stored in isolation. Raw payloads include
+approval/provenance evidence for local audit but are not copied into normal logs or
+API errors.
 
 Freshness assessment reads only verified, non-future evidence and returns dates,
 ages, warnings, and a readiness mode without logging source descriptions or
@@ -327,8 +339,11 @@ separate access-control and deployment design is reviewed.
 Uploaded CSV/PDF bytes are bounded, processed in memory, and closed after each call.
 The API creates no upload cache. Stateless confirmation means the exact source must
 be supplied again and verified rather than storing an unreviewed document between
-requests. CSV confirmation may then persist through the established audit-preserving
-service. PDF approval remains non-persistent.
+requests. CSV confirmation persists through the established audit-preserving service.
+Digital-PDF review returns only a non-persistent ready/mapping/unsupported state;
+confirmation re-extracts the exact bytes and invokes the strict atomic persistence
+service. A mapping is trusted only when both the upload hash and spatial-table digest
+match the evidence the user reviewed.
 
 Transaction responses omit raw source payloads. Readiness checks connectivity and
 schema names only. Central exception handlers return controlled codes/messages and
@@ -371,10 +386,12 @@ loopback API. It creates no application-managed upload file or preview cache. Ra
 transaction text and extracted values are intentionally visible in the local review
 screen but must not be copied into normal logs, screenshots, bug reports, or committed
 fixtures. Profile/account setup requests descriptive local metadata only—not bank
-credentials or account numbers. PDF approval is explicitly shown as non-persistent;
-CSV persistence still occurs only after exact-file confirmation. Committed manual
-fixtures are generated from fixed fictional statements under the ignored demo-data
-directory.
+credentials or account numbers. CSV and digital-PDF persistence occur only after
+exact-file confirmation. The page exposes no scanned-PDF or OCR controls; the internal
+OCR implementation and regression endpoints remain testable without being presented
+as Version 1 support. An internal OCR approval must not be described as a persisted OCR import.
+Committed manual fixtures are generated from fixed fictional
+statements under the ignored demo-data directory.
 
 The transaction workspace necessarily shows verified descriptions and fixed-precision
 amounts on the same machine. It does not put search results, review items, dashboard
@@ -405,7 +422,8 @@ learned vocabulary, feature rows, or transaction-level predictions.
 The end-to-end safety suite uses only generated CSV bytes, an in-memory fictional PDF,
 and a deterministic fake local OCR engine. It verifies safe upload basenames, raw-row
 preservation, explicit OCR correction, closed page images, data-minimised transaction
-responses, and the rule that an approved but unpersisted PDF cannot enter analytics.
+responses, and the rule that only a reconciled digital PDF deliberately passed through
+atomic persistence can enter analytics.
 Sensitive marker text is allowed in the local response needed for review but must not
 appear in normal logs.
 

@@ -7,18 +7,20 @@ and important architectural decisions as those components are implemented.
 The approved high-level flow is:
 
 ```text
-CSV ----------------------> CSV parser -----------+
-digital bank PDF ---------> text/table extractor +--> review and confirmation
-scanned or camera PDF ----> OCR extractor --------+             |
-synthetic demo data ------> generated records ------------------+
-                                                               v
-                                            canonical validation and cleaning
-                                                               |
-                                                               v
-                                relational storage -> categorisation -> analytics
-                                                               |
-                                                               v
-                                                     FastAPI -> Streamlit
+CSV ----------------------> CSV parser --------------------------+
+digital bank PDF ---------> text/table + spatial reconstruction +--> review
+synthetic demo data ------> generated records -------------------+      |
+                                                                      v
+                                               reconciliation and confirmation
+                                                                      |
+                                                                      v
+                                  atomic storage -> categorisation -> analytics
+                                                                      |
+                                                                      v
+                                                            FastAPI -> Streamlit
+
+Internal OCR regression path: scanned PDF -> local OCR -> review (not the intended
+normal Version 1 import path)
 ```
 
 Business logic will remain outside API routes and Streamlit pages.
@@ -54,10 +56,11 @@ the preserved raw source representation.
   balance, currency, external ID, and transaction-type columns.
 - The digital-PDF adapter validates in-memory documents with PyMuPDF, requires
   usable embedded text on every page, extracts recognised tables with
-  pdfplumber, and uses a conservative text fallback for supported layouts.
-  It returns review-only candidates and never writes PDF-derived rows directly
-  to persistence.
-- The OCR adapter renders scanned or camera-captured PDF pages in memory,
+  pdfplumber, and uses conservative text and deterministic spatial fallbacks.
+  Spatial reconstruction returns `ready`, `mapping_required`, or
+  `unsupported_layout`; explicit column mapping is required rather than guessed
+  when recognised headings are unavailable.
+- The retained internal OCR adapter renders scanned or camera-captured PDF pages in memory,
   corrects detected orientation, preprocesses them with Pillow, and invokes
   local Tesseract through pytesseract. It retains raw recognised lines and
   page, line, field, and candidate confidence metadata.
@@ -71,16 +74,11 @@ import service. Confirmation is bound to the previewed byte hash. The service,
 not the adapter, owns normalisation, duplicate decisions, coverage analysis, and
 database orchestration.
 
-PDF extraction is a two-stage decision: attempt digital extraction first, then
-fall back to OCR only for pages without usable embedded text. Low-confidence,
-ambiguous, or unreconciled rows are highlighted. No PDF-derived transaction is
-accepted until the user explicitly confirms the preview.
-
-The digital extractor reports the exact pages that require OCR. The OCR adapter
-can process an image-only document independently and returns the same canonical
-transaction shape with OCR provenance. It currently OCRs every page supplied to
-it; page-by-page combination of digital and OCR results belongs to the shared
-review workflow rather than silently mixing evidence inside either adapter.
+The normal digital-PDF path requires usable embedded text and fails closed for
+image-only or mixed documents. Low-confidence, ambiguous, or unreconciled rows are
+not accepted. The internal OCR adapter can still process an image-only document
+independently for regression coverage, but the digital path does not silently mix
+OCR evidence into otherwise trusted rows.
 
 Rendered images, grayscale copies, and thresholded copies remain in process
 memory and are closed after each page. The application does not retain page
@@ -88,8 +86,8 @@ image files or OCR artefacts after the preview call.
 
 ## Statement reconciliation and review
 
-The shared PDF review service consumes either a digital-PDF or OCR preview. It
-does not persist rows. It binds the review to the exact SHA-256 document hash,
+The shared PDF review service consumes either a digital-PDF or internal OCR preview.
+It does not itself persist rows. It binds the review to the exact SHA-256 document hash,
 source adapter, and source identities. It preserves every original extracted
 value and keeps an editable working draft separate from that evidence. Raw
 opening and closing balance evidence separately retains the amount text, page,
@@ -118,10 +116,12 @@ Statement approval is bound to the preview hash; all uncertain rows must be
 confirmed with complete canonical values or rejected. Approved rows retain their
 source identity, fingerprint, original values, extracted draft, provenance,
 issues, confidence, and OCR line references. Rejected rows retain the complete
-unchanged review row, not only a fingerprint. The boundary currently returns
-these in-memory contracts and provides no persistence or UI. Unapproved OCR rows
-have no route to trusted analytics, model training, recurrence, anomaly
-detection, or forecasting.
+unchanged review row, not only a fingerprint. The review boundary returns an
+in-memory `ApprovedStatement`. The separate digital-PDF persistence service
+re-extracts the exact bytes and accepts that result only after extraction-evidence,
+reconciliation, coverage, lineage, and running-balance checks. Unapproved rows have
+no route to trusted analytics, model training, recurrence, anomaly detection, or
+forecasting.
 
 ## Normalisation and duplicate detection
 
@@ -168,13 +168,18 @@ Persistence keeps these boundaries explicit:
 
 Repositories accept a transaction-scoped SQLAlchemy session and flush changes
 without committing. `session_scope` owns the unit of work: it commits once on
-success and rolls back every staged change on failure. The confirmed CSV import
-composes these repositories as one unit, so a failed row write cannot leave a
-batch, context, balance, or partial transaction set behind.
+success and rolls back every staged change on failure. The confirmed CSV importer
+and approved digital-PDF importer each compose these repositories as one unit, so a
+failed row write cannot leave a batch, context, balance, or partial transaction set
+behind.
 
-Rejected and probable-duplicate CSV rows remain in `raw_transactions` with
-structured issues for audit. Only confirmed unique rows receive a linked
-`verified_transactions` record and become eligible for later calculations.
+Rejected and probable-duplicate CSV/PDF rows remain in `raw_transactions` with
+structured issues for audit. Digital-PDF rows also retain exact page/record and
+approval provenance. Only confirmed unique rows receive a linked
+`verified_transactions` record and become eligible for later calculations. PDF
+persistence requires opening-to-closing reconciliation, accepts either consistent
+oldest-first or newest-first source order, creates at most one deterministic running
+balance snapshot per date, and invalidates dependent outputs in the same transaction.
 
 ## Balance evidence and financial-data readiness
 
@@ -185,7 +190,10 @@ writers are deliberately narrow:
 - explicitly confirmed CSV statement context creates opening and closing
   snapshots at the confirmed coverage start and end;
 - each accepted unique CSV row with a running balance creates a snapshot dated
-  by its posting date when present, otherwise by its transaction date; and
+  by its posting date when present, otherwise by its transaction date;
+- an approved, reconciled digital-PDF import creates opening/closing snapshots plus
+  at most one deterministic accepted running-balance observation per calendar day;
+  and
 - manual current-balance entry creates one verified snapshot without fabricating
   an import batch, statement coverage, or transaction.
 
@@ -216,11 +224,10 @@ trusted transaction-or-balance observation. It selects either
 for a later forecasting service, not a forecast, model, API endpoint, or UI
 state transition.
 
-Approved PDF balances remain in the in-memory review contract. There is no PDF
-database persistence yet, so the system must not write an opening or closing PDF
-snapshot in isolation from its approved rows, rejected-row evidence, import
-batch, and confirmed coverage. That complete atomic persistence workflow belongs
-to a later stage.
+Approved PDF balances are never written in isolation. The digital-PDF persistence
+service writes them only inside the same transaction as the import batch, confirmed
+coverage, every approved or rejected raw row, verified unique transactions, duplicate
+decisions, and downstream invalidation.
 
 ## Financial-role interpretation and review
 
@@ -585,8 +592,11 @@ run Alembic; readiness is false until the caller deliberately upgrades the schem
 CSV confirmation reuses the established hash-bound atomic importer. PDF review and
 confirmation are stateless and re-extract the exact uploaded bytes on each call. A
 client cannot promote a modified preview by posting an untrusted review object back
-to the server. PDF approval remains an in-memory result until a future atomic
-persistence boundary can retain approved and rejected evidence together.
+to the server. Digital-PDF review returns a ready, mapping-required, or unsupported
+state. User-selected mappings are bound to both the file hash and reconstructed-table
+digest. Confirmation rebuilds the review, replays only explicit decisions, and enters
+the strict atomic persistence service; no approved balance or transaction can be
+written separately.
 
 The server is restricted to loopback configuration and disposes its database engine
 on shutdown. Exception translation is centralised and debug tracebacks are disabled
@@ -621,9 +631,13 @@ bodies, raw statements, or local paths.
 The Overview page owns no financial calculation. It presents local service readiness,
 the local privacy boundary, and the forecast disclaimer. The import page now composes
 profile/account setup and review-gated CSV/PDF forms over typed API requests. CSV
-confirmation delegates its atomic write to the backend. PDF review sends the exact
-document again and receives a non-persistent approved result; neither the page nor its
-session state becomes a source of trusted transaction data. Transactions/analytics
+confirmation delegates its atomic write to the backend. Digital-PDF review sends the
+exact document again, applies any hash- and structure-bound column mapping, and
+receives a review rather than trusted data. Confirmation sends the exact document and
+explicit decisions again for atomic persistence. Neither the page nor its session
+state becomes a source of trusted transaction data. Normal navigation exposes CSV and
+selectable-text digital PDF only; OCR regression routes remain internal.
+Transactions/analytics
 is a review and presentation client over the transaction API. The recurring and
 forecasting page likewise builds only typed policy/scope requests: the backend detects
 series, trains/selects models, anchors verified balances, and simulates paths. The UI

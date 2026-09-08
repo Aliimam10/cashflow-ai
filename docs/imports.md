@@ -1,44 +1,63 @@
 # Statement import design
 
-CashFlow AI Version 1 will accept CSV exports, digitally generated PDF bank
-statements, and scanned or camera-captured PDF statements. Implementation will
-remain local-first and use one downstream validation pipeline.
+CashFlow AI Version 1 recommends structured CSV exports. It also supports a
+conservative backend path for digitally generated, embedded-text PDF statements.
+Both sources remain local and converge on one canonical validation pipeline.
+
+The digital-PDF implementation is generic: it handles only layouts it can reconstruct
+and reconcile deterministically. It does not claim verified compatibility with any
+named bank or every version of a bank's statement. An unknown or ambiguous layout
+must request explicit column mapping or fail safely and recommend CSV. Image-only,
+scanned, and camera-captured statements are outside the intended normal Version 1
+workflow. The existing OCR backend, routes, and tests remain temporarily available
+for internal regression testing until the interface checkpoint removes their normal
+controls.
 
 ## User workflow
 
-1. Upload a supported statement and select the destination account.
+1. Prefer a CSV export; otherwise upload an embedded-text digital PDF and select the
+   destination account.
 2. Validate extension, MIME type, file signature, and size; calculate a hash.
-3. Detect CSV, digital PDF, or image-based PDF input.
+3. Detect CSV or usable embedded-text digital PDF input.
 4. Extract a limited preview without persisting accepted transactions.
 5. Show the original source beside provisional transaction rows where possible.
 6. Highlight low-confidence fields, unbalanced totals, missing columns, and
    ambiguous debit/credit signs.
 7. Allow the user to correct dates, descriptions, amounts, signs, and balances.
 8. Require explicit confirmation that the extraction is accurate.
-9. Pass confirmed candidates through canonical validation, cleaning, duplicate
-   detection, and persistence.
-10. Quarantine rejected rows with useful errors and offer an inspection export.
+9. Re-extract or re-parse the exact bytes before trusting the approval.
+10. Pass confirmed candidates through canonical validation, cleaning, duplicate
+    detection, and atomic persistence.
+11. Preserve rejected rows with useful errors and page/record provenance.
 
 ## Extraction routing
 
-Digital PDFs use embedded text and table extraction first. Pages without usable
-text, including camera captures and scans, use OCR. Mixed PDFs may therefore use
-different extraction methods per page while presenting one combined preview.
+Digital PDFs use embedded text and recognised table extraction first. If a PDF has
+selectable text but its rows are not represented as a native table, deterministic
+spatial reconstruction groups positioned words into lines, columns, multiline
+descriptions, and stable page/record locations. Recognised headings can provide an
+automatic mapping. Otherwise the result is `mapping_required` and a caller must map
+date, description, either signed amount or debit/credit, and optional balance
+columns. If the structure cannot be reconstructed safely, the result is
+`unsupported_layout` and the user should obtain a CSV export.
 
-OCR confidence is advisory rather than proof of correctness. Balance
-reconciliation, row continuity, amount parsing, and user confirmation are
-separate safeguards.
+No extraction result is proof of correctness. Amount parsing, statement coverage,
+opening-to-closing reconciliation, running-balance continuity, source provenance,
+and explicit user confirmation are separate safeguards. Image-only or mixed PDFs
+fail the normal digital path; it does not silently combine uncertain OCR output with
+trusted rows.
 
 ## Delivery sequence
 
 1. Define canonical transactions, import candidates, provenance, confidence,
    warning, and review-status schemas.
 2. Implement CSV preview and mapping as the simplest structured adapter.
-3. Implement digital-PDF text/table extraction using synthetic fixtures.
-4. Implement image-based PDF OCR and confidence reporting using synthetic
-   scanned fixtures.
-5. Build the shared side-by-side correction and confirmation workflow.
-6. Feed confirmed candidates into the existing cleaning and import service.
+3. Implement digital-PDF text/table and spatial extraction using synthetic fixtures.
+4. Build the shared side-by-side correction and confirmation workflow.
+5. Persist only exact-file, fully reconciled approved digital-PDF statements as one
+   atomic unit.
+6. Connect generic mapping and persistence to the standard HTTP/UI workflow while
+   reducing its visible choices to CSV and digital PDF.
 
 No real bank statement will be committed as a fixture. PDF tests will be built
 from synthetic transaction histories and fictional statement templates.
@@ -152,8 +171,8 @@ would break auditability.
 
 Any unexpected database error rolls back the complete import. The Streamlit import
 page now calls this boundary after a preview, mapping, statement-context review, and
-explicit exact-file confirmation. PDF persistence remains a future stage and must
-reuse the confirmation and preservation safeguards rather than bypassing them.
+explicit exact-file confirmation. Approved digital PDFs use their own equivalent
+atomic persistence boundary described below.
 
 ## Implemented embedded-text PDF extraction
 
@@ -173,8 +192,8 @@ The adapter:
   currency, identifier, and transaction-type table headings;
 - removes repeated table headers and page-number rows;
 - joins description-only continuation rows to the preceding transaction;
-- falls back to conservative pipe-delimited or spatially separated text rows
-  when no supported table is detected;
+- falls back to conservative pipe-delimited text rows when no supported table is
+  detected;
 - extracts common statement-period, opening-balance, and closing-balance labels;
   and
 - returns source-independent transaction drafts with exact page/record lineage,
@@ -183,15 +202,40 @@ The adapter:
 Every PDF candidate remains `needs_review`. Invalid dates, amounts, currencies,
 or row combinations keep their extracted source values but do not receive a
 canonical fingerprint. Generic fallback use and missing/invalid statement
-metadata are surfaced as warnings. This stage does not persist PDF rows or
+metadata are surfaced as warnings. Extraction itself does not persist PDF rows or
 accept a confirmation decision.
 
-Support is deliberately limited to tested bordered tables and a conservative
-generic text fallback. PDF layouts are not standardised, so this implementation
-does not claim universal bank compatibility. Image-only, scanned,
-camera-captured, and mixed PDFs containing pages without enough embedded text
-are rejected with their page numbers so the caller can route them to the local
-OCR adapter rather than partially importing them.
+`cashflow_ai.imports.reconstruct_spatial_pdf` is the deterministic fallback for
+selectable-text documents whose visual transaction table is not encoded as a PDF
+table. It reconstructs stable columns and records from positioned words, removes
+repeated headers, joins multiline descriptions, supports both signed-amount and
+debit/credit layouts, and retains bounding boxes plus page/record provenance. A
+privacy-safe structure digest identifies the reconstructed geometry without including
+cell text. Exact source bytes and a freshly repeated extraction—not this digest
+alone—bind an approved mapping at persistence. Its discriminated result is `ready`,
+`mapping_required`, or `unsupported_layout`; it never invents a row to avoid asking
+for a mapping.
+
+Some selectable-text PDFs repeat accessibility labels inside every visual row. The
+reconstructor removes those labels from the mapped projection only when each row
+contains one complete label bundle and multiple bundles repeat at stable page
+coordinates. The untouched source cells remain the audit evidence. A missing,
+duplicated, shifted, or partial bundle leaves the affected row unresolved rather than
+silently cleaning it.
+
+Source-row accounting is also fail closed. Transaction-like evidence from independent
+table and text representations is compared with reconstructed records within the same
+page, using representation-independent date and monetary evidence while preserving
+duplicate counts. Every corroborating signal must be accounted for; a matching total
+row count or a reconciled closing balance is not sufficient by itself. Page-number
+text is ignored only when it is deterministically structural. Conflicting or
+ambiguous evidence returns `mapping_required` or `unsupported_layout` and recommends
+the bank's CSV export.
+
+Support remains deliberately conservative. PDF layouts are not standardised, so this
+implementation does not claim named-bank or universal compatibility. Image-only,
+scanned, camera-captured, and mixed PDFs containing pages without enough embedded
+text fail the normal digital path instead of being partially imported.
 
 ## Implemented scanned-PDF OCR extraction
 
@@ -224,11 +268,13 @@ Invalid recognised values remain visible with structured errors and without a
 fabricated canonical fingerprint. Every candidate remains `needs_review` at the
 adapter boundary and no OCR transaction is persisted there.
 
-The OCR adapter can be called for image-only statements and reports when usable
+The retained internal OCR adapter can be called for image-only statements and reports when usable
 embedded text was also present. It currently OCRs every page supplied to it,
 rather than silently combining extraction methods. OCR quality varies with
 image resolution, focus, lighting, fonts, and layout, so the implementation
-does not claim universal bank compatibility.
+does not claim universal bank compatibility. It remains available for developer
+regression testing, but scanned-PDF support is outside the intended standard Version
+1 interface.
 
 ## Implemented statement reconciliation and review boundary
 
@@ -266,16 +312,32 @@ account, currency, category, or financial role.
 Approved rows retain original OCR/PDF values, extracted drafts, source identities
 and fingerprints, provenance, issues, confidence, and OCR line references beside
 their canonical values. Rejected rows retain their full unchanged review-row
-evidence rather than disappearing into a count. `approve_statement_review`
-returns this trusted in-memory contract but intentionally performs no database
-write. The Streamlit interface now renders this review and approval boundary, while
-atomic PDF persistence remains future work.
+evidence rather than disappearing into a count. `approve_statement_review` returns
+this trusted in-memory contract but intentionally performs no database write. The
+Streamlit interface currently renders this review and approval boundary.
 
-Confirmed PDF balance evidence is therefore not written on its own. A later PDF
-persistence service must atomically retain the approved rows, rejected-row
-evidence, import batch, confirmed coverage, and balance snapshots together. A
-partial shortcut that stores only the approved opening or closing balance would
-lose source lineage and is not permitted.
+## Implemented approved digital-PDF persistence
+
+`cashflow_ai.imports.persist_approved_pdf` consumes the exact PDF bytes and the
+trusted `ApprovedStatement`. The trusted boundary re-extracts those bytes and compares
+the reconstructed evidence before writing; it never accepts client-edited extraction
+evidence as a substitute. Persistence fails closed unless the file hash and every
+page/record lineage entry match, statement coverage is explicit, opening and closing
+balance evidence is present, all accepted amounts reconcile within tolerance, and any
+supplied running balances form one valid oldest-first or newest-first sequence.
+
+One database transaction preserves the import batch, statement context, coverage,
+opening and closing snapshots, every approved or rejected raw row, approval and
+extraction evidence, accepted verified transactions, duplicate decisions, and
+derived-result invalidation. Exact duplicates are retained but skipped. Probable
+duplicates are retained for review and remain outside verified calculations. A
+repeated byte-identical statement creates no second evidence set. Accepted running
+balances create at most one deterministic closing observation per calendar day,
+regardless of source ordering. Any unexpected failure rolls back the entire unit.
+
+`PdfImportSummary` accounts for every page/record location as imported, exact,
+probable, or rejected and returns coverage/overlap findings. It contains no statement
+descriptions, account details, or raw amounts.
 
 ## Local HTTP import workflow
 
@@ -288,12 +350,13 @@ Confirmation requires the exact CSV again with the reviewed plan and confirmatio
 the domain service recomputes the fingerprint and performs the same atomic all-row
 preservation used by direct Python callers.
 
-Digital and scanned PDF preview routes remain separate so OCR is deliberate and
-local. The OCR status route lets an interface explain a missing Tesseract installation
-before upload. Both the review and confirmation routes require the exact PDF again,
-re-run the selected extractor, and rebuild the review server-side. The confirmation
-route returns the existing approved evidence contract only. It does not turn the
-absence of PDF persistence into an implicit database write.
+The public digital-PDF review route accepts the exact PDF and an optional file-bound
+spatial mapping. It returns `ready`, `mapping_required`, or `unsupported_layout`.
+Unknown, changed, image-only, or unsafe layouts recommend a bank CSV export rather
+than guessing. Confirmation requires the exact PDF again, rebuilds the review
+server-side, applies explicit approval, and persists the complete statement through
+one database transaction. OCR preview/review routes remain available only for
+internal regression testing and are omitted from normal API documentation and UI.
 
 This stateless design costs repeated extraction, especially for OCR, but avoids a
 private server-side upload cache and prevents client-edited preview JSON from becoming
@@ -303,8 +366,8 @@ comes from the exact document and explicit approval checked by the backend.
 
 ## Implemented Streamlit import workflow
 
-The import page creates or selects local profile/account metadata, then routes CSV,
-digital PDF, or scanned/camera PDF bytes through the typed API client. CSV users can
+The current import page creates or selects local profile/account metadata, then routes
+CSV or selectable-text digital-PDF bytes through the typed API client. CSV users can
 inspect preserved preview rows, correct the proposed column mapping, describe
 complete, gapped, partial, or unknown coverage, supply optional reported balances,
 add structured flags and an inert note, and explicitly confirm the exact file before
@@ -314,6 +377,31 @@ PDF users see coverage, extracted balances, reconciliation state, document issue
 and confidence/reason fields. Every targeted uncertain row must be confirmed or
 rejected; editable canonical fields remain separate from original extraction values.
 Statement-level gates cover date interpretation, debit/credit signs, balance evidence,
-coverage, reconciliation mismatch, and final approval. The result truthfully reports
-that approval is in memory and not saved. The page does not add a PDF persistence
-shortcut or present OCR confidence as proof of correctness.
+coverage, reconciliation mismatch, and final approval. Ambiguous tables expose a
+bounded mapping preview; the user maps date, description, signed amount or
+debit/credit, and optional balance columns. The mapping is applied only to the same
+file/table evidence. Confirmation returns imported, exact-duplicate,
+probable-duplicate, rejected, and coverage results. An optional CSV download is
+explicitly labelled unconfirmed and never bypasses review or persistence safeguards.
+PDF coverage is mandatory even when the statement does not label its period: the UI
+prefills the earliest and latest extracted transaction dates, and the user must check
+and explicitly confirm the dates, completeness status, and any gaps before import.
+
+## Synthetic manual verification
+
+Run the default oldest-first fictional statement:
+
+```bash
+make demo-pdf-import
+```
+
+Then exercise newest-first source ordering:
+
+```bash
+uv run python scripts/demo_digital_pdf_import.py --order newest-first
+```
+
+Each command should report `spatial_state=ready`, `review_rows=2`,
+`reconciliation=reconciled`, two persisted raw rows, two verified and imported
+transactions, two analytics transactions, two still-pending financial roles, and
+`temporary_database_removed=true`. Only `source_order` changes between the runs.

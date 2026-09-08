@@ -36,7 +36,7 @@ NAVIGATION_ITEMS = (
         page_id=PageId.IMPORT,
         title="Add a statement",
         icon="+",
-        summary="Upload and review a CSV, digital PDF, or scanned statement.",
+        summary="Upload and review a bank CSV export or selectable-text digital PDF.",
     ),
     NavigationItem(
         page_id=PageId.TRANSACTIONS,

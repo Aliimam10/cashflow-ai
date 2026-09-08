@@ -66,6 +66,11 @@ SYNTHETIC_COVERAGE = StatementCoverage(
     statement_end_date=date(2026, 7, 31),
     status=CoverageStatus.UNKNOWN,
 )
+FULL_SYNTHETIC_YEAR = StatementCoverage(
+    statement_start_date=date(2026, 1, 1),
+    statement_end_date=date(2026, 12, 31),
+    status=CoverageStatus.UNKNOWN,
+)
 
 
 def _original(
@@ -248,6 +253,7 @@ def _approval(
         "file_hash": HASH_A,
         "approved_at": APPROVED_AT,
         "statement_approved": True,
+        "confirmed_statement_coverage": FULL_SYNTHETIC_YEAR,
     }
     payload.update(changes)
     if (
@@ -574,6 +580,18 @@ def test_balance_evidence_requires_confirmation_and_allows_audited_correction() 
     assert approved.balances == corrected
     assert approved.balance_was_edited is True
     assert approved.reconciliation.unexplained_difference == Decimal("1.00")
+
+
+def test_pdf_coverage_is_required_even_when_metadata_was_not_detected() -> None:
+    review = prepare_statement_review(_text_preview(_pdf_candidate()))
+
+    with pytest.raises(StatementReviewError) as missing:
+        approve_statement_review(
+            review,
+            _approval(confirmed_statement_coverage=None),
+        )
+
+    assert missing.value.code is StatementReviewErrorCode.COVERAGE_UNCONFIRMED
 
 
 def test_statement_coverage_is_confirmed_retained_and_bounds_transactions() -> None:
