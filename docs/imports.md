@@ -216,6 +216,22 @@ alone—bind an approved mapping at persistence. Its discriminated result is `re
 `mapping_required`, or `unsupported_layout`; it never invents a row to avoid asking
 for a mapping.
 
+Some selectable-text PDFs repeat accessibility labels inside every visual row. The
+reconstructor removes those labels from the mapped projection only when each row
+contains one complete label bundle and multiple bundles repeat at stable page
+coordinates. The untouched source cells remain the audit evidence. A missing,
+duplicated, shifted, or partial bundle leaves the affected row unresolved rather than
+silently cleaning it.
+
+Source-row accounting is also fail closed. Transaction-like evidence from independent
+table and text representations is compared with reconstructed records within the same
+page, using representation-independent date and monetary evidence while preserving
+duplicate counts. Every corroborating signal must be accounted for; a matching total
+row count or a reconciled closing balance is not sufficient by itself. Page-number
+text is ignored only when it is deterministically structural. Conflicting or
+ambiguous evidence returns `mapping_required` or `unsupported_layout` and recommends
+the bank's CSV export.
+
 Support remains deliberately conservative. PDF layouts are not standardised, so this
 implementation does not claim named-bank or universal compatibility. Image-only,
 scanned, camera-captured, and mixed PDFs containing pages without enough embedded
@@ -334,12 +350,13 @@ Confirmation requires the exact CSV again with the reviewed plan and confirmatio
 the domain service recomputes the fingerprint and performs the same atomic all-row
 preservation used by direct Python callers.
 
-Digital and scanned PDF preview routes remain separate in this backend checkpoint.
-Both review and confirmation routes require the exact PDF again, rerun the selected
-extractor, and rebuild the review server-side. The current confirmation route still
-returns the approved evidence contract only; wiring it to the strict persistence
-service and hiding the legacy OCR route from normal navigation belong to the next
-interface checkpoint.
+The public digital-PDF review route accepts the exact PDF and an optional file-bound
+spatial mapping. It returns `ready`, `mapping_required`, or `unsupported_layout`.
+Unknown, changed, image-only, or unsafe layouts recommend a bank CSV export rather
+than guessing. Confirmation requires the exact PDF again, rebuilds the review
+server-side, applies explicit approval, and persists the complete statement through
+one database transaction. OCR preview/review routes remain available only for
+internal regression testing and are omitted from normal API documentation and UI.
 
 This stateless design costs repeated extraction, especially for OCR, but avoids a
 private server-side upload cache and prevents client-edited preview JSON from becoming
@@ -350,7 +367,7 @@ comes from the exact document and explicit approval checked by the backend.
 ## Implemented Streamlit import workflow
 
 The current import page creates or selects local profile/account metadata, then routes
-CSV, digital PDF, or scanned/camera PDF bytes through the typed API client. CSV users can
+CSV or selectable-text digital-PDF bytes through the typed API client. CSV users can
 inspect preserved preview rows, correct the proposed column mapping, describe
 complete, gapped, partial, or unknown coverage, supply optional reported balances,
 add structured flags and an inert note, and explicitly confirm the exact file before
@@ -360,11 +377,15 @@ PDF users see coverage, extracted balances, reconciliation state, document issue
 and confidence/reason fields. Every targeted uncertain row must be confirmed or
 rejected; editable canonical fields remain separate from original extraction values.
 Statement-level gates cover date interpretation, debit/credit signs, balance evidence,
-coverage, reconciliation mismatch, and final approval. The result truthfully reports
-that approval is in memory and not saved. The page does not add a PDF persistence
-shortcut or present OCR confidence as proof of correctness. This is the legacy UI at
-this checkpoint; the normal interface will expose only CSV and digital PDF when the
-new backend result and persistence service are connected.
+coverage, reconciliation mismatch, and final approval. Ambiguous tables expose a
+bounded mapping preview; the user maps date, description, signed amount or
+debit/credit, and optional balance columns. The mapping is applied only to the same
+file/table evidence. Confirmation returns imported, exact-duplicate,
+probable-duplicate, rejected, and coverage results. An optional CSV download is
+explicitly labelled unconfirmed and never bypasses review or persistence safeguards.
+PDF coverage is mandatory even when the statement does not label its period: the UI
+prefills the earliest and latest extracted transaction dates, and the user must check
+and explicitly confirm the dates, completeness status, and any gaps before import.
 
 ## Synthetic manual verification
 

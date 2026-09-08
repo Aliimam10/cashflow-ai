@@ -231,6 +231,15 @@ from cashflow_ai.schemas.ocr_imports import (
     OcrPdfPreview,
     OcrTransactionCandidate,
 )
+from cashflow_ai.schemas.pdf_api import (
+    DigitalPdfColumn,
+    DigitalPdfColumnMapping,
+    DigitalPdfColumnRole,
+    DigitalPdfMappingPreview,
+    DigitalPdfMappingRow,
+    DigitalPdfReviewResult,
+    DigitalPdfReviewState,
+)
 from cashflow_ai.schemas.pdf_imports import (
     PdfExtractionLayout,
     PdfPageExtraction,
@@ -391,6 +400,13 @@ __all__ = [
     "DerivedRefreshResult",
     "DerivedResultFreshness",
     "DerivedResultStatus",
+    "DigitalPdfColumn",
+    "DigitalPdfColumnMapping",
+    "DigitalPdfColumnRole",
+    "DigitalPdfMappingPreview",
+    "DigitalPdfMappingRow",
+    "DigitalPdfReviewResult",
+    "DigitalPdfReviewState",
     "Direction",
     "DuplicateAction",
     "DuplicateAssessment",

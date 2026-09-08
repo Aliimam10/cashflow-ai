@@ -24,6 +24,8 @@ DEFAULT_MIN_SPATIAL_CHARACTERS: Final = 20
 _MAX_WORD_CHARACTERS: Final = 4_096
 _HEADER_POSITION_TOLERANCE: Final = 0.08
 _MONEY_CLUSTER_TOLERANCE: Final = 0.035
+_ACCESSIBILITY_LABEL_POSITION_TOLERANCE: Final = 0.01
+_ACCESSIBILITY_HEADER_METADATA: Final = frozenset({"column", "type"})
 
 
 class SpatialPdfState(StrEnum):
@@ -108,6 +110,7 @@ class SpatialPdfRecord:
     page_record_number: int
     source_line_numbers: tuple[int, ...]
     cells: tuple[SpatialPdfCell, ...] = field(repr=False)
+    mapped_cells: tuple[SpatialPdfCell, ...] | None = field(default=None, repr=False)
     unresolved: bool = False
 
     def value(self, column_id: str) -> str:
@@ -485,6 +488,16 @@ def _header_from_line(
     }.issubset(matches)
     if not required.issubset(matches) or not has_amount:
         return None
+    covered_word_indexes = {
+        index for start, end in matches.values() for index in range(start, end)
+    }
+    if any(
+        (token := _normalise_token(word.text))
+        and token not in _ACCESSIBILITY_HEADER_METADATA
+        and index not in covered_word_indexes
+        for index, word in enumerate(line.words)
+    ):
+        return None
 
     anchors: list[tuple[SpatialColumnRole, float, float, str]] = []
     for role, (start, end) in matches.items():
@@ -617,6 +630,117 @@ def _mapping_value(
     return next((cell.text for cell in cells if cell.column_id == column_id), "")
 
 
+def _accessibility_label_bundle(
+    line: _VisualLine,
+    *,
+    page_width: float,
+    columns: tuple[SpatialPdfColumn, ...],
+) -> tuple[tuple[SpatialPdfCell, ...], tuple[float, ...]] | None:
+    """Remove one exact, complete accessibility-label bundle from a visual row."""
+    grouped: dict[str, list[tuple[int, SpatialPdfWord]]] = {
+        column.column_id: [] for column in columns
+    }
+    for index, word in enumerate(line.words):
+        centre = ((word.x0 + word.x1) / 2) / page_width
+        column = next(
+            (
+                candidate
+                for candidate in columns
+                if candidate.left <= centre < candidate.right
+            ),
+            columns[-1],
+        )
+        grouped[column.column_id].append((index, word))
+
+    removed: set[int] = set()
+    positions: list[float] = []
+    for column in columns:
+        header_tokens = tuple(_normalise_token(column.header_text).split())
+        if not header_tokens or len(header_tokens) != len(set(header_tokens)):
+            return None
+        words = grouped[column.column_id]
+        for token in header_tokens:
+            matches = tuple(
+                (index, word)
+                for index, word in words
+                if _normalise_token(word.text) == token
+            )
+            if len(matches) != 1:
+                return None
+            index, word = matches[0]
+            removed.add(index)
+            positions.append(((word.x0 + word.x1) / 2) / page_width)
+
+    cleaned = tuple(
+        word for index, word in enumerate(line.words) if index not in removed
+    )
+    return (
+        tuple(
+            _cell_from_words(
+                column,
+                tuple(
+                    word
+                    for word in cleaned
+                    if column.left
+                    <= ((word.x0 + word.x1) / 2) / page_width
+                    < column.right
+                ),
+            )
+            for column in columns
+        ),
+        tuple(positions),
+    )
+
+
+def _accessibility_label_rows(
+    lines: tuple[_VisualLine, ...],
+    *,
+    page_width: float,
+    columns: tuple[SpatialPdfColumn, ...],
+) -> tuple[bool, dict[int, tuple[SpatialPdfCell, ...]], frozenset[int]]:
+    """Accept label removal only when multiple complete bundles share geometry."""
+    candidates = {
+        line.line_number: bundle
+        for line in lines
+        if (
+            bundle := _accessibility_label_bundle(
+                line,
+                page_width=page_width,
+                columns=columns,
+            )
+        )
+        is not None
+    }
+    if len(candidates) < 2:
+        return False, {}, frozenset(candidates)
+    coordinate_sets = tuple(bundle[1] for bundle in candidates.values())
+    if any(
+        max(values) - min(values) > _ACCESSIBILITY_LABEL_POSITION_TOLERANCE
+        for values in zip(*coordinate_sets, strict=True)
+    ):
+        return True, {}, frozenset(candidates)
+    return (
+        True,
+        {line_number: bundle[0] for line_number, bundle in candidates.items()},
+        frozenset(candidates),
+    )
+
+
+def _validated_mapped_value(
+    cells: tuple[SpatialPdfCell, ...],
+    column_id: str | None,
+    *,
+    pattern: re.Pattern[str] | None = None,
+    embedded: bool,
+) -> str:
+    """Return one mapped value, accepting embedded syntax only after label proof."""
+    value = _mapping_value(cells, column_id)
+    if pattern is None or not embedded:
+        return value
+    matches = tuple(match.group(0) for match in pattern.finditer(value))
+    return matches[0] if len(matches) == 1 else ""
+
+
 def _looks_like_date(value: str) -> bool:
     return _DATE_VALUE.fullmatch(" ".join(value.split())) is not None
 
@@ -634,45 +758,80 @@ def _is_structural_line(line: _VisualLine) -> bool:
 
 
 def _amount_values(
-    cells: tuple[SpatialPdfCell, ...], mapping: SpatialColumnMapping
+    cells: tuple[SpatialPdfCell, ...],
+    mapping: SpatialColumnMapping,
+    *,
+    embedded: bool,
 ) -> tuple[str, ...]:
     if mapping.signed_amount is not None:
-        return (_mapping_value(cells, mapping.signed_amount),)
+        return (
+            _validated_mapped_value(
+                cells,
+                mapping.signed_amount,
+                pattern=_MONEY_VALUE,
+                embedded=embedded,
+            ),
+        )
     return (
-        _mapping_value(cells, mapping.debit_amount),
-        _mapping_value(cells, mapping.credit_amount),
+        _validated_mapped_value(
+            cells,
+            mapping.debit_amount,
+            pattern=_MONEY_VALUE,
+            embedded=embedded,
+        ),
+        _validated_mapped_value(
+            cells,
+            mapping.credit_amount,
+            pattern=_MONEY_VALUE,
+            embedded=embedded,
+        ),
     )
 
 
 def _append_continuation(
     record: SpatialPdfRecord,
     line: _VisualLine,
-    cells: tuple[SpatialPdfCell, ...],
+    source_cells: tuple[SpatialPdfCell, ...],
     description_column: str,
+    *,
+    mapped_cells: tuple[SpatialPdfCell, ...] | None = None,
 ) -> SpatialPdfRecord:
-    continuation = _mapping_value(cells, description_column)
-    updated_cells: list[SpatialPdfCell] = []
-    for cell in record.cells:
-        if cell.column_id != description_column:
-            updated_cells.append(cell)
-            continue
-        source_cell = next(
-            item for item in cells if item.column_id == description_column
-        )
-        updated_cells.append(
-            replace(
-                cell,
-                text=f"{cell.text}\n{continuation}",
-                x0=min(cell.x0, source_cell.x0),
-                top=min(cell.top, source_cell.top),
-                x1=max(cell.x1, source_cell.x1),
-                bottom=max(cell.bottom, source_cell.bottom),
+    def append_cells(
+        existing: tuple[SpatialPdfCell, ...],
+        continuation_cells: tuple[SpatialPdfCell, ...],
+    ) -> tuple[SpatialPdfCell, ...]:
+        continuation = _mapping_value(continuation_cells, description_column)
+        updated: list[SpatialPdfCell] = []
+        for cell in existing:
+            if cell.column_id != description_column:
+                updated.append(cell)
+                continue
+            source_cell = next(
+                item
+                for item in continuation_cells
+                if item.column_id == description_column
             )
-        )
+            updated.append(
+                replace(
+                    cell,
+                    text=f"{cell.text}\n{continuation}",
+                    x0=min(cell.x0, source_cell.x0),
+                    top=min(cell.top, source_cell.top),
+                    x1=max(cell.x1, source_cell.x1),
+                    bottom=max(cell.bottom, source_cell.bottom),
+                )
+            )
+        return tuple(updated)
+
     return replace(
         record,
         source_line_numbers=(*record.source_line_numbers, line.line_number),
-        cells=tuple(updated_cells),
+        cells=append_cells(record.cells, source_cells),
+        mapped_cells=(
+            None
+            if record.mapped_cells is None
+            else append_cells(record.mapped_cells, mapped_cells or source_cells)
+        ),
     )
 
 
@@ -687,8 +846,17 @@ def _records_for_sections(
             if header_number + 1 < len(headers)
             else len(page.lines)
         )
+        section_lines = page.lines[header.line_index + 1 : section_end]
+        non_structural_lines = tuple(
+            line for line in section_lines if not _is_structural_line(line)
+        )
+        label_mode, cleaned_rows, label_candidates = _accessibility_label_rows(
+            non_structural_lines,
+            page_width=page.width,
+            columns=header.columns,
+        )
         previous_line: _VisualLine | None = None
-        for line in page.lines[header.line_index + 1 : section_end]:
+        for line in section_lines:
             if _is_structural_line(line):
                 previous_line = line
                 continue
@@ -697,15 +865,41 @@ def _records_for_sections(
                 page_width=page.width,
                 columns=header.columns,
             )
-            date_value = _mapping_value(cells, header.mapping.transaction_date)
-            description = _mapping_value(cells, header.mapping.description)
-            amounts = _amount_values(cells, header.mapping)
-            balance = _mapping_value(cells, header.mapping.running_balance)
-            has_money = any(value.strip() for value in (*amounts, balance))
+            projected_cells = cleaned_rows.get(line.line_number)
+            values = projected_cells or cells
+            embedded = projected_cells is not None
+            date_value = _validated_mapped_value(
+                values,
+                header.mapping.transaction_date,
+                pattern=_DATE_VALUE,
+                embedded=embedded,
+            )
+            description = _validated_mapped_value(
+                values,
+                header.mapping.description,
+                embedded=embedded,
+            )
+            amounts = _amount_values(
+                values,
+                header.mapping,
+                embedded=embedded,
+            )
+            balance = _validated_mapped_value(
+                values,
+                header.mapping.running_balance,
+                pattern=_MONEY_VALUE,
+                embedded=embedded,
+            )
+            has_money = any(
+                _looks_like_money(value)
+                for value in (*amounts, balance)
+                if value.strip()
+            )
             is_complete = (
                 _looks_like_date(date_value)
                 and bool(description.strip())
                 and any(_looks_like_money(value) for value in amounts if value.strip())
+                and (not label_mode or embedded)
             )
             if is_complete:
                 records.append(
@@ -714,6 +908,7 @@ def _records_for_sections(
                         page_record_number=len(records) + 1,
                         source_line_numbers=(line.line_number,),
                         cells=cells,
+                        mapped_cells=projected_cells,
                     )
                 )
             elif (
@@ -722,6 +917,7 @@ def _records_for_sections(
                 and bool(description.strip())
                 and not has_money
                 and previous_line is not None
+                and (not label_mode or embedded)
                 and line.top - previous_line.bottom
                 <= max(6.0, (previous_line.bottom - previous_line.top) * 1.5)
             ):
@@ -730,14 +926,20 @@ def _records_for_sections(
                     line,
                     cells,
                     header.mapping.description,
+                    mapped_cells=projected_cells,
                 )
-            elif date_value.strip() or has_money:
+            elif (
+                _looks_like_date(date_value)
+                or has_money
+                or line.line_number in label_candidates
+            ):
                 records.append(
                     SpatialPdfRecord(
                         page_number=page.page_number,
                         page_record_number=len(records) + 1,
                         source_line_numbers=(line.line_number,),
                         cells=cells,
+                        mapped_cells=projected_cells,
                         unresolved=True,
                     )
                 )
@@ -934,25 +1136,56 @@ def _map_records(
     mapped: list[MappedSpatialRecord] = []
     complete = True
     for source in table.records:
-        date_value = source.value(mapping.transaction_date)
-        description = source.value(mapping.description)
+        cells = source.mapped_cells or source.cells
+        embedded = source.mapped_cells is not None
+        date_value = _validated_mapped_value(
+            cells,
+            mapping.transaction_date,
+            pattern=_DATE_VALUE,
+            embedded=embedded,
+        )
+        description = _validated_mapped_value(
+            cells,
+            mapping.description,
+            embedded=embedded,
+        )
         signed = (
-            source.value(mapping.signed_amount)
+            _validated_mapped_value(
+                cells,
+                mapping.signed_amount,
+                pattern=_MONEY_VALUE,
+                embedded=embedded,
+            )
             if mapping.signed_amount is not None
             else None
         )
         debit = (
-            source.value(mapping.debit_amount)
+            _validated_mapped_value(
+                cells,
+                mapping.debit_amount,
+                pattern=_MONEY_VALUE,
+                embedded=embedded,
+            )
             if mapping.debit_amount is not None
             else None
         )
         credit = (
-            source.value(mapping.credit_amount)
+            _validated_mapped_value(
+                cells,
+                mapping.credit_amount,
+                pattern=_MONEY_VALUE,
+                embedded=embedded,
+            )
             if mapping.credit_amount is not None
             else None
         )
         balance = (
-            source.value(mapping.running_balance)
+            _validated_mapped_value(
+                cells,
+                mapping.running_balance,
+                pattern=_MONEY_VALUE,
+                embedded=embedded,
+            )
             if mapping.running_balance is not None
             else None
         )

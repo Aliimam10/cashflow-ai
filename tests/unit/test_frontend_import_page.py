@@ -21,7 +21,6 @@ from cashflow_ai.frontend.session import FrontendSessionState
 from cashflow_ai.schemas.accounts import AccountType
 from cashflow_ai.schemas.api import (
     AccountResponse,
-    OcrStatusResponse,
     Page,
     UserProfileResponse,
 )
@@ -38,6 +37,14 @@ from cashflow_ai.schemas.imports import (
     ImportIssue,
     IssueSeverity,
     TransactionField,
+)
+from cashflow_ai.schemas.pdf_api import (
+    DigitalPdfColumn,
+    DigitalPdfColumnMapping,
+    DigitalPdfColumnRole,
+    DigitalPdfMappingPreview,
+    DigitalPdfMappingRow,
+    DigitalPdfReviewState,
 )
 from cashflow_ai.schemas.reconciliation import (
     DateFormat,
@@ -188,6 +195,40 @@ def _review_mock(
     return review
 
 
+def _mapping_preview() -> DigitalPdfMappingPreview:
+    return DigitalPdfMappingPreview(
+        file_hash=HASH_A,
+        structure_digest="b" * 64,
+        page_count=1,
+        columns=(
+            DigitalPdfColumn(
+                column_id="column_1",
+                header_text="Column 1",
+                role_hint=DigitalPdfColumnRole.TRANSACTION_DATE,
+            ),
+            DigitalPdfColumn(
+                column_id="column_2",
+                header_text="Column 2",
+                role_hint=DigitalPdfColumnRole.DESCRIPTION,
+            ),
+            DigitalPdfColumn(
+                column_id="column_3",
+                header_text="Column 3",
+                role_hint=DigitalPdfColumnRole.SIGNED_AMOUNT,
+            ),
+        ),
+        sample_rows=(
+            DigitalPdfMappingRow(
+                page_number=1,
+                page_record_number=1,
+                values=("01/08/2026", "SYNTHETIC SHOP", "-10.00"),
+            ),
+        ),
+        total_rows=2,
+        truncated=True,
+    )
+
+
 def _prepare_pdf_test(
     monkeypatch: pytest.MonkeyPatch,
     review: MagicMock,
@@ -196,13 +237,16 @@ def _prepare_pdf_test(
     submitted: bool = True,
 ) -> tuple[MagicMock, MagicMock]:
     ui = _ui(monkeypatch)
-    ui.slider.return_value = 0.85
     ui.checkbox.side_effect = checkboxes
     ui.form_submit_button.return_value = submitted
     ui.text_input.side_effect = ["100.00", "90.00"]
     ui.selectbox.return_value = DateFormat.DAY_FIRST
     client = MagicMock()
-    client.prepare_pdf_review.return_value = review
+    result = MagicMock()
+    result.state = DigitalPdfReviewState.READY
+    result.review = review
+    result.mapping_preview = None
+    client.prepare_pdf_review.return_value = result
     monkeypatch.setattr(page, "_render_pdf_evidence", MagicMock())
     monkeypatch.setattr(page, "_render_pdf_result", MagicMock())
     monkeypatch.setattr(
@@ -232,7 +276,8 @@ def test_import_error_adds_known_guidance_only(monkeypatch: pytest.MonkeyPatch) 
 
     assert display.call_count == 2
     ui.caption.assert_called_once_with(
-        "This PDF contains image-only pages. Choose Scanned or camera PDF."
+        "Scanned and image-only PDFs are outside Version 1. Download a CSV export "
+        "from the bank instead."
     )
 
 
@@ -676,11 +721,13 @@ def test_default_gap_text_and_pdf_coverage_defaults(
 
     review.statement_coverage = None
     review.balance_evidence = ()
+    ui.checkbox.return_value = False
     dated = MagicMock()
     dated.working_draft.transaction_date = date(2026, 8, 7)
     review.rows = (dated,)
     ui.date_input.side_effect = [date(2026, 8, 7), date(2026, 8, 7)]
-    page._pdf_coverage_fields(review)
+    fallback_result = page._pdf_coverage_fields(review)
+    assert fallback_result[0] is True
 
     undated = MagicMock()
     undated.working_draft.transaction_date = None
@@ -721,14 +768,41 @@ def test_pdf_evidence_and_result_show_reconciliation_limits(
     reconciled = _review_mock(status=ReconciliationStatus.RECONCILED)
     page._render_pdf_evidence(reconciled)
     result = MagicMock()
-    result.rows = (1, 2)
-    result.rejected_rows = (3,)
-    result.reconciliation.status = ReconciliationStatus.RECONCILED
+    result.imported_transactions = 2
+    result.exact_duplicates_skipped = 1
+    result.probable_duplicates = 1
+    result.rejected_rows = 1
+    result.repeated_file = True
+    result.coverage.new_missing_periods = (1,)
+    result.coverage.disconnected_range = True
+    result.coverage.overlap_periods = (1,)
     page._render_pdf_result(result)
 
     coverage_display.assert_called_once()
     assert ui.warning.call_count == 4
     ui.success.assert_called_once()
+    assert ui.info.call_count == 2
+
+
+def test_pdf_result_without_coverage_warnings_reports_only_counts(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = _ui(monkeypatch)
+    result = MagicMock()
+    result.imported_transactions = 1
+    result.exact_duplicates_skipped = 0
+    result.probable_duplicates = 0
+    result.rejected_rows = 0
+    result.repeated_file = False
+    result.coverage.new_missing_periods = ()
+    result.coverage.disconnected_range = False
+    result.coverage.overlap_periods = ()
+
+    page._render_pdf_result(result)
+
+    ui.success.assert_called_once()
+    ui.warning.assert_not_called()
+    ui.info.assert_not_called()
 
 
 def test_targeted_row_fields_show_confidence_and_issues(
@@ -782,7 +856,7 @@ def test_targeted_row_fields_show_confidence_and_issues(
     ui.warning.assert_called_once()
 
 
-def test_ocr_status_failure_unavailable_and_pdf_prepare_failure(
+def test_pdf_prepare_failure_and_unsupported_layout_recommend_csv(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     document = UploadedDocument("synthetic.pdf", b"%PDF", "application/pdf")
@@ -792,25 +866,261 @@ def test_ocr_status_failure_unavailable_and_pdf_prepare_failure(
     )
     display = MagicMock()
     monkeypatch.setattr(page, "_render_import_error", display)
-    client.ocr_status.side_effect = _api_error("ocr_engine_unavailable")
-    page._render_pdf_workflow(client, _account(), document, UploadKind.OCR_PDF)
+    client.prepare_pdf_review.side_effect = _api_error("malformed_pdf")
+    page._render_pdf_workflow(client, _account(), document)
     display.assert_called_once()
 
-    client.ocr_status.side_effect = None
-    client.ocr_status.return_value = OcrStatusResponse(
-        available=False, message="local Tesseract OCR is unavailable"
-    )
-    page._render_pdf_workflow(client, _account(), document, UploadKind.OCR_PDF)
-    ui.error.assert_called_with(
-        "Local Tesseract OCR is unavailable. Run `make check-ocr`."
+    unsupported = MagicMock()
+    unsupported.state = DigitalPdfReviewState.UNSUPPORTED_LAYOUT
+    unsupported.guidance = "Use a CSV export."
+    unsupported.reason_code = "image_only_or_scanned_pdf"
+    client.prepare_pdf_review.side_effect = None
+    client.prepare_pdf_review.return_value = unsupported
+    page._render_pdf_workflow(client, _account(), document)
+    ui.error.assert_called_with("Use a CSV export.")
+    ui.caption.assert_any_call("Reason: image only or scanned pdf.")
+
+
+def test_pdf_mapping_requires_confirmation_and_returns_file_bound_mapping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = _ui(monkeypatch)
+    preview = _mapping_preview()
+    ui.selectbox.side_effect = ["column_1", "column_2", "column_3", None]
+    ui.radio.return_value = "Signed amount"
+    ui.checkbox.return_value = False
+    assert page._render_pdf_mapping(preview) is None
+
+    ui.selectbox.side_effect = ["column_1", "column_2", "column_3", None]
+    ui.checkbox.return_value = True
+    mapping = page._render_pdf_mapping(preview)
+    assert mapping is not None
+    assert mapping.file_hash == HASH_A
+    assert mapping.structure_digest == "b" * 64
+    assert mapping.signed_amount == "column_3"
+    ui.caption.assert_any_call(
+        "Showing 1 of 2 reconstructed rows for column mapping. All rows are checked "
+        "after mapping."
     )
 
-    client.ocr_status.return_value = OcrStatusResponse(
-        available=True, message="local Tesseract OCR is available"
+
+def test_pdf_mapping_rejects_duplicate_roles(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = _ui(monkeypatch)
+    ui.selectbox.side_effect = ["column_1", "column_1", "column_3", None]
+    ui.radio.return_value = "Signed amount"
+    ui.checkbox.return_value = True
+
+    assert page._render_pdf_mapping(_mapping_preview()) is None
+    ui.error.assert_called_with(
+        "Each PDF column must have one valid and unambiguous role."
     )
-    client.prepare_pdf_review.side_effect = _api_error("malformed_pdf")
-    page._render_pdf_workflow(client, _account(), document, UploadKind.OCR_PDF)
-    assert display.call_count == 2
+
+
+def test_pdf_mapping_supports_separate_debit_credit_without_truncation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = _ui(monkeypatch)
+    preview = DigitalPdfMappingPreview(
+        file_hash=HASH_A,
+        structure_digest="c" * 64,
+        page_count=1,
+        columns=tuple(
+            DigitalPdfColumn(
+                column_id=f"column_{index}",
+                header_text=label,
+                role_hint=role,
+            )
+            for index, (label, role) in enumerate(
+                (
+                    ("Date", DigitalPdfColumnRole.TRANSACTION_DATE),
+                    ("Description", DigitalPdfColumnRole.DESCRIPTION),
+                    ("Debit", DigitalPdfColumnRole.DEBIT_AMOUNT),
+                    ("Credit", DigitalPdfColumnRole.CREDIT_AMOUNT),
+                    ("Balance", DigitalPdfColumnRole.RUNNING_BALANCE),
+                ),
+                start=1,
+            )
+        ),
+        sample_rows=(
+            DigitalPdfMappingRow(
+                page_number=1,
+                page_record_number=1,
+                values=("01/08/2026", "SYNTHETIC SHOP", "10.00", "", "90.00"),
+            ),
+        ),
+        total_rows=1,
+        truncated=False,
+    )
+    ui.selectbox.side_effect = [
+        "column_1",
+        "column_2",
+        "column_3",
+        "column_4",
+        "column_5",
+    ]
+    ui.radio.return_value = "Separate debit and credit"
+    ui.checkbox.return_value = True
+
+    mapping = page._render_pdf_mapping(preview)
+
+    assert mapping is not None
+    assert mapping.signed_amount is None
+    assert mapping.debit_amount == "column_3"
+    assert mapping.credit_amount == "column_4"
+    assert mapping.running_balance == "column_5"
+    ui.caption.assert_not_called()
+
+
+def test_pdf_workflow_applies_mapping_then_renders_ready_review(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = _ui(monkeypatch)
+    ui.form_submit_button.return_value = False
+    document = UploadedDocument("synthetic.pdf", b"%PDF", "application/pdf")
+    mapping_preview = _mapping_preview()
+    mapping = DigitalPdfColumnMapping(
+        file_hash=HASH_A,
+        structure_digest="b" * 64,
+        transaction_date="column_1",
+        description="column_2",
+        signed_amount="column_3",
+    )
+    first = MagicMock()
+    first.state = DigitalPdfReviewState.MAPPING_REQUIRED
+    first.mapping_preview = mapping_preview
+    ready = MagicMock()
+    ready.state = DigitalPdfReviewState.READY
+    ready.review = _review_mock()
+    client = MagicMock()
+    client.prepare_pdf_review.side_effect = [first, ready]
+    mapping_form = MagicMock(return_value=mapping)
+    monkeypatch.setattr(page, "_render_pdf_mapping", mapping_form)
+    monkeypatch.setattr(page, "_render_pdf_evidence", MagicMock())
+    monkeypatch.setattr(page, "pdf_review_csv_bytes", MagicMock(return_value=b"csv"))
+
+    page._render_pdf_workflow(client, _account(), document)
+
+    assert client.prepare_pdf_review.call_count == 2
+    assert client.prepare_pdf_review.call_args_list[1].kwargs["mapping"] == mapping
+    ui.download_button.assert_called_once()
+    client.confirm_pdf.assert_not_called()
+
+
+def test_pdf_workflow_waits_for_mapping_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _ui(monkeypatch)
+    result = MagicMock()
+    result.state = DigitalPdfReviewState.MAPPING_REQUIRED
+    result.mapping_preview = _mapping_preview()
+    client = MagicMock()
+    client.prepare_pdf_review.return_value = result
+    monkeypatch.setattr(page, "_render_pdf_mapping", MagicMock(return_value=None))
+
+    page._render_pdf_workflow(
+        client,
+        _account(),
+        UploadedDocument("synthetic.pdf", b"%PDF", "application/pdf"),
+    )
+
+    client.prepare_pdf_review.assert_called_once()
+    client.confirm_pdf.assert_not_called()
+
+
+def test_pdf_workflow_handles_mapping_retry_failure_and_incomplete_ready_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = _ui(monkeypatch)
+    first = MagicMock()
+    first.state = DigitalPdfReviewState.MAPPING_REQUIRED
+    first.mapping_preview = _mapping_preview()
+    client = MagicMock()
+    client.prepare_pdf_review.side_effect = [first, _api_error("invalid_pdf_mapping")]
+    monkeypatch.setattr(
+        page,
+        "_render_pdf_mapping",
+        MagicMock(
+            return_value=DigitalPdfColumnMapping(
+                file_hash=HASH_A,
+                structure_digest="b" * 64,
+                transaction_date="column_1",
+                description="column_2",
+                signed_amount="column_3",
+            )
+        ),
+    )
+    display = MagicMock()
+    monkeypatch.setattr(page, "_render_import_error", display)
+
+    page._render_pdf_workflow(
+        client,
+        _account(),
+        UploadedDocument("synthetic.pdf", b"%PDF", "application/pdf"),
+    )
+    display.assert_called_once()
+
+    incomplete = MagicMock()
+    incomplete.state = DigitalPdfReviewState.READY
+    incomplete.review = None
+    client.prepare_pdf_review.side_effect = None
+    client.prepare_pdf_review.return_value = incomplete
+    page._render_pdf_workflow(
+        client,
+        _account(),
+        UploadedDocument("synthetic.pdf", b"%PDF", "application/pdf"),
+    )
+    ui.error.assert_called_with("The API did not return a complete PDF review.")
+
+
+@pytest.mark.parametrize(
+    ("second_state", "message"),
+    [
+        (DigitalPdfReviewState.UNSUPPORTED_LAYOUT, "Use CSV."),
+        (
+            DigitalPdfReviewState.MAPPING_REQUIRED,
+            "This mapping still leaves incomplete transaction rows. Adjust the "
+            "column choices or use the bank's CSV export.",
+        ),
+    ],
+)
+def test_pdf_workflow_stops_when_applied_mapping_is_not_ready(
+    second_state: DigitalPdfReviewState,
+    message: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = _ui(monkeypatch)
+    first = MagicMock()
+    first.state = DigitalPdfReviewState.MAPPING_REQUIRED
+    first.mapping_preview = _mapping_preview()
+    second = MagicMock()
+    second.state = second_state
+    second.guidance = "Use CSV."
+    client = MagicMock()
+    client.prepare_pdf_review.side_effect = [first, second]
+    monkeypatch.setattr(
+        page,
+        "_render_pdf_mapping",
+        MagicMock(
+            return_value=DigitalPdfColumnMapping(
+                file_hash=HASH_A,
+                structure_digest="b" * 64,
+                transaction_date="column_1",
+                description="column_2",
+                signed_amount="column_3",
+            )
+        ),
+    )
+
+    page._render_pdf_workflow(
+        client,
+        _account(),
+        UploadedDocument("synthetic.pdf", b"%PDF", "application/pdf"),
+    )
+
+    ui.error.assert_called_with(message)
+    client.confirm_pdf.assert_not_called()
 
 
 @pytest.mark.parametrize(
@@ -874,7 +1184,6 @@ def test_pdf_approval_requires_every_explicit_gate(
         client,
         _account(),
         UploadedDocument("synthetic.pdf", b"%PDF", "application/pdf"),
-        UploadKind.DIGITAL_PDF,
     )
     ui.error.assert_called_with(message)
     client.confirm_pdf.assert_not_called()
@@ -934,7 +1243,6 @@ def test_pdf_approval_handles_contract_error_api_error_and_success(
         client,
         _account(),
         UploadedDocument("synthetic.pdf", b"%PDF", "application/pdf"),
-        UploadKind.DIGITAL_PDF,
     )
     error_display.assert_called_once()
 
@@ -946,7 +1254,6 @@ def test_pdf_approval_handles_contract_error_api_error_and_success(
         client,
         _account(),
         UploadedDocument("synthetic.pdf", b"%PDF", "application/pdf"),
-        UploadKind.DIGITAL_PDF,
     )
     cast(MagicMock, page._render_pdf_result).assert_called_once()
     approval = client.confirm_pdf.call_args.kwargs["approval"]
@@ -964,7 +1271,6 @@ def test_pdf_approval_handles_contract_error_api_error_and_success(
         client,
         _account(),
         UploadedDocument("synthetic.pdf", b"%PDF", "application/pdf"),
-        UploadKind.DIGITAL_PDF,
     )
     ui.error.assert_called_with(
         "Check the corrected rows, coverage, balances, and decisions."
@@ -982,7 +1288,6 @@ def test_pdf_workflow_waits_for_form_submission(
         client,
         _account(),
         UploadedDocument("synthetic.pdf", b"%PDF", "application/pdf"),
-        UploadKind.DIGITAL_PDF,
     )
     client.confirm_pdf.assert_not_called()
 

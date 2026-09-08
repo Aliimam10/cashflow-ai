@@ -592,10 +592,11 @@ run Alembic; readiness is false until the caller deliberately upgrades the schem
 CSV confirmation reuses the established hash-bound atomic importer. PDF review and
 confirmation are stateless and re-extract the exact uploaded bytes on each call. A
 client cannot promote a modified preview by posting an untrusted review object back
-to the server. In this backend checkpoint, the current HTTP confirmation route still
-returns an in-memory approval even though the strict lower-level digital-PDF
-persistence service now exists. Transport integration belongs to the next interface
-checkpoint.
+to the server. Digital-PDF review returns a ready, mapping-required, or unsupported
+state. User-selected mappings are bound to both the file hash and reconstructed-table
+digest. Confirmation rebuilds the review, replays only explicit decisions, and enters
+the strict atomic persistence service; no approved balance or transaction can be
+written separately.
 
 The server is restricted to loopback configuration and disposes its database engine
 on shutdown. Exception translation is centralised and debug tracebacks are disabled
@@ -630,12 +631,13 @@ bodies, raw statements, or local paths.
 The Overview page owns no financial calculation. It presents local service readiness,
 the local privacy boundary, and the forecast disclaimer. The import page now composes
 profile/account setup and review-gated CSV/PDF forms over typed API requests. CSV
-confirmation delegates its atomic write to the backend. PDF review sends the exact
-document again and receives a non-persistent approved result; neither the page nor its
-session state becomes a source of trusted transaction data. This is the current
-legacy page: the next interface checkpoint will connect the digital-PDF persistence
-service and remove scanned-PDF controls from normal navigation while keeping OCR
-regression routes internal. Transactions/analytics
+confirmation delegates its atomic write to the backend. Digital-PDF review sends the
+exact document again, applies any hash- and structure-bound column mapping, and
+receives a review rather than trusted data. Confirmation sends the exact document and
+explicit decisions again for atomic persistence. Neither the page nor its session
+state becomes a source of trusted transaction data. Normal navigation exposes CSV and
+selectable-text digital PDF only; OCR regression routes remain internal.
+Transactions/analytics
 is a review and presentation client over the transaction API. The recurring and
 forecasting page likewise builds only typed policy/scope requests: the backend detects
 series, trains/selects models, anchors verified balances, and simulates paths. The UI

@@ -12,9 +12,12 @@ import pytest
 import cashflow_ai.imports.spatial_pdf as spatial_pdf_module
 import cashflow_ai.imports.text_pdf as text_pdf_module
 from cashflow_ai.imports.spatial_pdf import (
+    MappedSpatialRecord,
     SpatialColumnMapping,
+    SpatialPdfCell,
     SpatialPdfError,
     SpatialPdfErrorCode,
+    SpatialPdfRecord,
     SpatialPdfResult,
     SpatialPdfState,
 )
@@ -22,6 +25,8 @@ from cashflow_ai.imports.text_pdf import (
     SPATIAL_PDF_EXTRACTOR_IDENTITY,
     PdfImportError,
     PdfImportErrorCode,
+    _spatial_rows,
+    _transaction_signals,
     extract_text_pdf,
 )
 
@@ -427,6 +432,88 @@ def test_spatial_reconstruction_must_account_for_every_detected_source_line(
 
     assert error.value.code is PdfImportErrorCode.NO_TRANSACTIONS
     assert "every transaction-like" in str(error.value)
+
+
+def test_accessibility_labelled_raw_cells_are_accounted_by_validated_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = SpatialPdfRecord(
+        page_number=1,
+        page_record_number=1,
+        source_line_numbers=(7,),
+        cells=(
+            SpatialPdfCell("column_1", "Date 01/08/2026"),
+            SpatialPdfCell("column_2", "Description SYNTHETIC ITEM"),
+            SpatialPdfCell("column_3", "Money In"),
+            SpatialPdfCell("column_4", "Money 5.00 Out"),
+            SpatialPdfCell("column_5", "Balance 95.00"),
+        ),
+    )
+    mapped = MappedSpatialRecord(
+        source=source,
+        transaction_date_text="01/08/2026",
+        description_text="SYNTHETIC ITEM",
+        signed_amount_text=None,
+        debit_amount_text="5.00",
+        credit_amount_text="",
+        running_balance_text="95.00",
+    )
+    result = SpatialPdfResult(
+        state=SpatialPdfState.READY,
+        page_count=1,
+        reason_code="synthetic_accessibility_labels",
+        records=(mapped,),
+    )
+    monkeypatch.setattr(
+        text_pdf_module,
+        "reconstruct_spatial_pdf",
+        lambda *args, **kwargs: result,
+    )
+    expected = _transaction_signals(
+        "01/08/2026 SYNTHETIC ITEM 95.00 5.00",
+        page_number=1,
+    )
+
+    rows = _spatial_rows(
+        b"synthetic",
+        mapping=None,
+        max_pages=1,
+        min_embedded_characters=1,
+        expected_transaction_signals=expected,
+    )
+
+    assert len(rows) == 1
+    assert rows[0].values == (
+        "01/08/2026",
+        "SYNTHETIC ITEM",
+        "5.00",
+        "",
+        "95.00",
+    )
+    missing_page = _transaction_signals(
+        "01/08/2026 SYNTHETIC ITEM 5.00 95.00",
+        page_number=2,
+    )
+    with pytest.raises(PdfImportError) as error:
+        _spatial_rows(
+            b"synthetic",
+            mapping=None,
+            max_pages=2,
+            min_embedded_characters=1,
+            expected_transaction_signals=missing_page,
+        )
+    assert error.value.code is PdfImportErrorCode.NO_TRANSACTIONS
+
+    duplicated = expected.copy()
+    duplicated.update(expected)
+    with pytest.raises(PdfImportError):
+        _spatial_rows(
+            b"synthetic",
+            mapping=None,
+            max_pages=1,
+            min_embedded_characters=1,
+            expected_transaction_signals=duplicated,
+        )
 
 
 def test_equal_row_counts_with_conflicting_source_evidence_fail_closed(

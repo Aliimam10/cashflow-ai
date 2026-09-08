@@ -29,7 +29,7 @@ OPENAPI_TAGS = [
     {
         "name": "ingestion",
         "description": (
-            "Stateless CSV/PDF preview, explicit review, and confirmed CSV import."
+            "Stateless CSV/PDF review and exact-file confirmed statement imports."
         ),
     },
     {

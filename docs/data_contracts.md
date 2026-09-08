@@ -54,9 +54,25 @@ Extraction methods must match their source: CSV row parsing, PDF embedded text,
 PDF table/spatial extraction, or OCR. PDF regions use non-negative page coordinates
 and positive dimensions.
 
+Spatial reconstruction keeps two distinct in-memory views. `SpatialPdfRecord.cells`
+contains the untouched positioned source text used for audit evidence. A mapped-cell
+projection may remove a deterministically proven accessibility-label bundle so that
+date, description, amount, and balance fields can be validated. The projection never
+overwrites the source cells, and persisted raw fields come from the untouched view.
+Both views remain private and are bound to their page/record lineage.
+
+Cross-extractor row-accounting evidence is page scoped and transient. It preserves
+the multiplicity of repeated date-and-money signals so that an identical row on a
+different page cannot hide a missing record. These comparison signals are validation
+state, not a substitute source row or a persisted transaction contract.
+
 Candidates move through `pending`, `needs_review`, `confirmed`, or `rejected`.
 The `confirmed` state is invalid unless explicit user confirmation is recorded;
 confirmation cannot be attached to any other state.
+
+Every approved PDF carries explicitly confirmed `StatementCoverage`. If no reliable
+statement-period label was extracted, the review interface proposes transaction-date
+bounds, but those bounds remain user-confirmed evidence rather than parser fact.
 
 ## Confidence and issues
 
@@ -758,10 +774,12 @@ Uploads remain multipart rather than being embedded in JSON. Complex confirmatio
 contracts are JSON-encoded form fields and validated against their existing
 `CsvImportPlan`, `CsvImportConfirmation`, or `StatementApproval` models. PDF review
 and confirmation do not accept caller-supplied preview/review models as trusted
-input; the service reconstructs those contracts from the exact uploaded source. The
-current PDF confirmation route still returns the in-memory approval in this backend
-checkpoint; the lower-level `PdfImportSummary` becomes its transport result only when
-the next interface checkpoint connects persistence.
+input; the service reconstructs those contracts from the exact uploaded source.
+`DigitalPdfReviewResult` discriminates ready, mapping-required, and unsupported
+states. `DigitalPdfColumnMapping` binds selected column identifiers to both the file
+hash and spatial structure digest. Successful confirmation returns
+`PdfImportSummary` only after the strict atomic persistence boundary accounts for
+every extracted page/record row.
 
 `ApiProblem` contains a stable controlled code, a bounded safe message, optional PDF
 page numbers, and data-minimised validation issues. It cannot carry a rejected input

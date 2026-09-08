@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import csv
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from enum import StrEnum
+from io import StringIO
 
-from cashflow_ai.schemas.api import PdfSourceType
 from cashflow_ai.schemas.csv_imports import CsvPreview
+from cashflow_ai.schemas.pdf_api import DigitalPdfMappingPreview
 from cashflow_ai.schemas.reconciliation import (
     RowDecision,
     RowReview,
@@ -31,7 +33,6 @@ class UploadKind(StrEnum):
 
     CSV = "CSV export"
     DIGITAL_PDF = "Digital PDF"
-    OCR_PDF = "Scanned or camera PDF"
 
     @property
     def extensions(self) -> tuple[str, ...]:
@@ -42,15 +43,6 @@ class UploadKind(StrEnum):
     def mime_type(self) -> str:
         """Return the expected media type sent to the local API."""
         return "text/csv" if self is UploadKind.CSV else "application/pdf"
-
-    @property
-    def pdf_source_type(self) -> PdfSourceType:
-        """Return the API PDF adapter for a PDF source selection."""
-        if self is UploadKind.DIGITAL_PDF:
-            return PdfSourceType.DIGITAL_PDF
-        if self is UploadKind.OCR_PDF:
-            return PdfSourceType.OCR_PDF
-        raise ValueError("CSV uploads do not have a PDF source type")
 
 
 def optional_text(value: str) -> str | None:
@@ -258,6 +250,60 @@ def corrected_row_review(
     )
 
 
+def pdf_mapping_rows(
+    preview: DigitalPdfMappingPreview,
+) -> tuple[dict[str, object], ...]:
+    """Return bounded spatial evidence with readable, unique column labels."""
+    labels = tuple(
+        f"{column.header_text} [{column.column_id}]" for column in preview.columns
+    )
+    return tuple(
+        {
+            "Page": row.page_number,
+            "Row": row.page_record_number,
+            **dict(zip(labels, row.values, strict=True)),
+        }
+        for row in preview.sample_rows
+    )
+
+
+def pdf_review_csv_bytes(review: StatementReview) -> bytes:
+    """Create an explicitly unconfirmed CSV preview without changing source data."""
+    output = StringIO(newline="")
+    writer = csv.writer(output, lineterminator="\n")
+    writer.writerow(
+        (
+            "transaction_date",
+            "posting_date",
+            "description",
+            "amount",
+            "balance_after",
+            "currency",
+            "source_page",
+            "source_record",
+            "review_status",
+        )
+    )
+    for row in review.rows:
+        draft = row.working_draft
+        writer.writerow(
+            (
+                ""
+                if draft.transaction_date is None
+                else draft.transaction_date.isoformat(),
+                "" if draft.posting_date is None else draft.posting_date.isoformat(),
+                draft.description or "",
+                "" if draft.amount is None else str(draft.amount),
+                "" if draft.balance_after is None else str(draft.balance_after),
+                "" if draft.currency is None else draft.currency.value,
+                row.source_identity.page_number,
+                row.source_identity.page_record_number,
+                "needs_review" if row.requires_review else "extracted",
+            )
+        )
+    return output.getvalue().encode("utf-8")
+
+
 def balances_confirmed_from_review(
     review: StatementReview,
     *,
@@ -300,6 +346,8 @@ __all__ = [
     "optional_money",
     "optional_text",
     "parse_gap_ranges",
+    "pdf_mapping_rows",
+    "pdf_review_csv_bytes",
     "pdf_review_rows",
     "suggested_column_index",
     "suggested_csv_statement_period",

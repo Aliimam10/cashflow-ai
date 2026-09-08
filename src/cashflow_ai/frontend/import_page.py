@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from pathlib import PurePath
 from typing import Protocol, cast
 
 import streamlit as st
@@ -25,6 +26,8 @@ from cashflow_ai.frontend.import_workflow import (
     corrected_row_review,
     csv_preview_rows,
     optional_text,
+    pdf_mapping_rows,
+    pdf_review_csv_bytes,
     pdf_review_rows,
     suggested_column_index,
     suggested_csv_statement_period,
@@ -34,9 +37,7 @@ from cashflow_ai.schemas.accounts import AccountType
 from cashflow_ai.schemas.api import (
     AccountCreate,
     AccountResponse,
-    OcrStatusResponse,
     Page,
-    PdfSourceType,
     UserProfileCreate,
     UserProfileResponse,
 )
@@ -47,9 +48,16 @@ from cashflow_ai.schemas.csv_imports import (
     CsvImportSummary,
     CsvPreview,
 )
+from cashflow_ai.schemas.pdf_api import (
+    DigitalPdfColumnMapping,
+    DigitalPdfColumnRole,
+    DigitalPdfMappingPreview,
+    DigitalPdfReviewResult,
+    DigitalPdfReviewState,
+)
+from cashflow_ai.schemas.pdf_persistence import PdfImportSummary
 from cashflow_ai.schemas.reconciliation import (
     AmountSignConvention,
-    ApprovedStatement,
     DateFormat,
     ReconciliationStatus,
     RowDecision,
@@ -87,10 +95,6 @@ class ImportApi(Protocol):
         """Create one account."""
         ...
 
-    def ocr_status(self) -> OcrStatusResponse:
-        """Return local OCR availability."""
-        ...
-
     def preview_csv(self, document: UploadedDocument) -> CsvPreview:
         """Preview CSV structure."""
         ...
@@ -109,25 +113,23 @@ class ImportApi(Protocol):
         self,
         document: UploadedDocument,
         *,
-        source_type: PdfSourceType,
         account_id: str,
         account_currency: Currency,
-        ocr_confidence_threshold: float,
-    ) -> StatementReview:
-        """Prepare one non-persistent PDF review."""
+        mapping: DigitalPdfColumnMapping | None = None,
+    ) -> DigitalPdfReviewResult:
+        """Prepare one non-persistent digital-PDF review."""
         ...
 
     def confirm_pdf(
         self,
         document: UploadedDocument,
         *,
-        source_type: PdfSourceType,
         account_id: str,
         account_currency: Currency,
-        ocr_confidence_threshold: float,
         approval: StatementApproval,
-    ) -> ApprovedStatement:
-        """Confirm one PDF in memory."""
+        mapping: DigitalPdfColumnMapping | None = None,
+    ) -> PdfImportSummary:
+        """Confirm and atomically persist one digital PDF."""
         ...
 
 
@@ -153,8 +155,10 @@ class _PendingRowDecision:
 
 
 _IMPORT_GUIDANCE = {
-    "ocr_required": "This PDF contains image-only pages. Choose Scanned or camera PDF.",
-    "ocr_engine_unavailable": "Install local Tesseract, then run `make check-ocr`.",
+    "ocr_required": (
+        "Scanned and image-only PDFs are outside Version 1. Download a CSV export "
+        "from the bank instead."
+    ),
     "preview_changed": "The file changed after preview. Review the current file again.",
     "file_changed": "The PDF changed after review. Review the current file again.",
     "account_currency_mismatch": "Choose an account using the statement currency.",
@@ -710,11 +714,14 @@ def _pdf_coverage_fields(
         if review.statement_coverage is not None
         else max(extracted_dates, default=fallback)
     )
-    required = review.statement_coverage is not None or bool(review.balance_evidence)
-    enabled = st.checkbox(
-        "Confirm the dates covered by this statement",
-        value=required,
-        disabled=required,
+    st.checkbox(
+        "Include this statement's confirmed date coverage",
+        value=True,
+        disabled=True,
+        help=(
+            "PDF coverage is required so missing dates are never treated as zero "
+            "activity."
+        ),
     )
     start = st.date_input("Confirmed statement start", value=default_start)
     end = st.date_input("Confirmed statement end", value=default_end)
@@ -733,69 +740,219 @@ def _pdf_coverage_fields(
         "Confirmed missing periods (one YYYY-MM-DD,YYYY-MM-DD range per line)",
         value=_default_gap_text(review.statement_coverage),
     )
-    return enabled, start, end, status, gaps
+    return True, start, end, status, gaps
 
 
-def _render_pdf_result(result: ApprovedStatement) -> None:
-    st.success(
-        "PDF review approved in memory. It was not saved to the transaction database."
+def _pdf_mapping_choice(
+    label: str,
+    preview: DigitalPdfMappingPreview,
+    role: DigitalPdfColumnRole,
+    *,
+    optional: bool,
+    key: str,
+) -> str | None:
+    column_ids = tuple(column.column_id for column in preview.columns)
+    options: tuple[str | None, ...] = (None, *column_ids) if optional else column_ids
+    hinted = next(
+        (column.column_id for column in preview.columns if column.role_hint is role),
+        None,
     )
-    columns = st.columns(3)
-    columns[0].metric("Approved rows", len(result.rows))
-    columns[1].metric("Rejected rows", len(result.rejected_rows))
-    columns[2].metric(
-        "Reconciliation", result.reconciliation.status.value.replace("_", " ")
+    index = options.index(hinted) if hinted in options else 0
+    labels = {
+        column.column_id: f"{column.header_text} [{column.column_id}]"
+        for column in preview.columns
+    }
+    return st.selectbox(
+        label,
+        options,
+        index=index,
+        format_func=lambda value: "Not provided" if value is None else labels[value],
+        key=key,
     )
+
+
+def _render_pdf_mapping(
+    preview: DigitalPdfMappingPreview,
+) -> DigitalPdfColumnMapping | None:
+    """Collect a file-bound mapping without retaining uploaded financial rows."""
     st.warning(
-        "This PDF was reviewed but not added to your transaction history. PDF saving "
-        "is not available yet, so keep the original statement."
+        "The PDF contains a table, but its columns cannot be identified safely. "
+        "Match the columns below before reviewing any transactions."
     )
+    st.dataframe(pdf_mapping_rows(preview), hide_index=True, use_container_width=True)
+    if preview.truncated:
+        st.caption(
+            f"Showing {len(preview.sample_rows)} of {preview.total_rows} reconstructed "
+            "rows for column mapping. All rows are checked after mapping."
+        )
+    key_prefix = f"pdf_mapping_{preview.structure_digest[:12]}"
+    date_column = _pdf_mapping_choice(
+        "Transaction date column",
+        preview,
+        DigitalPdfColumnRole.TRANSACTION_DATE,
+        optional=False,
+        key=f"{key_prefix}_date",
+    )
+    description_column = _pdf_mapping_choice(
+        "Description column",
+        preview,
+        DigitalPdfColumnRole.DESCRIPTION,
+        optional=False,
+        key=f"{key_prefix}_description",
+    )
+    has_separate_hint = all(
+        any(column.role_hint is role for column in preview.columns)
+        for role in (
+            DigitalPdfColumnRole.DEBIT_AMOUNT,
+            DigitalPdfColumnRole.CREDIT_AMOUNT,
+        )
+    )
+    amount_layout = st.radio(
+        "PDF amount layout",
+        ("Signed amount", "Separate debit and credit"),
+        index=1 if has_separate_hint else 0,
+        horizontal=True,
+        key=f"{key_prefix}_amount_layout",
+    )
+    signed_amount: str | None = None
+    debit_amount: str | None = None
+    credit_amount: str | None = None
+    if amount_layout == "Signed amount":
+        signed_amount = _pdf_mapping_choice(
+            "Signed amount column",
+            preview,
+            DigitalPdfColumnRole.SIGNED_AMOUNT,
+            optional=False,
+            key=f"{key_prefix}_signed_amount",
+        )
+    else:
+        debit_amount = _pdf_mapping_choice(
+            "Debit column",
+            preview,
+            DigitalPdfColumnRole.DEBIT_AMOUNT,
+            optional=False,
+            key=f"{key_prefix}_debit",
+        )
+        credit_amount = _pdf_mapping_choice(
+            "Credit column",
+            preview,
+            DigitalPdfColumnRole.CREDIT_AMOUNT,
+            optional=False,
+            key=f"{key_prefix}_credit",
+        )
+    running_balance = _pdf_mapping_choice(
+        "Running balance column (optional)",
+        preview,
+        DigitalPdfColumnRole.RUNNING_BALANCE,
+        optional=True,
+        key=f"{key_prefix}_balance",
+    )
+    apply_mapping = st.checkbox(
+        "I checked these columns against the PDF and want to apply this mapping.",
+        key=f"{key_prefix}_confirmed",
+    )
+    if not apply_mapping:
+        return None
+    try:
+        return DigitalPdfColumnMapping(
+            file_hash=preview.file_hash,
+            structure_digest=preview.structure_digest,
+            transaction_date=cast(str, date_column),
+            description=cast(str, description_column),
+            signed_amount=signed_amount,
+            debit_amount=debit_amount,
+            credit_amount=credit_amount,
+            running_balance=running_balance,
+        )
+    except ValueError:
+        st.error("Each PDF column must have one valid and unambiguous role.")
+        return None
+
+
+def _render_pdf_result(result: PdfImportSummary) -> None:
+    st.success("PDF confirmation completed and every extracted row was accounted for.")
+    columns = st.columns(4)
+    columns[0].metric("New transactions", result.imported_transactions)
+    columns[1].metric("Exact duplicates", result.exact_duplicates_skipped)
+    columns[2].metric("Needs duplicate review", result.probable_duplicates)
+    columns[3].metric("Rejected rows", result.rejected_rows)
+    if result.repeated_file:
+        st.info("This exact PDF was already imported; no second copy was created.")
+    if result.coverage.new_missing_periods or result.coverage.disconnected_range:
+        st.warning("The confirmed statement leaves a gap or disconnected date range.")
+    if result.coverage.overlap_periods:
+        st.info("Part of this statement covers dates you previously imported.")
 
 
 def _render_pdf_workflow(
     client: ImportApi,
     account: AccountResponse,
     document: UploadedDocument,
-    kind: UploadKind,
 ) -> None:
-    if kind is UploadKind.OCR_PDF:
-        try:
-            status = client.ocr_status()
-        except ApiClientError as error:
-            _render_import_error(error)
-            return
-        if not status.available:
-            st.error("Local Tesseract OCR is unavailable. Run `make check-ocr`.")
-            return
-        st.info("OCR runs locally. Recognition confidence is advisory, not proof.")
-
-    threshold = st.slider(
-        "OCR review threshold",
-        min_value=0.50,
-        max_value=1.00,
-        value=0.85,
-        step=0.01,
-        disabled=kind is not UploadKind.OCR_PDF,
-    )
     try:
-        with loading_state(
-            "Running local OCR and preparing review…"
-            if kind is UploadKind.OCR_PDF
-            else "Extracting embedded PDF text and preparing review…"
-        ):
-            review = client.prepare_pdf_review(
+        with loading_state("Extracting the digital PDF and preparing review…"):
+            result = client.prepare_pdf_review(
                 document,
-                source_type=kind.pdf_source_type,
                 account_id=account.account_id,
                 account_currency=account.currency,
-                ocr_confidence_threshold=threshold,
             )
     except ApiClientError as error:
         _render_import_error(error)
         return
 
+    mapping: DigitalPdfColumnMapping | None = None
+    if result.state is DigitalPdfReviewState.UNSUPPORTED_LAYOUT:
+        st.error(result.guidance)
+        st.caption(f"Reason: {result.reason_code.replace('_', ' ')}.")
+        return
+    if result.state is DigitalPdfReviewState.MAPPING_REQUIRED:
+        assert result.mapping_preview is not None
+        mapping = _render_pdf_mapping(result.mapping_preview)
+        if mapping is None:
+            return
+        try:
+            with loading_state("Applying the mapping to the exact PDF…"):
+                result = client.prepare_pdf_review(
+                    document,
+                    account_id=account.account_id,
+                    account_currency=account.currency,
+                    mapping=mapping,
+                )
+        except ApiClientError as error:
+            _render_import_error(error)
+            return
+        if result.state is DigitalPdfReviewState.UNSUPPORTED_LAYOUT:
+            st.error(result.guidance)
+            return
+        if result.state is DigitalPdfReviewState.MAPPING_REQUIRED:
+            st.error(
+                "This mapping still leaves incomplete transaction rows. Adjust the "
+                "column choices or use the bank's CSV export."
+            )
+            return
+
+    review = result.review
+    if review is None:
+        st.error("The API did not return a complete PDF review.")
+        return
+
     st.success("Your statement is ready to check. Nothing has been saved yet.")
     _render_pdf_evidence(review)
+    preview_name = PurePath(document.filename).stem or "statement"
+    st.download_button(
+        "Download unconfirmed extraction as CSV",
+        data=pdf_review_csv_bytes(review),
+        file_name=f"{preview_name}-unconfirmed.csv",
+        mime="text/csv",
+        help=(
+            "This file is a convenience preview, not proof that extraction is "
+            "correct. Confirm against the original PDF."
+        ),
+    )
+    st.caption(
+        "The downloadable CSV is unconfirmed. It is not imported or trusted until "
+        "you complete every review step below."
+    )
 
     with st.form("pdf_review"):
         st.subheader("Check the extracted statement")
@@ -848,7 +1005,7 @@ def _render_pdf_workflow(
         statement_approved = st.checkbox(
             "I reviewed the extraction and explicitly approve these PDF decisions."
         )
-        submitted = st.form_submit_button("Approve reviewed PDF", type="primary")
+        submitted = st.form_submit_button("Confirm and import PDF", type="primary")
 
     if not submitted:
         return
@@ -916,14 +1073,13 @@ def _render_pdf_workflow(
             acknowledge_balance_mismatch=acknowledge_mismatch,
             row_reviews=row_reviews,
         )
-        with loading_state("Re-extracting the exact PDF and applying approval…"):
-            result = client.confirm_pdf(
+        with loading_state("Re-extracting and importing the exact approved PDF…"):
+            confirmation_result = client.confirm_pdf(
                 document,
-                source_type=kind.pdf_source_type,
                 account_id=account.account_id,
                 account_currency=account.currency,
-                ocr_confidence_threshold=threshold,
                 approval=approval,
+                mapping=mapping,
             )
     except ApiClientError as error:
         _render_import_error(error)
@@ -931,7 +1087,7 @@ def _render_pdf_workflow(
     except ValueError:
         st.error("Check the corrected rows, coverage, balances, and decisions.")
         return
-    _render_pdf_result(result)
+    _render_pdf_result(confirmation_result)
 
 
 def render_import_page(
@@ -980,7 +1136,7 @@ def render_import_page(
     if uploaded is None:
         render_empty_state(
             "No statement selected",
-            "Choose a CSV export, digital PDF, or scanned/camera PDF to begin.",
+            "Choose a bank CSV export or selectable-text digital PDF to begin.",
         )
         return updated
     document = UploadedDocument(
@@ -991,7 +1147,7 @@ def render_import_page(
     if kind is UploadKind.CSV:
         _render_csv_workflow(client, account, document)
     else:
-        _render_pdf_workflow(client, account, document, kind)
+        _render_pdf_workflow(client, account, document)
     return updated
 
 

@@ -25,6 +25,8 @@ from cashflow_ai.imports import (
     CsvImportErrorCode,
     PdfImportError,
     PdfImportErrorCode,
+    PdfPersistenceError,
+    PdfPersistenceErrorCode,
     StatementReviewError,
     StatementReviewErrorCode,
 )
@@ -57,6 +59,7 @@ def _api_service_status(code: ApiServiceErrorCode) -> int:
     if code in {
         ApiServiceErrorCode.INVALID_KNOWLEDGE_CUTOFF,
         ApiServiceErrorCode.INVALID_DUPLICATE_REVIEW_TIME,
+        ApiServiceErrorCode.INVALID_PDF_MAPPING,
     }:
         return 400
     if code is ApiServiceErrorCode.INVALID_STORED_METADATA:
@@ -99,6 +102,30 @@ def _pdf_status(code: PdfImportErrorCode) -> int:
 def _review_status(code: StatementReviewErrorCode) -> int:
     del code
     return 409
+
+
+def _pdf_persistence_status(code: PdfPersistenceErrorCode) -> int:
+    if code is PdfPersistenceErrorCode.FILE_TOO_LARGE:
+        return 413
+    if code in {
+        PdfPersistenceErrorCode.UNSUPPORTED_FILE_TYPE,
+        PdfPersistenceErrorCode.UNSUPPORTED_MIME_TYPE,
+    }:
+        return 415
+    if code in {
+        PdfPersistenceErrorCode.ACCOUNT_NOT_FOUND,
+    }:
+        return 404
+    if code in {
+        PdfPersistenceErrorCode.FILE_CHANGED,
+        PdfPersistenceErrorCode.ACCOUNT_INACTIVE,
+        PdfPersistenceErrorCode.ACCOUNT_CURRENCY_MISMATCH,
+        PdfPersistenceErrorCode.RECONCILIATION_REQUIRED,
+        PdfPersistenceErrorCode.RECONCILIATION_FAILED,
+        PdfPersistenceErrorCode.RUNNING_BALANCE_MISMATCH,
+    }:
+        return 409
+    return 400
 
 
 def _domain_status(code: str) -> int:
@@ -165,6 +192,16 @@ def register_exception_handlers(app: FastAPI) -> None:
         del request
         return _response(
             _review_status(error.code),
+            ApiProblem(code=error.code.value, message=str(error)),
+        )
+
+    @app.exception_handler(PdfPersistenceError)
+    async def pdf_persistence_error(
+        request: Request, error: PdfPersistenceError
+    ) -> JSONResponse:
+        del request
+        return _response(
+            _pdf_persistence_status(error.code),
             ApiProblem(code=error.code.value, message=str(error)),
         )
 

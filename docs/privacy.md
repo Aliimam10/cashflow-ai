@@ -94,6 +94,11 @@ The embedded-text PDF adapter and deterministic spatial reconstructor process up
 bytes in memory. Extraction creates no temporary files, database records, or
 normal-log entries. Positioned words, cell text, and page previews remain private
 review data; the spatial structure digest is derived without copying that text.
+Untouched spatial cells and any accessibility-label-cleaned mapped projection are
+equally private and remain in memory. Page-scoped row-accounting signals can contain
+normalised dates and monetary text, so they are never logged, returned as diagnostics,
+or persisted independently of the approved raw-row evidence. Controlled failures
+report only stable codes and bounded explanations.
 Committed tests generate fictional PDFs in memory; the repository contains no real or
 redacted personal statement fixture.
 
@@ -334,10 +339,11 @@ separate access-control and deployment design is reviewed.
 Uploaded CSV/PDF bytes are bounded, processed in memory, and closed after each call.
 The API creates no upload cache. Stateless confirmation means the exact source must
 be supplied again and verified rather than storing an unreviewed document between
-requests. CSV confirmation may then persist through the established audit-preserving
-service. The strict digital-PDF persistence service now exists below the transport,
-but the current PDF confirmation route remains non-persistent until the next interface
-checkpoint connects it.
+requests. CSV confirmation persists through the established audit-preserving service.
+Digital-PDF review returns only a non-persistent ready/mapping/unsupported state;
+confirmation re-extracts the exact bytes and invokes the strict atomic persistence
+service. A mapping is trusted only when both the upload hash and spatial-table digest
+match the evidence the user reviewed.
 
 Transaction responses omit raw source payloads. Readiness checks connectivity and
 schema names only. Central exception handlers return controlled codes/messages and
@@ -380,12 +386,12 @@ loopback API. It creates no application-managed upload file or preview cache. Ra
 transaction text and extracted values are intentionally visible in the local review
 screen but must not be copied into normal logs, screenshots, bug reports, or committed
 fixtures. Profile/account setup requests descriptive local metadata only—not bank
-credentials or account numbers. In this backend checkpoint, the legacy page still
-shows PDF approval as non-persistent; CSV persistence still occurs only after
-exact-file confirmation. The next interface checkpoint will connect approved digital
-PDF persistence and hide scanned-PDF controls from normal navigation. Committed manual
-fixtures are generated from fixed fictional statements under the ignored demo-data
-directory.
+credentials or account numbers. CSV and digital-PDF persistence occur only after
+exact-file confirmation. The page exposes no scanned-PDF or OCR controls; the internal
+OCR implementation and regression endpoints remain testable without being presented
+as Version 1 support. An internal OCR approval must not be described as a persisted OCR import.
+Committed manual fixtures are generated from fixed fictional
+statements under the ignored demo-data directory.
 
 The transaction workspace necessarily shows verified descriptions and fixed-precision
 amounts on the same machine. It does not put search results, review items, dashboard

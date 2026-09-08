@@ -61,11 +61,11 @@ DEFAULT_MIN_EMBEDDED_CHARACTERS: Final = 20
 MAX_PAGE_TEXT_CHARACTERS: Final = 1_000_000
 PDF_EXTRACTOR_IDENTITY: Final = ParserIdentity(
     name="cashflow_text_pdf_extractor",
-    version="1.0.0",
+    version="1.1.0",
 )
 SPATIAL_PDF_EXTRACTOR_IDENTITY: Final = ParserIdentity(
     name="cashflow_spatial_pdf_extractor",
-    version="1.0.0",
+    version="1.1.0",
 )
 
 
@@ -119,7 +119,7 @@ class _ExtractedRow:
     source_values: tuple[str, ...] = ()
 
 
-type _TransactionSignal = tuple[str, tuple[str, ...]]
+type _TransactionSignal = tuple[int, str, tuple[str, ...]]
 
 
 _HEADER_ALIASES: Final[dict[str, frozenset[str]]] = {
@@ -145,9 +145,14 @@ _HEADER_ALIASES: Final[dict[str, frozenset[str]]] = {
     "transaction_type": frozenset({"transaction type", "type"}),
 }
 _PAGE_NUMBER = re.compile(r"^(?:page\s+)?\d+(?:\s+(?:of|/)\s*\d+)?$", re.I)
+_PAGINATION_SUFFIX = re.compile(
+    r"^(?:page\s+)?(?P<page>\d+)\s+(?:of|/)\s*(?P<total>\d+)$",
+    re.I,
+)
+_MAX_PAGINATION_HEADER_LINES: Final = 5
 _DATE_TOKEN = (
-    r"(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-]\d{4}|"
-    r"\d{1,2}\s+[A-Za-z]{3,9}\s+\d{4})"
+    r"(?:\d{4}-\d{2}-\d{2}|\d{1,2}[/-]\d{1,2}[/-](?:\d{4}|\d{2})|"
+    r"\d{1,2}\s+[A-Za-z]{3,9}\s+(?:\d{4}|\d{2}))"
 )
 _LEADING_TRANSACTION_DATE = re.compile(rf"^\s*(?:{_DATE_TOKEN})\b", re.I)
 _MONEY_SIGNAL = re.compile(
@@ -401,7 +406,11 @@ def _normalise_signal_value(value: str) -> str:
     return re.sub(r"\s+", "", value.casefold()).replace(",", "")
 
 
-def _transaction_signals(text: str) -> Counter[_TransactionSignal]:
+def _transaction_signals(
+    text: str,
+    *,
+    page_number: int = 0,
+) -> Counter[_TransactionSignal]:
     """Identify transaction-like lines without retaining them beyond extraction."""
     signals: Counter[_TransactionSignal] = Counter()
     for line in text.splitlines():
@@ -412,24 +421,66 @@ def _transaction_signals(text: str) -> Counter[_TransactionSignal]:
         if not any(character.isalnum() for character in remainder):
             continue
         amounts = tuple(
-            _normalise_signal_value(match.group())
-            for match in _MONEY_SIGNAL.finditer(line, pos=date_match.end())
+            sorted(
+                _normalise_signal_value(match.group())
+                for match in _MONEY_SIGNAL.finditer(line, pos=date_match.end())
+            )
         )
-        signals[(_normalise_signal_value(date_match.group()), amounts)] += 1
+        signals[
+            (page_number, _normalise_signal_value(date_match.group()), amounts)
+        ] += 1
     return signals
 
 
 def _table_transaction_signals(
     tables: Sequence[Sequence[Sequence[str | None]]],
+    *,
+    page_number: int,
 ) -> Counter[_TransactionSignal]:
     """Identify transaction-like rows across tables, including unmapped ones."""
     signals: Counter[_TransactionSignal] = Counter()
     for table in tables:
         for row in table:
             signals.update(
-                _transaction_signals(" ".join(_clean_cell(cell) for cell in row))
+                _transaction_signals(
+                    " ".join(_clean_cell(cell) for cell in row),
+                    page_number=page_number,
+                )
             )
     return signals
+
+
+def _proven_pagination_signals(
+    page_texts: tuple[str, ...],
+) -> Counter[_TransactionSignal]:
+    """Identify a repeated, page-ordered header date plus pagination bundle."""
+    if len(page_texts) < 2:
+        return Counter()
+    signals: list[_TransactionSignal] = []
+    page_dates: set[str] = set()
+    for page_number, text in enumerate(page_texts, start=1):
+        matches: list[_TransactionSignal] = []
+        nonempty_lines = tuple(line for line in text.splitlines() if line.strip())
+        for line in nonempty_lines[:_MAX_PAGINATION_HEADER_LINES]:
+            date_match = _LEADING_TRANSACTION_DATE.match(line)
+            if date_match is None:
+                continue
+            suffix = _PAGINATION_SUFFIX.fullmatch(line[date_match.end() :].strip())
+            if (
+                suffix is None
+                or int(suffix.group("page")) != page_number
+                or int(suffix.group("total")) != len(page_texts)
+            ):
+                continue
+            date_value = _normalise_signal_value(date_match.group())
+            matches.append((page_number, date_value, ()))
+            page_dates.add(date_value)
+        if len(matches) != 1:
+            return Counter()
+        signals.extend(matches)
+    if len(page_dates) != 1:
+        return Counter()
+    return Counter(signals)
 
 
 def _accounted_transaction_signals(
@@ -440,7 +491,10 @@ def _accounted_transaction_signals(
     for row in rows:
         values = row.source_values or row.values
         signals.update(
-            _transaction_signals(" ".join(value.replace("\n", " ") for value in values))
+            _transaction_signals(
+                " ".join(value.replace("\n", " ") for value in values),
+                page_number=row.page_number,
+            )
         )
     return signals
 
@@ -667,9 +721,9 @@ def _extract_rows_and_pages(
                 tables = page.extract_tables()
                 layout_text = page.extract_text(layout=True) or raw_text
                 transaction_signals.update(
-                    _table_transaction_signals(tables)
-                    | _transaction_signals(layout_text)
-                    | _transaction_signals(raw_text)
+                    _table_transaction_signals(tables, page_number=page_number)
+                    | _transaction_signals(layout_text, page_number=page_number)
+                    | _transaction_signals(raw_text, page_number=page_number)
                 )
                 table_rows = _rows_from_tables(tables, page_number)
                 if table_rows:
@@ -704,7 +758,9 @@ def _extract_rows_and_pages(
             start=1,
         ):
             rows = _rows_from_text(raw_text, page_number)
-            transaction_signals.update(_transaction_signals(raw_text))
+            transaction_signals.update(
+                _transaction_signals(raw_text, page_number=page_number)
+            )
             all_rows.extend(rows)
             if rows:
                 layouts.add(PdfExtractionLayout.GENERIC_TEXT)
@@ -723,6 +779,7 @@ def _extract_rows_and_pages(
                 "one or more pages used a generic text layout and require close review",
             )
         )
+    transaction_signals -= _proven_pagination_signals(page_texts)
     return (
         tuple(all_rows),
         tuple(pages),
@@ -801,11 +858,20 @@ def _spatial_rows(
         )
     spatial_signals: Counter[_TransactionSignal] = Counter()
     for record in result.records:
-        spatial_signals.update(
-            _transaction_signals(
-                " ".join(cell.text.replace("\n", " ") for cell in record.source.cells)
+        amounts = tuple(
+            sorted(
+                _normalise_signal_value(match.group())
+                for cell in record.source.cells
+                for match in _MONEY_SIGNAL.finditer(cell.text.replace("\n", " "))
             )
         )
+        spatial_signals[
+            (
+                record.source.page_number,
+                _normalise_signal_value(record.transaction_date_text),
+                amounts,
+            )
+        ] += 1
     if expected_transaction_signals - spatial_signals:
         raise PdfImportError(
             PdfImportErrorCode.NO_TRANSACTIONS,

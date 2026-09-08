@@ -19,11 +19,18 @@ from sqlalchemy.exc import OperationalError
 
 from cashflow_ai.api import AppContainer, build_container, create_app
 from cashflow_ai.api import cli as api_cli
+from cashflow_ai.api import errors as api_errors
 from cashflow_ai.api import routes as api_routes
 from cashflow_ai.api.demo import main as api_demo_main
 from cashflow_ai.api.services import check_readiness
 from cashflow_ai.config import Environment, LogFormat, Settings
-from cashflow_ai.imports import OcrWord, PdfImportError, PdfImportErrorCode
+from cashflow_ai.imports import (
+    OcrWord,
+    PdfImportError,
+    PdfImportErrorCode,
+    PdfPersistenceError,
+    PdfPersistenceErrorCode,
+)
 from cashflow_ai.persistence import Base
 from cashflow_ai.persistence.base import new_id
 from cashflow_ai.persistence.database import session_scope
@@ -248,6 +255,28 @@ def _text_pdf() -> bytes:
     return _finish_pdf(document)
 
 
+def _mapping_pdf() -> bytes:
+    document = pymupdf.open()  # type: ignore[no-untyped-call]
+    page = document.new_page(width=595, height=842)
+    page.insert_text((35, 35), "Fictional mapping statement", fontsize=10)
+    page.insert_text(
+        (35, 55),
+        "Statement period: 01 August 2026 to 31 August 2026",
+        fontsize=9,
+    )
+    page.insert_text((35, 72), "Opening balance: GBP 1000.00", fontsize=9)
+    positions = (35.0, 145.0, 340.0, 410.0, 485.0)
+    rows = (
+        ("01/08/2026", "SYNTHETIC RENT", "-400.00", "600.00", "1.00"),
+        ("15/08/2026", "SYNTHETIC PAY", "+1000.00", "1600.00", "2.00"),
+    )
+    for row_index, row in enumerate(rows):
+        for value, x in zip(row, positions, strict=True):
+            page.insert_text((x, 110 + row_index * 25), value, fontsize=9)
+    page.insert_text((35, 180), "Closing balance: GBP 1600.00", fontsize=9)
+    return _finish_pdf(document)
+
+
 def _scanned_pdf() -> bytes:
     image = Image.new("RGB", (240, 320), "white")
     drawing = ImageDraw.Draw(image)
@@ -279,7 +308,10 @@ def test_health_readiness_and_openapi_include_decision_support(api: ApiHarness) 
     assert api.client.get("/docs").status_code == 200
     paths = set(schema["paths"])
     assert "/api/v1/imports/csv/preview" in paths
-    assert "/api/v1/imports/pdf/ocr/preview" in paths
+    assert "/api/v1/imports/pdf/review" in paths
+    assert "/api/v1/imports/pdf/confirm" in paths
+    assert "/api/v1/imports/pdf/ocr/preview" not in paths
+    assert "/api/v1/ocr/status" not in paths
     assert "/api/v1/accounts/{account_id}/transactions" in paths
     assert "/api/v1/transactions/search" in paths
     assert "/api/v1/profiles/{profile_id}/duplicates/reviews" in paths
@@ -580,7 +612,7 @@ def test_csv_errors_have_stable_http_statuses_and_no_body_echo(api: ApiHarness) 
     assert conflict.json()["code"] == "preview_changed"
 
 
-def test_text_pdf_preview_review_and_confirmation_are_non_persistent(
+def test_text_pdf_review_and_confirmation_persist_atomically(
     api: ApiHarness,
 ) -> None:
     _, account_id = _profile_and_account(api.client)
@@ -597,25 +629,25 @@ def test_text_pdf_preview_review_and_confirmation_are_non_persistent(
         "/api/v1/imports/pdf/review",
         files={"file": ("synthetic.pdf", content, "application/pdf")},
         data={
-            "source_type": "digital_pdf",
             "account_id": account_id,
             "account_currency": "GBP",
         },
     )
     assert review.status_code == 200
+    assert review.json()["state"] == "ready"
+    reviewed_statement = review.json()["review"]
     approval = {
-        "file_hash": review.json()["file_hash"],
+        "file_hash": reviewed_statement["file_hash"],
         "approved_at": "2026-09-02T00:00:00Z",
         "statement_approved": True,
-        "confirmed_statement_coverage": review.json()["statement_coverage"],
-        "confirmed_balances": review.json()["balances"],
+        "confirmed_statement_coverage": reviewed_statement["statement_coverage"],
+        "confirmed_balances": reviewed_statement["balances"],
         "row_reviews": [],
     }
     confirmed = api.client.post(
         "/api/v1/imports/pdf/confirm",
         files={"file": ("synthetic.pdf", content, "application/pdf")},
         data={
-            "source_type": "digital_pdf",
             "account_id": account_id,
             "account_currency": "GBP",
             "approval_json": json.dumps(approval),
@@ -625,24 +657,222 @@ def test_text_pdf_preview_review_and_confirmation_are_non_persistent(
         "/api/v1/imports/pdf/confirm",
         files={"file": ("synthetic.pdf", content, "application/pdf")},
         data={
-            "source_type": "digital_pdf",
             "account_id": account_id,
             "approval_json": json.dumps({**approval, "file_hash": "0" * 64}),
         },
     )
 
     assert confirmed.status_code == 200
-    assert confirmed.json()["rows"][0]["transaction"]["description"] == (
-        "SYNTHETIC SHOP"
-    )
+    assert confirmed.json()["imported_transactions"] == 1
+    assert confirmed.json()["rows_read"] == 1
     assert mismatch.status_code == 409
     assert mismatch.json()["code"] == "file_changed"
-    assert api.client.get(f"/api/v1/accounts/{account_id}/transactions").json() == {
-        "items": [],
-        "limit": 50,
-        "offset": 0,
-        "total": 0,
+    transactions = api.client.get(f"/api/v1/accounts/{account_id}/transactions").json()
+    assert transactions["total"] == 1
+    assert transactions["items"][0]["account_id"] == account_id
+    assert transactions["items"][0]["transaction_date"] == "2026-08-01"
+    assert transactions["items"][0]["description"] == "SYNTHETIC SHOP"
+    assert transactions["items"][0]["amount"] == "-10.00"
+    assert transactions["items"][0]["balance_after"] == "90.00"
+    assert transactions["items"][0]["financial_role"] == "unknown"
+
+
+def test_digital_pdf_mapping_is_file_bound_then_persists_every_row(
+    api: ApiHarness,
+) -> None:
+    _, account_id = _profile_and_account(api.client)
+    content = _mapping_pdf()
+    first = api.client.post(
+        "/api/v1/imports/pdf/review",
+        files={"file": ("mapping.pdf", content, "application/pdf")},
+        data={"account_id": account_id},
+    )
+    assert first.status_code == 200
+    assert first.json()["state"] == "mapping_required"
+    mapping_preview = first.json()["mapping_preview"]
+    assert mapping_preview["total_rows"] == 2
+    assert len(mapping_preview["sample_rows"]) == 2
+    premature = api.client.post(
+        "/api/v1/imports/pdf/confirm",
+        files={"file": ("mapping.pdf", content, "application/pdf")},
+        data={
+            "account_id": account_id,
+            "approval_json": json.dumps(
+                {
+                    "file_hash": first.json()["file_hash"],
+                    "approved_at": (
+                        datetime.now(UTC) - timedelta(seconds=1)
+                    ).isoformat(),
+                    "statement_approved": True,
+                }
+            ),
+        },
+    )
+    assert premature.status_code == 409
+    assert premature.json()["code"] == "pdf_review_not_ready"
+    mapping = {
+        "file_hash": first.json()["file_hash"],
+        "structure_digest": mapping_preview["structure_digest"],
+        "transaction_date": "column_1",
+        "description": "column_2",
+        "signed_amount": "column_3",
+        "running_balance": "column_4",
     }
+    mapped = api.client.post(
+        "/api/v1/imports/pdf/review",
+        files={"file": ("mapping.pdf", content, "application/pdf")},
+        data={"account_id": account_id, "mapping_json": json.dumps(mapping)},
+    )
+    assert mapped.status_code == 200
+    assert mapped.json()["state"] == "ready"
+    review = mapped.json()["review"]
+    assert [row["working_draft"]["amount"] for row in review["rows"]] == [
+        "-400.00",
+        "1000.00",
+    ]
+    approval = {
+        "file_hash": review["file_hash"],
+        "approved_at": (datetime.now(UTC) - timedelta(seconds=1)).isoformat(),
+        "statement_approved": True,
+        "date_format": "day_first",
+        "sign_convention": "debit_negative_credit_positive",
+        "confirmed_statement_coverage": review["statement_coverage"],
+        "confirmed_balances": review["balances"],
+    }
+    confirmed = api.client.post(
+        "/api/v1/imports/pdf/confirm",
+        files={"file": ("mapping.pdf", content, "application/pdf")},
+        data={
+            "account_id": account_id,
+            "mapping_json": json.dumps(mapping),
+            "approval_json": json.dumps(approval),
+        },
+    )
+
+    assert confirmed.status_code == 200
+    assert confirmed.json()["rows_read"] == 2
+    assert confirmed.json()["imported_transactions"] == 2
+    transactions = api.client.get(f"/api/v1/accounts/{account_id}/transactions")
+    assert transactions.json()["total"] == 2
+
+
+def test_digital_pdf_mapping_rejects_a_different_exact_file(api: ApiHarness) -> None:
+    _, account_id = _profile_and_account(api.client)
+    content = _mapping_pdf()
+    first = api.client.post(
+        "/api/v1/imports/pdf/review",
+        files={"file": ("mapping.pdf", content, "application/pdf")},
+        data={"account_id": account_id},
+    ).json()
+    mapping = {
+        "file_hash": "0" * 64,
+        "structure_digest": first["mapping_preview"]["structure_digest"],
+        "transaction_date": "column_1",
+        "description": "column_2",
+        "signed_amount": "column_3",
+    }
+    changed = api.client.post(
+        "/api/v1/imports/pdf/review",
+        files={"file": ("mapping.pdf", content, "application/pdf")},
+        data={"account_id": account_id, "mapping_json": json.dumps(mapping)},
+    )
+
+    assert changed.status_code == 409
+    assert changed.json()["code"] == "pdf_mapping_changed"
+
+    wrong_structure = api.client.post(
+        "/api/v1/imports/pdf/review",
+        files={"file": ("mapping.pdf", content, "application/pdf")},
+        data={
+            "account_id": account_id,
+            "mapping_json": json.dumps(
+                {
+                    **mapping,
+                    "file_hash": first["file_hash"],
+                    "structure_digest": "0" * 64,
+                }
+            ),
+        },
+    )
+    assert wrong_structure.status_code == 409
+    assert wrong_structure.json()["code"] == "pdf_mapping_changed"
+
+    unknown_column = api.client.post(
+        "/api/v1/imports/pdf/review",
+        files={"file": ("mapping.pdf", content, "application/pdf")},
+        data={
+            "account_id": account_id,
+            "mapping_json": json.dumps(
+                {
+                    **mapping,
+                    "file_hash": first["file_hash"],
+                    "signed_amount": "column_99",
+                }
+            ),
+        },
+    )
+    invalid_json = api.client.post(
+        "/api/v1/imports/pdf/review",
+        files={"file": ("mapping.pdf", content, "application/pdf")},
+        data={"account_id": account_id, "mapping_json": "PRIVATE INVALID"},
+    )
+    assert unknown_column.status_code == 400
+    assert unknown_column.json()["code"] == "invalid_pdf_mapping"
+    assert invalid_json.status_code == 422
+    assert "PRIVATE INVALID" not in invalid_json.text
+
+
+@pytest.mark.parametrize(
+    ("code", "expected_status"),
+    [
+        (PdfPersistenceErrorCode.FILE_TOO_LARGE, 413),
+        (PdfPersistenceErrorCode.UNSUPPORTED_FILE_TYPE, 415),
+        (PdfPersistenceErrorCode.ACCOUNT_NOT_FOUND, 404),
+        (PdfPersistenceErrorCode.FILE_CHANGED, 409),
+        (PdfPersistenceErrorCode.INVALID_LIMIT, 400),
+    ],
+)
+def test_pdf_persistence_failures_have_stable_statuses(
+    code: PdfPersistenceErrorCode,
+    expected_status: int,
+) -> None:
+    assert api_errors._pdf_persistence_status(code) == expected_status
+
+
+def test_pdf_persistence_failure_is_translated_without_private_data(
+    api: ApiHarness,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _, account_id = _profile_and_account(api.client)
+
+    def reject_persistence(*args: Any, **kwargs: Any) -> None:
+        del args, kwargs
+        raise PdfPersistenceError(
+            PdfPersistenceErrorCode.FILE_TOO_LARGE,
+            "the PDF exceeds the configured upload limit",
+        )
+
+    monkeypatch.setattr(api_routes, "confirm_digital_pdf_statement", reject_persistence)
+    response = api.client.post(
+        "/api/v1/imports/pdf/confirm",
+        files={"file": ("synthetic.pdf", _text_pdf(), "application/pdf")},
+        data={
+            "account_id": account_id,
+            "approval_json": json.dumps(
+                {
+                    "file_hash": "a" * 64,
+                    "approved_at": (
+                        datetime.now(UTC) - timedelta(seconds=1)
+                    ).isoformat(),
+                    "statement_approved": True,
+                }
+            ),
+        },
+    )
+
+    assert response.status_code == 413
+    assert response.json()["code"] == "file_too_large"
+    assert "SYNTHETIC SHOP" not in response.text
 
 
 def test_pdf_upload_errors_route_to_ocr_and_enforce_limits(api: ApiHarness) -> None:
@@ -660,6 +890,11 @@ def test_pdf_upload_errors_route_to_ocr_and_enforce_limits(api: ApiHarness) -> N
     )
     requires_ocr = api.client.post(
         "/api/v1/imports/pdf/text/preview",
+        files={"file": ("statement.pdf", scanned, "application/pdf")},
+        data={"account_id": account_id},
+    )
+    unsupported_in_v1 = api.client.post(
+        "/api/v1/imports/pdf/review",
         files={"file": ("statement.pdf", scanned, "application/pdf")},
         data={"account_id": account_id},
     )
@@ -684,6 +919,10 @@ def test_pdf_upload_errors_route_to_ocr_and_enforce_limits(api: ApiHarness) -> N
     assert requires_ocr.status_code == 409
     assert requires_ocr.json()["code"] == "ocr_required"
     assert requires_ocr.json()["page_numbers"] == [1]
+    assert unsupported_in_v1.status_code == 200
+    assert unsupported_in_v1.json()["state"] == "unsupported_layout"
+    assert unsupported_in_v1.json()["reason_code"] == "image_only_or_scanned_pdf"
+    assert unsupported_in_v1.json()["recommended_format"] == "csv"
     assert oversized.status_code == 413
     assert malformed.status_code == 400
     assert "private" not in malformed.text
@@ -698,9 +937,9 @@ def test_ocr_status_and_preview_use_replaceable_local_engine(api: ApiHarness) ->
         data={"account_id": account_id, "account_currency": "GBP"},
     )
     review = api.client.post(
-        "/api/v1/imports/pdf/review",
+        "/api/v1/imports/pdf/ocr/review",
         files={"file": ("synthetic-scan.pdf", _scanned_pdf(), "application/pdf")},
-        data={"source_type": "ocr_pdf", "account_id": account_id},
+        data={"account_id": account_id},
     )
 
     assert status_response.status_code == 200

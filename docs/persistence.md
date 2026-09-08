@@ -162,9 +162,10 @@ unknown, while stable warning codes explain which explicit policy conditions did
 not pass. `data_freshness_days` is the age of the newest trusted transaction or
 balance observation, with separate ages retained for both evidence types.
 
-PDF review remains in memory. No balance from an approved PDF is persisted until
-a later service can store its import batch, raw and approved rows, rejected-row
-evidence, confirmed coverage, and balance snapshots as one auditable unit.
+Digital-PDF review remains in memory until exact-file confirmation. Confirmation
+stores the import batch, raw and approved rows, rejected-row evidence, confirmed
+coverage, and balance snapshots as one auditable unit. Any extraction, mapping,
+reconciliation, duplicate, or write failure rolls back that complete unit.
 
 ## Financial-role decisions
 

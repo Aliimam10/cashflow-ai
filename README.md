@@ -15,9 +15,9 @@ balance forecasts with uncertainty.
 - Review and persist CSV statements without losing the original source rows.
 - Reconstruct an embedded-text digital PDF locally, correct every extracted row,
   require balance reconciliation within the documented one-penny tolerance, and
-  persist the approved statement without losing page-level source evidence. The
-  current HTTP/UI workflow is not connected to this new PDF persistence boundary
-  yet.
+  persist the approved statement without losing page-level source evidence. When a
+  stable table is found but headings are ambiguous, the interface requests an
+  explicit column mapping and re-extracts the exact file before confirmation.
 - Correct categories and explicitly distinguish expenses, income, internal transfers,
   refunds, reimbursements, withdrawals, and exclusions.
 - View coverage-aware analytics, recurring payments, cautious balance forecasts,
@@ -51,18 +51,18 @@ coverage-gated Isolation Forest now identify unusual transactions without claimi
 fraud. A loopback-only FastAPI boundary now exposes profile/account setup, safe
 statement preview and confirmation, verified transactions, categorisation and
 financial-role review, analytics, recurrence, forecasting, anomaly detection,
-budgets, goals, scenarios, data freshness, and model information. The current PDF
-HTTP route still returns an in-memory approval; connecting it to the new persistence
-service belongs to the next interface checkpoint. The Streamlit frontend currently
-provides local profile and account setup plus its existing review-gated CSV,
-digital-PDF, and scanned-PDF workflows over its typed API
+budgets, goals, scenarios, data freshness, and model information. Its digital-PDF
+routes now return a ready, mapping-required, or unsupported-layout result and
+atomically persist an exact confirmed statement. The Streamlit frontend currently
+provides local profile and account setup plus review-gated CSV and digital-PDF
+workflows over its typed API
 client. It also provides verified-transaction search and corrections, explicit
 role/duplicate review, and coverage-aware cash-flow dashboards. Forecast/planning
 screens now add recurring review, uncertainty-aware forecasts, budgets, goals,
 safe-spending estimates, isolated scenarios, anomaly feedback, and aggregate model
-evaluation. The normal Version 1 interface will be reduced to CSV and digital PDF in
-the next checkpoint; the current scanned-PDF control is a legacy interface, not a new
-support claim. Production model lifecycle management is not implemented yet. The
+evaluation. Scanned-PDF controls and OCR support claims are absent from the normal
+Version 1 interface; the older local OCR routes remain hidden for regression tests.
+Production model lifecycle management is not implemented yet. The
 application is now packaged as one local Docker image with
 separate FastAPI and Streamlit services, persistent private SQLite/model volumes,
 bundled Tesseract OCR, and read-only GitHub Actions quality and image-build gates.
@@ -287,13 +287,13 @@ rule-plus-model inference, confidence thresholds, low-confidence review, and
 feedback. The separate local registry owns database model metadata and explicit
 active-model selection.
 
-The Streamlit import workspace calls the CSV preview, confirmation, and persistence
-services through the typed local API. The backend now also owns a strict atomic
-digital-PDF persistence service, but the current HTTP PDF confirmation route and
-Streamlit page still stop at an in-memory approval. The next interface checkpoint
-will connect that service, expose generic spatial mapping, recommend CSV as the
-stable default, and hide the legacy scanned-PDF control while retaining internal OCR
-regression coverage.
+The Streamlit import workspace calls the CSV and digital-PDF review, confirmation,
+and persistence services through the typed local API. PDF review is stateless and
+returns one explicit state: ready, mapping required, or unsupported. A mapping is
+bound to the exact file hash and reconstructed table digest. Confirmation re-extracts
+the same bytes and enters the strict atomic persistence boundary. CSV remains the
+recommended stable format, and the legacy scanned-PDF controls are hidden while
+internal OCR regression coverage remains available.
 
 ## Development setup
 
@@ -539,8 +539,8 @@ Confirmed CSV imports, embedded-text PDF table/spatial reconstruction, statement
 balance reconciliation, targeted PDF review, and strict atomic approved digital-PDF
 persistence are implemented. The generic PDF path does not claim named-bank or
 universal layout compatibility. The existing OCR backend remains available for
-internal regression testing, while removal of scanned-PDF controls from the normal
-interface belongs to the next checkpoint. Verified balance tracking and
+internal regression testing, while scanned-PDF controls are absent from the normal
+interface. Verified balance tracking and
 financial-data freshness assessment
 are implemented as Python service boundaries. Conservative financial-role
 suggestions, explicit user decisions, and role-change audit history are also
@@ -566,18 +566,18 @@ changes. Account source revisions, selective derived-result invalidation, atomic
 mutation hooks, current/stale/unavailable states, and race-safe synchronous
 recomputation are also implemented without persisting private report payloads. A
 loopback-only FastAPI application now exposes profile/account setup, CSV/PDF review,
-confirmed CSV imports, verified transactions, categorisation and financial-role
+confirmed CSV and digital-PDF imports, verified transactions, categorisation and financial-role
 decisions, coverage-aware analytics, recurrence, forecasting, anomaly detection,
 budgets, goals, scenario comparisons, derived-data freshness, and model information
-with bounded pagination and generated OpenAPI documentation. Its current PDF route
-still returns approval only in memory even though the lower-level persistence service
-now exists. Streamlit navigation, its typed API client, home/status,
+with bounded pagination and generated OpenAPI documentation. Digital-PDF review now
+supports file-bound generic column mapping, controlled unsupported-layout responses,
+and exact-file atomic confirmation. Streamlit navigation, its typed API client, home/status,
 data-minimised session state, profile/account setup, and review-gated CSV/PDF import
 are now implemented. Transaction review and the first coverage-aware dashboard are
 also implemented. The forecast and planning interface is now implemented. Synthetic
 cross-boundary CSV/forecast, OCR/reconciliation, and digital-PDF persistence tests now
-harden privacy, security, and ingestion failure behaviour. Current transport/UI PDF
-approval remains non-persistent until the next checkpoint wires it to the service.
+harden privacy, security, and ingestion failure behaviour. The normal UI exposes CSV
+and selectable-text digital PDFs only; OCR remains an internal regression boundary.
 Reproducible local containers now package the API, interface, SQLite storage, model
 storage, and Tesseract without introducing a remote service. GitHub Actions repeats
 the locked quality, coverage, migration, image, import, and OCR build checks. The
@@ -588,8 +588,7 @@ synthetic screenshot review, and final pull-request review.
 
 ## Future roadmap
 
-Future work may connect the current API/UI to atomic digital-PDF persistence, evaluate
-specific bank layouts only when suitable privacy-safe evidence exists, add additional
+Future work may evaluate specific bank layouts only when suitable privacy-safe evidence exists, add additional
 currencies and account types, strengthen user-managed retention and backup controls,
 test accessibility, and add production-grade authentication/TLS only if a remote
 deployment is explicitly approved. Better models remain candidates until they beat

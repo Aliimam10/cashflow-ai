@@ -18,6 +18,7 @@ from cashflow_ai.imports import (
     extract_text_pdf,
 )
 from cashflow_ai.imports.text_pdf import (
+    _proven_pagination_signals,
     _rows_from_tables,
     _rows_from_text,
     _transaction_signals,
@@ -284,7 +285,41 @@ def test_table_and_text_row_cleanup_handles_unsupported_structures() -> None:
 
 def test_row_accounting_treats_dated_content_without_money_as_unresolved() -> None:
     assert _transaction_signals("01/08/2026 possible source row")
+    assert _transaction_signals("01 May 26 possible source row")
     assert not _transaction_signals("01/08/2026")
+    assert _transaction_signals("01/08/2026 1")
+    assert _transaction_signals("01/08/2026 Page 1 of 2")
+
+
+def test_only_a_complete_repeated_pagination_bundle_is_discharged() -> None:
+    proven = _proven_pagination_signals(
+        (
+            "Fictional statement\n01 August 2026 1 of 2\nHeader",
+            "Fictional statement\n01 August 2026 2 of 2\nHeader",
+        )
+    )
+
+    assert len(proven) == 2
+    assert {signal[0] for signal in proven} == {1, 2}
+    assert not _proven_pagination_signals(("01 August 2026 Page 1 of 1",))
+    assert not _proven_pagination_signals(
+        (
+            "01 August 2026 1 of 2",
+            "02 August 2026 2 of 2",
+        )
+    )
+    assert not _proven_pagination_signals(
+        (
+            "01 August 2026 2 of 2",
+            "01 August 2026 2 of 2",
+        )
+    )
+    assert not _proven_pagination_signals(
+        (
+            "01 August 2026 1 of 2\n01 August 2026 Page 1 of 2",
+            "01 August 2026 2 of 2",
+        )
+    )
 
 
 @pytest.mark.parametrize(

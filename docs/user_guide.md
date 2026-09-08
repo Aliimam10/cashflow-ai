@@ -12,8 +12,8 @@ advice.
 | Accounts | Current/checking and savings |
 | Currency | GBP; accounts of different currencies cannot be combined |
 | CSV | Preview, mapping, explicit confirmation, and atomic persistence |
-| Digital PDF | Embedded-text/table extraction, correction, reconciliation, and in-memory approval |
-| Scanned or camera PDF | Local Tesseract OCR, confidence review, correction, reconciliation, and in-memory approval |
+| Digital PDF | Selectable-text extraction, mapping, correction, reconciliation, and atomic persistence |
+| Scanned or camera PDF | Not shown or supported in the normal Version 1 interface |
 | Credit cards, loans, investments | Not supported as account types |
 | Bank connection or credentials | Not used |
 | Remote or multi-user access | Not supported |
@@ -47,8 +47,8 @@ Open `http://127.0.0.1:8501`. Docker users can instead follow
 1. Create the local profile and choose GBP plus an IANA timezone.
 2. Create a current/checking or savings account without entering account numbers,
    login details, or bank credentials.
-3. Open **Add a statement**, select that destination account, and choose CSV,
-   digital PDF, or scanned PDF deliberately.
+3. Open **Add a statement**, select that destination account, and choose the
+   recommended CSV export or a selectable-text digital PDF.
 4. Inspect the source preview. Confirm column mappings for CSV or extracted fields,
    dates, debit/credit signs, confidence, and balances for PDF.
 5. Describe the actual statement period as complete, gapped, partial, or unknown.
@@ -64,16 +64,21 @@ transactions, statement context, coverage, and balance evidence. Exact duplicate
 are skipped; probable duplicates remain outside calculations until reviewed; invalid
 rows are retained with errors.
 
-PDF confirmation currently returns a trusted in-memory approval and **does not save
-the statement or its transactions**. This is an intentional Version 1 limitation,
-not a successful PDF import. Do not re-enter an approved PDF balance manually as a
-substitute for the missing atomic PDF persistence workflow.
+Digital-PDF review returns one of three explicit results: ready for transaction
+review, mapping required for a stable but ambiguous table, or unsupported layout with
+a recommendation to use CSV. Mappings are bound to the exact file and reconstructed
+table. PDF confirmation re-extracts the file and atomically stores the same raw,
+verified, duplicate, coverage, and balance evidence as the canonical import boundary.
+The optional CSV download is an unconfirmed convenience preview, not validation.
 
-## OCR limitations and review
+## Unsupported scans and internal OCR
 
-Tesseract runs locally, but OCR accuracy depends on resolution, focus, perspective,
-rotation, lighting, compression, fonts, table borders, and the statement layout.
-Common failure modes include:
+Scanned, photographed, image-only, and mixed-text PDFs are not accepted by the normal
+Version 1 workflow. The app recommends a bank-exported CSV because OCR can lose a
+decimal point, sign, row, or page boundary. An internal local Tesseract adapter remains
+only for regression testing; it is not exposed as a supported upload choice.
+
+Potential OCR failure modes include:
 
 - a decimal point being omitted, such as `4.50` becoming `450`;
 - `0`, `O`, `1`, `I`, and `l` being confused;

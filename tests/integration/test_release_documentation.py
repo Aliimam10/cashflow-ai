@@ -54,10 +54,11 @@ def test_required_release_topics_are_documented_honestly() -> None:
         "ocr",
         "synthetic",
         "not financial advice",
-        "pdf approval",
+        "pdf confirmation",
     ):
         assert topic in documentation
-    assert "pdf approval is not persisted" in documentation
+    assert "digital-pdf persistence occur only after" in documentation
+    assert "not be described as a persisted ocr import" in documentation
     assert "not estimates" in documentation
 
 

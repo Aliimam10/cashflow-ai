@@ -14,6 +14,7 @@ from cashflow_ai.api.dependencies import (
 )
 from cashflow_ai.api.services import (
     check_readiness,
+    confirm_digital_pdf_statement,
     confirm_pdf_statement,
     create_account,
     create_profile,
@@ -33,6 +34,7 @@ from cashflow_ai.api.services import (
     prepare_pdf_statement_review,
     preview_ocr_statement,
     preview_text_statement,
+    review_digital_pdf_statement,
     review_probable_duplicate,
     search_transactions,
 )
@@ -65,7 +67,12 @@ from cashflow_ai.schemas.duplicates import (
     ProbableDuplicateReviewItem,
 )
 from cashflow_ai.schemas.ocr_imports import OcrPdfPreview
+from cashflow_ai.schemas.pdf_api import (
+    DigitalPdfColumnMapping,
+    DigitalPdfReviewResult,
+)
 from cashflow_ai.schemas.pdf_imports import TextPdfPreview
+from cashflow_ai.schemas.pdf_persistence import PdfImportSummary
 from cashflow_ai.schemas.reconciliation import (
     ApprovedStatement,
     StatementApproval,
@@ -281,6 +288,7 @@ async def preview_text_pdf_route(
     response_model=OcrPdfPreview,
     tags=["ingestion"],
     summary="Preview a scanned PDF with local OCR",
+    include_in_schema=False,
 )
 async def preview_ocr_pdf_route(
     file: Annotated[UploadFile, File(description="Scanned PDF bank statement")],
@@ -309,6 +317,7 @@ async def preview_ocr_pdf_route(
     response_model=OcrStatusResponse,
     tags=["ingestion"],
     summary="Check optional local OCR availability",
+    include_in_schema=False,
 )
 def ocr_status_route(
     ocr_engine_factory: OcrEngineFactoryDependency,
@@ -319,23 +328,102 @@ def ocr_status_route(
 
 @router.post(
     "/api/v1/imports/pdf/review",
-    response_model=StatementReview,
+    response_model=DigitalPdfReviewResult,
     tags=["ingestion"],
-    summary="Prepare a targeted PDF review",
+    summary="Review a digital PDF or request a safe column mapping",
 )
 async def prepare_pdf_review_route(
     file: Annotated[
         UploadFile,
         File(description="The exact PDF bytes to prepare for review"),
     ],
-    source_type: Annotated[PdfSourceType, Form()],
+    account_id: Annotated[str, Form(min_length=1, max_length=255)],
+    factory: SessionFactoryDependency,
+    account_currency: Annotated[Currency, Form()] = Currency.GBP,
+    mapping_json: Annotated[
+        str | None,
+        Form(description="Optional JSON-encoded DigitalPdfColumnMapping contract"),
+    ] = None,
+) -> DigitalPdfReviewResult:
+    """Return a ready review, mapping request, or safe CSV fallback."""
+    filename = file.filename or ""
+    mime_type = file.content_type or ""
+    content = await read_bounded_upload(file, max_bytes=DEFAULT_MAX_PDF_BYTES)
+    mapping = (
+        None
+        if mapping_json is None
+        else parse_form_contract(mapping_json, DigitalPdfColumnMapping)
+    )
+    return review_digital_pdf_statement(
+        factory,
+        content,
+        filename,
+        mime_type=mime_type,
+        account_id=account_id,
+        account_currency=account_currency,
+        mapping=mapping,
+    )
+
+
+@router.post(
+    "/api/v1/imports/pdf/confirm",
+    response_model=PdfImportSummary,
+    tags=["ingestion"],
+    summary="Confirm and persist an exact reviewed digital PDF",
+)
+async def confirm_pdf_review_route(
+    file: Annotated[
+        UploadFile,
+        File(description="The exact PDF bytes previously reviewed"),
+    ],
+    account_id: Annotated[str, Form(min_length=1, max_length=255)],
+    approval_json: Annotated[
+        str,
+        Form(description="JSON-encoded StatementApproval contract"),
+    ],
+    factory: SessionFactoryDependency,
+    account_currency: Annotated[Currency, Form()] = Currency.GBP,
+    mapping_json: Annotated[
+        str | None,
+        Form(description="Optional JSON-encoded DigitalPdfColumnMapping contract"),
+    ] = None,
+) -> PdfImportSummary:
+    """Re-extract exact bytes and atomically persist explicit approval."""
+    approval = parse_form_contract(approval_json, StatementApproval)
+    mapping = (
+        None
+        if mapping_json is None
+        else parse_form_contract(mapping_json, DigitalPdfColumnMapping)
+    )
+    filename = file.filename or ""
+    mime_type = file.content_type or ""
+    content = await read_bounded_upload(file, max_bytes=DEFAULT_MAX_PDF_BYTES)
+    return confirm_digital_pdf_statement(
+        factory,
+        content,
+        filename,
+        mime_type=mime_type,
+        account_id=account_id,
+        account_currency=account_currency,
+        approval=approval,
+        mapping=mapping,
+    )
+
+
+@router.post(
+    "/api/v1/imports/pdf/ocr/review",
+    response_model=StatementReview,
+    include_in_schema=False,
+)
+async def prepare_ocr_pdf_review_route(
+    file: Annotated[UploadFile, File(description="Scanned PDF bank statement")],
     account_id: Annotated[str, Form(min_length=1, max_length=255)],
     ocr_engine_factory: OcrEngineFactoryDependency,
     factory: SessionFactoryDependency,
     account_currency: Annotated[Currency, Form()] = Currency.GBP,
     ocr_confidence_threshold: Annotated[float, Form(gt=0, le=1)] = 0.85,
 ) -> StatementReview:
-    """Re-extract exact bytes into explicit row, date, sign, and balance decisions."""
+    """Retain the local OCR review path for internal regression testing."""
     filename = file.filename or ""
     mime_type = file.content_type or ""
     content = await read_bounded_upload(file, max_bytes=DEFAULT_MAX_PDF_BYTES)
@@ -344,7 +432,7 @@ async def prepare_pdf_review_route(
         content,
         filename,
         mime_type=mime_type,
-        source_type=source_type,
+        source_type=PdfSourceType.OCR_PDF,
         account_id=account_id,
         account_currency=account_currency,
         ocr_confidence_threshold=ocr_confidence_threshold,
@@ -353,17 +441,12 @@ async def prepare_pdf_review_route(
 
 
 @router.post(
-    "/api/v1/imports/pdf/confirm",
+    "/api/v1/imports/pdf/ocr/confirm",
     response_model=ApprovedStatement,
-    tags=["ingestion"],
-    summary="Confirm a reviewed PDF statement in memory",
+    include_in_schema=False,
 )
-async def confirm_pdf_review_route(
-    file: Annotated[
-        UploadFile,
-        File(description="The exact PDF bytes previously reviewed"),
-    ],
-    source_type: Annotated[PdfSourceType, Form()],
+async def confirm_ocr_pdf_review_route(
+    file: Annotated[UploadFile, File(description="The exact scanned PDF reviewed")],
     account_id: Annotated[str, Form(min_length=1, max_length=255)],
     approval_json: Annotated[
         str,
@@ -374,7 +457,7 @@ async def confirm_pdf_review_route(
     account_currency: Annotated[Currency, Form()] = Currency.GBP,
     ocr_confidence_threshold: Annotated[float, Form(gt=0, le=1)] = 0.85,
 ) -> ApprovedStatement:
-    """Re-extract exact bytes and apply approval without PDF persistence."""
+    """Retain non-persistent OCR confirmation for internal regression tests."""
     approval = parse_form_contract(approval_json, StatementApproval)
     filename = file.filename or ""
     mime_type = file.content_type or ""
@@ -384,7 +467,7 @@ async def confirm_pdf_review_route(
         content,
         filename,
         mime_type=mime_type,
-        source_type=source_type,
+        source_type=PdfSourceType.OCR_PDF,
         account_id=account_id,
         account_currency=account_currency,
         ocr_confidence_threshold=ocr_confidence_threshold,

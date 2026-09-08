@@ -13,11 +13,13 @@ from cashflow_ai.imports.spatial_pdf import (
     SpatialColumnMapping,
     SpatialColumnRole,
     SpatialPdfCell,
+    SpatialPdfColumn,
     SpatialPdfError,
     SpatialPdfErrorCode,
     SpatialPdfRecord,
     SpatialPdfState,
     SpatialPdfWord,
+    _accessibility_label_bundle,
     _header_from_line,
     _mapping_value,
     _VisualLine,
@@ -210,6 +212,92 @@ class _BrokenPage(_FakePage):
         raise RuntimeError("synthetic page read failure")
 
 
+def _accessibility_labelled_words(
+    *,
+    shift_second_bundle: bool = False,
+    omit_second_balance_label: bool = False,
+    include_unlabelled_row: bool = False,
+    include_continuation: bool = False,
+) -> list[tuple[object, ...]]:
+    words: list[tuple[object, ...]] = []
+
+    def add(text: str, x0: float, x1: float, top: float) -> None:
+        words.append((x0, top, x1, top + 10.0, text))
+
+    for text, x0, x1 in (
+        ("Date", 30.0, 55.0),
+        ("Description", 115.0, 175.0),
+        ("Money", 300.0, 330.0),
+        ("In", 333.0, 342.0),
+        ("Money", 390.0, 420.0),
+        ("Out", 423.0, 445.0),
+        ("Balance", 500.0, 540.0),
+    ):
+        add(text, x0, x1, 10.0)
+
+    def add_labelled_row(
+        *,
+        top: float,
+        date_text: str,
+        description: str,
+        credit: str = "",
+        debit: str = "",
+        balance: str = "",
+        shift: float = 0.0,
+        include_balance_label: bool = True,
+    ) -> None:
+        add("Date", 30.0 + shift, 55.0 + shift, top)
+        if date_text:
+            add(date_text, 60.0, 90.0, top)
+        add("Description", 115.0, 175.0, top)
+        if description:
+            add(description, 180.0, 225.0, top)
+        add("Money", 300.0, 330.0, top)
+        if credit:
+            add(credit, 300.05, 330.05, top)
+        add("In", 300.1, 330.1, top)
+        add("Money", 390.0, 420.0, top)
+        if debit:
+            add(debit, 390.05, 420.05, top)
+        add("Out", 390.1, 420.1, top)
+        if include_balance_label:
+            add("Balance", 500.0, 540.0, top)
+        if balance:
+            add(balance, 545.0, 580.0, top)
+
+    add_labelled_row(
+        top=30.0,
+        date_text="01 May 26",
+        description="SYNTHETIC SHOP",
+        debit="10.00",
+        balance="90.00",
+    )
+    if include_continuation:
+        add_labelled_row(
+            top=42.0,
+            date_text="",
+            description="CONTINUED TEXT",
+        )
+    add_labelled_row(
+        top=60.0,
+        date_text="02 May 26",
+        description="SYNTHETIC REFUND",
+        credit="5.00",
+        balance="95.00",
+        shift=10.0 if shift_second_bundle else 0.0,
+        include_balance_label=not omit_second_balance_label,
+    )
+    if include_unlabelled_row:
+        for text, x0, x1 in (
+            ("03 May 26", 60.0, 90.0),
+            ("SYNTHETIC EXTRA", 180.0, 225.0),
+            ("2.00", 390.0, 420.0),
+            ("93.00", 545.0, 580.0),
+        ):
+            add(text, x0, x1, 80.0)
+    return words
+
+
 def _missing_repeated_header_pdf(*, transaction_signal: bool) -> bytes:
     document = _document()
     positions = (35.0, 125.0, 345.0, 465.0)
@@ -269,6 +357,66 @@ def test_debit_credit_reconstruction_supports_uk_dates_and_optional_balance() ->
     assert result.records[1].debit_amount_text == ""
     assert result.records[1].credit_amount_text == "100.00"
     assert result.records[1].running_balance_text == "1075.00"
+
+
+def test_accessibility_labels_are_removed_only_from_the_mapped_projection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = _FakePage(_accessibility_labelled_words())
+    monkeypatch.setattr(pymupdf, "open", lambda **kwargs: _FakeDocument(page))
+
+    result = reconstruct_spatial_pdf(b"synthetic", min_embedded_characters=1)
+
+    assert result.state is SpatialPdfState.READY
+    assert len(result.records) == 2
+    assert result.records[0].transaction_date_text == "01 May 26"
+    assert result.records[0].description_text == "SYNTHETIC SHOP"
+    assert result.records[0].debit_amount_text == "10.00"
+    assert result.records[1].credit_amount_text == "5.00"
+    assert result.table is not None
+    assert "Date" in result.table.records[0].value("column_1")
+    assert "Money" in result.table.records[0].value("column_4")
+    assert result.table.records[0].mapped_cells is not None
+
+
+def test_accessibility_labelled_continuations_keep_raw_and_mapped_text_separate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    page = _FakePage(_accessibility_labelled_words(include_continuation=True))
+    monkeypatch.setattr(pymupdf, "open", lambda **kwargs: _FakeDocument(page))
+
+    result = reconstruct_spatial_pdf(b"synthetic", min_embedded_characters=1)
+
+    assert result.state is SpatialPdfState.READY
+    assert result.records[0].description_text == "SYNTHETIC SHOP\nCONTINUED TEXT"
+    assert result.table is not None
+    raw_description = result.table.records[0].value("column_2")
+    assert raw_description.count("Description") == 2
+    assert "Description" not in result.records[0].description_text
+
+
+@pytest.mark.parametrize(
+    "words",
+    [
+        _accessibility_labelled_words(shift_second_bundle=True),
+        _accessibility_labelled_words(omit_second_balance_label=True),
+        _accessibility_labelled_words(include_unlabelled_row=True),
+    ],
+)
+def test_inconsistent_accessibility_labelled_rows_fail_closed(
+    monkeypatch: pytest.MonkeyPatch,
+    words: list[tuple[object, ...]],
+) -> None:
+    monkeypatch.setattr(
+        pymupdf,
+        "open",
+        lambda **kwargs: _FakeDocument(_FakePage(words)),
+    )
+
+    result = reconstruct_spatial_pdf(b"synthetic", min_embedded_characters=1)
+
+    assert result.state is SpatialPdfState.MAPPING_REQUIRED
+    assert result.reason_code == "unresolved_spatial_rows"
 
 
 def test_headerless_layout_requires_mapping_then_becomes_ready() -> None:
@@ -370,6 +518,20 @@ def test_header_roles_in_an_unsafe_order_are_not_accepted() -> None:
     line = _VisualLine(page_number=1, line_number=1, words=words)
 
     assert _header_from_line(line, line_index=0, page_width=595.0) is None
+
+
+@pytest.mark.parametrize("header_text", ["", "Money Money"])
+def test_ambiguous_accessibility_header_tokens_are_not_removed(
+    header_text: str,
+) -> None:
+    line = _VisualLine(
+        page_number=1,
+        line_number=1,
+        words=(SpatialPdfWord(1, 10.0, 10.0, 20.0, 20.0, "Money"),),
+    )
+    columns = (SpatialPdfColumn("column_1", 0.0, 1.0, header_text),)
+
+    assert _accessibility_label_bundle(line, page_width=100.0, columns=columns) is None
 
 
 def test_image_only_or_mixed_pdf_is_outside_digital_reconstruction() -> None:

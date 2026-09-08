@@ -13,6 +13,12 @@ repository rather than implying that a hosted service has been deployed.
   transaction wording, and a single planning-tool selector.
 - Added a packaged light theme and moved technical error identities behind an
   optional details panel without weakening privacy or financial safeguards.
+- Connected selectable-text digital-PDF review to file-bound spatial mapping and
+  atomic confirmation, added an explicitly unconfirmed CSV download, and removed
+  scanned/OCR controls from the normal interface while retaining internal tests.
+- Hardened selectable-text parsing for recent UK two-digit dates and complete,
+  geometry-stable accessibility labels while preserving raw cells and page-scoped
+  row-accounting evidence.
 
 ## [1.0.0] - 2026-09-05
 

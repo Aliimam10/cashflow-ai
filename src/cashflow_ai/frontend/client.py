@@ -27,7 +27,6 @@ from cashflow_ai.schemas.api import (
     HealthResponse,
     OcrStatusResponse,
     Page,
-    PdfSourceType,
     ReadinessResponse,
     TransactionResponse,
     TransactionSearchRequest,
@@ -70,6 +69,11 @@ from cashflow_ai.schemas.hybrid_categorisation import (
     CategoryFeedbackResult,
 )
 from cashflow_ai.schemas.model_registry import ModelTask, RegisteredModel
+from cashflow_ai.schemas.pdf_api import (
+    DigitalPdfColumnMapping,
+    DigitalPdfReviewResult,
+)
+from cashflow_ai.schemas.pdf_persistence import PdfImportSummary
 from cashflow_ai.schemas.planning import (
     Budget,
     BudgetCreate,
@@ -77,11 +81,7 @@ from cashflow_ai.schemas.planning import (
     FinancialGoalCreate,
     FinancialPlanningResult,
 )
-from cashflow_ai.schemas.reconciliation import (
-    ApprovedStatement,
-    StatementApproval,
-    StatementReview,
-)
+from cashflow_ai.schemas.reconciliation import StatementApproval
 from cashflow_ai.schemas.recurrence import (
     RecurrenceReview,
     RecurrenceReviewResult,
@@ -396,22 +396,22 @@ class ApiClient:
         self,
         document: UploadedDocument,
         *,
-        source_type: PdfSourceType,
         account_id: str,
         account_currency: Currency,
-        ocr_confidence_threshold: float,
-    ) -> StatementReview:
-        """Re-extract one PDF into a targeted, non-persistent review."""
+        mapping: DigitalPdfColumnMapping | None = None,
+    ) -> DigitalPdfReviewResult:
+        """Return a ready review, mapping request, or safe CSV fallback."""
+        form = {
+            "account_id": account_id,
+            "account_currency": account_currency.value,
+        }
+        if mapping is not None:
+            form["mapping_json"] = mapping.model_dump_json()
         return self._request(
             "POST",
             "/api/v1/imports/pdf/review",
-            StatementReview,
-            form={
-                "source_type": source_type.value,
-                "account_id": account_id,
-                "account_currency": account_currency.value,
-                "ocr_confidence_threshold": str(ocr_confidence_threshold),
-            },
+            DigitalPdfReviewResult,
+            form=form,
             document=document,
             request_timeout_seconds=120.0,
         )
@@ -420,24 +420,24 @@ class ApiClient:
         self,
         document: UploadedDocument,
         *,
-        source_type: PdfSourceType,
         account_id: str,
         account_currency: Currency,
-        ocr_confidence_threshold: float,
         approval: StatementApproval,
-    ) -> ApprovedStatement:
-        """Apply explicit approval after server-side re-extraction."""
+        mapping: DigitalPdfColumnMapping | None = None,
+    ) -> PdfImportSummary:
+        """Re-extract and atomically persist one explicitly approved PDF."""
+        form = {
+            "account_id": account_id,
+            "account_currency": account_currency.value,
+            "approval_json": approval.model_dump_json(),
+        }
+        if mapping is not None:
+            form["mapping_json"] = mapping.model_dump_json()
         return self._request(
             "POST",
             "/api/v1/imports/pdf/confirm",
-            ApprovedStatement,
-            form={
-                "source_type": source_type.value,
-                "account_id": account_id,
-                "account_currency": account_currency.value,
-                "ocr_confidence_threshold": str(ocr_confidence_threshold),
-                "approval_json": approval.model_dump_json(),
-            },
+            PdfImportSummary,
+            form=form,
             document=document,
             request_timeout_seconds=120.0,
         )
