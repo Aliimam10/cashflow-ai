@@ -453,6 +453,43 @@ APP_STYLES = """
     .cf-notice.is-caution { border-left-color: var(--cf-amber); }
     .cf-empty-state { border-left-color: var(--cf-accent); }
 
+    .cf-workspace-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.65rem;
+        margin: 0.4rem 0 1.2rem;
+    }
+
+    .cf-workspace-chip {
+        padding: 0.42rem 0.7rem;
+        border: 1px solid var(--cf-border);
+        border-radius: 999px;
+        color: var(--cf-muted);
+        background: var(--cf-surface);
+        font-family: var(--cf-number-font);
+        font-size: 0.72rem;
+    }
+
+    .cf-workspace-chip strong { color: var(--cf-text); }
+
+    .cf-file-review {
+        margin: 0.65rem 0;
+        padding: 0.9rem 1rem;
+        border: 1px solid var(--cf-border);
+        border-radius: 0.8rem;
+        background: var(--cf-card);
+    }
+
+    .cf-file-review strong { color: var(--cf-text); }
+    .cf-file-review span { color: var(--cf-muted); }
+
+    div[data-testid="stDataEditor"] {
+        overflow: hidden;
+        border: 1px solid var(--cf-border);
+        border-radius: 0.85rem;
+        background: var(--cf-card);
+    }
+
     div[data-testid="stMetric"] {
         min-height: 112px;
         padding: 1rem 1.05rem;

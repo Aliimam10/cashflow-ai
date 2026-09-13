@@ -122,6 +122,10 @@ _REQUIRED_API_TABLES = frozenset(
         "statement_coverages",
         "user_profiles",
         "verified_transactions",
+        "saved_workspaces",
+        "saved_workspace_transactions",
+        "saved_workspace_coverage",
+        "saved_workspace_balances",
     }
 )
 

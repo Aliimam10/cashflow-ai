@@ -35,6 +35,7 @@ from cashflow_ai.model_registry import ModelRegistryError
 from cashflow_ai.planning import PlanningServiceError, ScenarioPlanningError
 from cashflow_ai.recurrence import RecurrenceServiceError
 from cashflow_ai.schemas.api import ApiProblem, ApiValidationIssue
+from cashflow_ai.workspaces import WorkspaceError
 
 
 def _response(status_code: int, problem: ApiProblem) -> JSONResponse:
@@ -132,6 +133,8 @@ def _domain_status(code: str) -> int:
     """Map controlled service states without exposing input or database details."""
     if code == "invalid_stored_metadata":
         return 500
+    if code == "workspace_upload_too_large":
+        return 413
     if code.endswith("not_found") or code.endswith("unavailable"):
         return 404
     if any(
@@ -218,6 +221,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(PlanningServiceError)
     @app.exception_handler(ScenarioPlanningError)
     @app.exception_handler(RecurrenceServiceError)
+    @app.exception_handler(WorkspaceError)
     async def controlled_domain_error(request: Request, error: Any) -> JSONResponse:
         del request
         code = str(error.code.value)

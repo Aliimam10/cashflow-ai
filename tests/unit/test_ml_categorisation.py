@@ -798,19 +798,19 @@ def test_evaluation_fits_fresh_pipelines_and_reports_baseline_and_fixed_classes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     historical, final = _evaluation_datasets()
-    created_pipeline_ids: list[int] = []
+    created_pipelines: list[object] = []
     original_builder = ml_module.build_categorisation_pipeline
 
     def tracking_builder(random_seed: int) -> object:
         pipeline = original_builder(random_seed)
-        created_pipeline_ids.append(id(pipeline))
+        created_pipelines.append(pipeline)
         return pipeline
 
     monkeypatch.setattr(ml_module, "build_categorisation_pipeline", tracking_builder)
     evaluation = evaluate_categorisation_model(historical, final, _plan())
 
-    assert len(created_pipeline_ids) == 2
-    assert len(set(created_pipeline_ids)) == 2
+    assert len(created_pipelines) == 2
+    assert created_pipelines[0] is not created_pipelines[1]
     assert evaluation.chronological.training_end_date < (
         evaluation.chronological.test_start_date
     )

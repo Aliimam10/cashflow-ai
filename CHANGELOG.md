@@ -6,6 +6,22 @@ repository rather than implying that a hosted service has been deployed.
 
 ## [Unreleased]
 
+### Added
+
+- Added an isolated statement-workspace API and normal UI flow for combining several
+  same-account GBP CSV and selectable-text PDF statements into one editable canonical
+  table, including per-file mappings, source removal, exact/probable duplicate
+  handling, optimistic row revisions, explicit coverage/balance confirmation, and an
+  in-memory canonical CSV download.
+- Added saved and temporary retention modes. Saved mode records only finalized
+  canonical transactions, confirmed coverage, and optional balance evidence;
+  temporary mode never enters SQLite.
+- Added `make demo-workspace`, a fully synthetic mixed CSV/PDF walkthrough that
+  demonstrates saved restoration, selected-workspace deletion, and API-shutdown
+  cleanup of temporary state.
+- Added confirmed controls for deleting either one selected workspace or every
+  active and saved statement workspace.
+
 ### Changed
 
 - Reworked the Streamlit experience around plain-language navigation, a focused
@@ -19,6 +35,22 @@ repository rather than implying that a hosted service has been deployed.
 - Hardened selectable-text parsing for recent UK two-digit dates and complete,
   geometry-stable accessibility labels while preserving raw cells and page-scoped
   row-accounting evidence.
+- Changed normal Streamlit startup to a blank workspace instead of automatically
+  loading the legacy demo database. Overview, analytics, forecast, and planning
+  navigation remain gated until they consume finalized workspace rows in later
+  redesign checkpoints.
+
+### Security and privacy
+
+- Original upload bytes, extracted PDF text, source names and hashes, and page/row
+  provenance are review-time memory only and are omitted from saved workspace tables.
+  Temporary workspaces clear on explicit reset/delete or local API shutdown; closing
+  a browser tab by itself is not claimed as guaranteed deletion.
+- Workspace responses use `no-store`, mutation bodies are capped before multipart
+  parsing, loopback Host headers are allow-listed, and downloadable text is guarded
+  against spreadsheet formulas.
+- Both selected-workspace and all-workspace erasure require explicit confirmation.
+  Developer/legacy databases, downloads, backups, and model artefacts remain separate.
 
 ## [1.0.0] - 2026-09-05
 

@@ -15,6 +15,12 @@ Forecast, planning, scenario, recurrence, and anomaly calculations are rebuilt
 server-side from owned, cutoff-bound inputs; a caller cannot submit a fabricated
 model result or balance path as trusted evidence.
 
+The current normal navigation uses the newer statement-workspace routes described
+below and deliberately gates the older profile/account analytics, forecast, and
+planning screens. Those existing routes remain supported for regression tests and
+developer demos; they are not loaded as an implicit fallback when the workspace UI
+starts blank.
+
 ## Running locally
 
 Install the environment and create the current SQLite schema before starting the
@@ -52,6 +58,16 @@ digital-PDF use must not fail merely because Tesseract is absent.
 | `POST /api/v1/profiles/{profile_id}/accounts` | Create current/checking or savings metadata | Account metadata |
 | `GET /api/v1/profiles/{profile_id}/accounts` | List the profile's accounts | None |
 | `GET /api/v1/accounts/{account_id}` | Read one account | None |
+| `POST /api/v1/workspaces` | Create a blank saved or temporary GBP statement workspace | Draft memory only |
+| `DELETE /api/v1/workspaces` | Delete every active and saved statement workspace after confirmation | All workspace data deletion |
+| `GET /api/v1/workspaces/latest-saved` | Explicitly restore the latest finalized saved workspace | None |
+| `GET /api/v1/workspaces/{workspace_id}` | Read the selected active or saved workspace | None |
+| `POST /api/v1/workspaces/{workspace_id}/review` | Parse and combine several CSV/digital-PDF files | Draft memory only |
+| `PATCH /api/v1/workspaces/{workspace_id}/rows` | Edit, include, or reject canonical candidate rows | Draft memory only |
+| `DELETE /api/v1/workspaces/{workspace_id}/sources/{source_id}` | Remove one draft source and its rows | Draft memory only |
+| `POST /api/v1/workspaces/{workspace_id}/finalize` | Approve the canonical table after every required confirmation | Canonical saved projection, or none in temporary mode |
+| `GET /api/v1/workspaces/{workspace_id}/download` | Build finalized canonical CSV in memory | None |
+| `DELETE /api/v1/workspaces/{workspace_id}` | Delete the selected workspace after explicit confirmation | Selected workspace deletion |
 | `POST /api/v1/imports/csv/preview` | Validate and preview an uploaded CSV | None |
 | `POST /api/v1/imports/csv/confirm` | Revalidate and atomically import an exact confirmed CSV | Confirmed import and retained source rows |
 | `POST /api/v1/imports/pdf/text/preview` | Extract an embedded-text PDF for developer inspection | None |
@@ -96,6 +112,53 @@ digital-PDF use must not fail merely because Tesseract is absent.
 Every collection response uses `{items, limit, offset, total}`. `limit` defaults
 to 50 and is restricted to 1–100; `offset` defaults to zero. Ordering remains
 owned by the underlying service so pages are repeatable for unchanged local data.
+
+## Statement-workspace contracts
+
+The workspace routes are the normal UI boundary; they do not infer a profile or
+account from the legacy database. `POST /api/v1/workspaces` creates an isolated GBP
+draft with `saved` or `temporary` retention. The client may explicitly ask for the
+latest saved workspace, but ordinary startup never performs that request.
+
+Review accepts 1–20 multipart files and may mix CSV with selectable-text digital PDF.
+All files are required by product policy to describe the same personal current or
+savings account. Each upload is parsed separately. Ambiguous sources return bounded
+mapping columns/sample rows; the client must re-submit the exact file with a mapping
+bound to its hash and, for PDF, its structure digest. Unknown, scanned, encrypted, or
+unsafe layouts are represented as unsupported and can be removed without discarding
+other draft sources.
+
+The server combines usable candidates, removes only deterministic exact duplicates,
+and flags probable duplicates for a keep-or-reject decision. `PATCH .../rows` applies
+an optimistic workspace revision and a per-row expected revision so a stale browser
+cannot overwrite newer review state. Confirmed rows require a date, description,
+non-zero penny-precise signed amount, category, and sign-compatible financial role.
+
+Finalization is rejected until every row is included or excluded and every probable
+duplicate has a decision. The request must explicitly confirm source review, day/month
+date interpretation, positive-in/negative-out signs, statement coverage and gaps,
+and any latest balance evidence. Temporary mode keeps the finalized table only in the
+API process store. Saved mode writes only the included canonical rows, confirmed
+coverage, and optional balance; it never writes upload bytes, extracted PDF text,
+source names or hashes, page/row provenance, mapping samples, or rejected rows.
+
+The identifier-specific delete endpoint removes exactly the named workspace. The
+collection delete endpoint removes every active and saved statement workspace. Both
+require a request body whose `confirmed` field is literally `true`. Neither operation
+deletes legacy imports, models, downloaded exports, backups, or copied databases. API
+shutdown clears the process-memory store. Browser/tab close alone does not guarantee a
+server request, so it is not a temporary-workspace deletion contract. Analytics,
+forecast, and planning workspace endpoints are deliberately absent from this
+checkpoint; their legacy database-backed API routes remain available for regression
+use.
+
+All `/api/v1/workspaces` responses include `Cache-Control: no-store`. The local API
+rejects non-loopback/unrecognised Host headers to prevent DNS-rebinding access. A
+request-body ceiling applies before FastAPI parses workspace JSON or multipart data;
+review still enforces 1–20 files, a 50 MiB aggregate source limit, existing per-format
+limits, and a 64 KiB mapping-JSON limit. Parsing runs in a worker thread so a bounded
+PDF does not block the API event loop. Canonical CSV text fields that could be treated
+as spreadsheet formulas are emitted as literal text.
 
 ## Upload and confirmation contracts
 
@@ -193,6 +256,19 @@ not echo the rejected field value or uploaded body. FastAPI debug tracebacks rem
 disabled even when the wider application debug setting is enabled.
 
 ## Manual verification with synthetic data
+
+Run the isolated workspace walkthrough:
+
+```bash
+make demo-workspace
+```
+
+Expected output includes `mixed sources accepted: 2`, `combined canonical rows: 3`,
+`saved rows restored: 3`, and `no` for original bytes persistence, temporary SQLite
+persistence, and temporary memory after simulated API shutdown. All source data is
+fictional and created in memory.
+
+The older full API demonstration remains available:
 
 Run the self-contained fictional workflow:
 

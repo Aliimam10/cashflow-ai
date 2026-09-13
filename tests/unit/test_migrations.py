@@ -40,6 +40,10 @@ EXPECTED_TABLES = {
     "recurring_series",
     "recurring_payment_candidates",
     "recurring_payment_members",
+    "saved_workspace_balances",
+    "saved_workspace_coverage",
+    "saved_workspace_transactions",
+    "saved_workspaces",
     "savings_goals",
     "scenarios",
     "statement_coverages",
@@ -177,6 +181,73 @@ def test_probable_duplicate_snapshot_migration_is_additive_and_guarded(
     }
     with engine.connect() as connection:
         assert connection.scalar(text("SELECT COUNT(*) FROM raw_transactions")) == 1
+
+
+def test_saved_workspace_migration_is_additive_and_refuses_data_loss(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "saved-workspaces.db"
+    config = migration_config(database_path)
+    command.upgrade(config, "0010")
+    engine = migrated_engine(database_path)
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO user_profiles "
+                "(id, display_name, base_currency, timezone, created_at, updated_at) "
+                "VALUES ('workspace-user', 'Fictional User', 'GBP', 'UTC', "
+                "'2026-09-01 00:00:00', '2026-09-01 00:00:00')"
+            )
+        )
+
+    command.upgrade(config, "head")
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT COUNT(*) FROM user_profiles")) == 1
+        assert connection.scalar(text("SELECT COUNT(*) FROM saved_workspaces")) == 0
+
+    with engine.begin() as connection:
+        connection.execute(
+            text(
+                "INSERT INTO saved_workspaces "
+                "(id, account_name, retention_mode, status, revision, "
+                "finalized_at, created_at) "
+                "VALUES ('saved-workspace', 'Fictional account', 'saved', "
+                "'finalized', 1, "
+                "'2026-09-01 12:00:00', '2026-09-01 12:00:00')"
+            )
+        )
+        connection.execute(
+            text(
+                "INSERT INTO saved_workspace_transactions "
+                "(id, workspace_id, position, account_id, transaction_date, "
+                "posting_date, description, merchant, amount, balance_after, "
+                "currency, external_id, transaction_type, direction, category_id, "
+                "financial_role) VALUES ('saved-row', 'saved-workspace', 1, "
+                "'fictional-account', '2026-08-01', NULL, 'Fictional Grocer', "
+                "NULL, -12.50, 987.50, 'GBP', NULL, NULL, 'outflow', "
+                "'groceries', 'expense')"
+            )
+        )
+
+    with pytest.raises(RuntimeError, match="finalized workspaces are saved"):
+        command.downgrade(config, "0010")
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT COUNT(*) FROM saved_workspaces")) == 1
+        assert (
+            connection.scalar(text("SELECT COUNT(*) FROM saved_workspace_transactions"))
+            == 1
+        )
+
+    with engine.begin() as connection:
+        connection.execute(
+            text("DELETE FROM saved_workspaces WHERE id = 'saved-workspace'")
+        )
+    command.downgrade(config, "0010")
+    tables = set(inspect(engine).get_table_names())
+    assert "saved_workspaces" not in tables
+    assert "saved_workspace_transactions" not in tables
+    with engine.connect() as connection:
+        assert connection.scalar(text("SELECT COUNT(*) FROM user_profiles")) == 1
 
 
 def test_fresh_recurrence_hardening_upgrade_adds_no_synthetic_evidence(

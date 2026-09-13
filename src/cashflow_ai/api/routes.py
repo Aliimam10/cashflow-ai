@@ -5,8 +5,11 @@ from __future__ import annotations
 from typing import Annotated, Any
 
 from fastapi import APIRouter, File, Form, Response, UploadFile, status
+from pydantic import TypeAdapter, ValidationError
+from starlette.concurrency import run_in_threadpool
 
 from cashflow_ai.api.dependencies import (
+    ContainerDependency,
     EngineDependency,
     OcrEngineFactoryDependency,
     PaginationDependency,
@@ -79,6 +82,38 @@ from cashflow_ai.schemas.reconciliation import (
     StatementReview,
 )
 from cashflow_ai.schemas.transactions import Currency
+from cashflow_ai.schemas.workspaces import (
+    StatementWorkspace,
+    WorkspaceCreateRequest,
+    WorkspaceCsvDownload,
+    WorkspaceDeleteAllRequest,
+    WorkspaceDeleteAllResult,
+    WorkspaceDeleteRequest,
+    WorkspaceDeleteResult,
+    WorkspaceEditRequest,
+    WorkspaceFileMapping,
+    WorkspaceFinalizeRequest,
+    WorkspaceFinalizeResult,
+    WorkspaceImportReview,
+    WorkspaceSourceRemoveRequest,
+)
+from cashflow_ai.workspaces import (
+    MAX_WORKSPACE_FILES,
+    MAX_WORKSPACE_UPLOAD_BYTES,
+    WorkspaceError,
+    WorkspaceErrorCode,
+    WorkspaceUpload,
+    create_workspace,
+    delete_all_workspace_data,
+    delete_workspace,
+    edit_workspace_rows,
+    finalize_workspace,
+    get_latest_saved_workspace,
+    get_workspace,
+    remove_workspace_source,
+    review_workspace_uploads,
+    workspace_csv_download,
+)
 
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: {"model": ApiProblem, "description": "The source data cannot be processed."},
@@ -95,6 +130,243 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
 }
 
 router = APIRouter(responses=ERROR_RESPONSES)
+MAX_WORKSPACE_MAPPING_JSON_CHARACTERS = 64 * 1024
+
+
+def _workspace_mappings(value: str | None) -> tuple[WorkspaceFileMapping, ...]:
+    if value is None:
+        return ()
+    try:
+        mappings = TypeAdapter(tuple[WorkspaceFileMapping, ...]).validate_json(value)
+    except ValidationError as error:
+        raise WorkspaceError(
+            WorkspaceErrorCode.INVALID_MAPPING,
+            "the workspace file mappings are invalid",
+        ) from error
+    if len(mappings) > MAX_WORKSPACE_FILES:
+        raise WorkspaceError(
+            WorkspaceErrorCode.INVALID_MAPPING,
+            f"no more than {MAX_WORKSPACE_FILES} file mappings are accepted",
+        )
+    return mappings
+
+
+@router.post(
+    "/api/v1/workspaces",
+    response_model=StatementWorkspace,
+    status_code=status.HTTP_201_CREATED,
+    tags=["workspaces"],
+    summary="Create an isolated statement workspace",
+)
+def create_workspace_route(
+    request: WorkspaceCreateRequest,
+    container: ContainerDependency,
+) -> StatementWorkspace:
+    """Create blank state without loading legacy accounts or transactions."""
+    return create_workspace(container.workspace_store, request)
+
+
+@router.delete(
+    "/api/v1/workspaces",
+    response_model=WorkspaceDeleteAllResult,
+    tags=["workspaces"],
+    summary="Delete every local statement workspace",
+)
+def delete_all_workspace_data_route(
+    request: WorkspaceDeleteAllRequest,
+    container: ContainerDependency,
+) -> WorkspaceDeleteAllResult:
+    """Erase active and saved workspace data after explicit confirmation."""
+    del request
+    return delete_all_workspace_data(
+        container.workspace_store,
+        container.session_factory,
+    )
+
+
+@router.get(
+    "/api/v1/workspaces/latest-saved",
+    response_model=StatementWorkspace,
+    tags=["workspaces"],
+    summary="Explicitly resume the latest saved workspace",
+)
+def latest_saved_workspace_route(
+    container: ContainerDependency,
+) -> StatementWorkspace:
+    """Load approved canonical data only after this explicit request."""
+    return get_latest_saved_workspace(
+        container.workspace_store,
+        container.session_factory,
+    )
+
+
+@router.get(
+    "/api/v1/workspaces/{workspace_id}",
+    response_model=StatementWorkspace,
+    tags=["workspaces"],
+    summary="Get one selected statement workspace",
+)
+def get_workspace_route(
+    workspace_id: str,
+    container: ContainerDependency,
+) -> StatementWorkspace:
+    """Return active state or explicitly restore one saved canonical table."""
+    return get_workspace(
+        container.workspace_store,
+        container.session_factory,
+        workspace_id,
+    )
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/review",
+    response_model=WorkspaceImportReview,
+    tags=["workspaces"],
+    summary="Review and combine CSV and digital-PDF statements",
+)
+async def review_workspace_route(
+    workspace_id: str,
+    files: Annotated[
+        list[UploadFile],
+        File(description="One or more CSV exports or selectable-text PDFs"),
+    ],
+    container: ContainerDependency,
+    mappings_json: Annotated[
+        str | None,
+        Form(max_length=MAX_WORKSPACE_MAPPING_JSON_CHARACTERS),
+    ] = None,
+) -> WorkspaceImportReview:
+    """Read bounded files ephemerally and return an editable combined table."""
+    if not files or len(files) > MAX_WORKSPACE_FILES:
+        raise WorkspaceError(
+            WorkspaceErrorCode.INVALID_UPLOAD,
+            f"upload between 1 and {MAX_WORKSPACE_FILES} statement files",
+        )
+
+    mappings = _workspace_mappings(mappings_json)
+    uploads = []
+    uploaded_bytes = 0
+    per_file_limit = max(DEFAULT_MAX_CSV_BYTES, DEFAULT_MAX_PDF_BYTES)
+    for file in files:
+        remaining_bytes = MAX_WORKSPACE_UPLOAD_BYTES - uploaded_bytes
+        content = await read_bounded_upload(
+            file,
+            max_bytes=min(per_file_limit, remaining_bytes),
+        )
+        if len(content) > remaining_bytes:
+            raise WorkspaceError(
+                WorkspaceErrorCode.UPLOAD_TOO_LARGE,
+                "the combined statement upload is too large",
+            )
+        uploaded_bytes += len(content)
+        uploads.append(
+            WorkspaceUpload(
+                filename=file.filename or "",
+                content=content,
+                mime_type=file.content_type or "",
+            )
+        )
+    return await run_in_threadpool(
+        review_workspace_uploads,
+        container.workspace_store,
+        workspace_id,
+        tuple(uploads),
+        mappings=mappings,
+    )
+
+
+@router.patch(
+    "/api/v1/workspaces/{workspace_id}/rows",
+    response_model=StatementWorkspace,
+    tags=["workspaces"],
+    summary="Edit or reject workspace transaction rows",
+)
+def edit_workspace_route(
+    workspace_id: str,
+    request: WorkspaceEditRequest,
+    container: ContainerDependency,
+) -> StatementWorkspace:
+    """Apply one optimistic, atomic spreadsheet-style edit request."""
+    return edit_workspace_rows(container.workspace_store, workspace_id, request)
+
+
+@router.delete(
+    "/api/v1/workspaces/{workspace_id}/sources/{source_id}",
+    response_model=StatementWorkspace,
+    tags=["workspaces"],
+    summary="Remove one source from a draft statement workspace",
+)
+def remove_workspace_source_route(
+    workspace_id: str,
+    source_id: str,
+    request: WorkspaceSourceRemoveRequest,
+    container: ContainerDependency,
+) -> StatementWorkspace:
+    """Discard one source and its rows while preserving the remaining draft."""
+    return remove_workspace_source(
+        container.workspace_store,
+        workspace_id,
+        source_id,
+        request,
+    )
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/finalize",
+    response_model=WorkspaceFinalizeResult,
+    tags=["workspaces"],
+    summary="Finalize the approved canonical statement table",
+)
+def finalize_workspace_route(
+    workspace_id: str,
+    request: WorkspaceFinalizeRequest,
+    container: ContainerDependency,
+) -> WorkspaceFinalizeResult:
+    """Gate downstream use on explicit row, sign and coverage confirmation."""
+    return finalize_workspace(
+        container.workspace_store,
+        container.session_factory,
+        workspace_id,
+        request,
+    )
+
+
+@router.delete(
+    "/api/v1/workspaces/{workspace_id}",
+    response_model=WorkspaceDeleteResult,
+    tags=["workspaces"],
+    summary="Delete all data for one statement workspace",
+)
+def delete_workspace_route(
+    workspace_id: str,
+    request: WorkspaceDeleteRequest,
+    container: ContainerDependency,
+) -> WorkspaceDeleteResult:
+    """Delete in-memory and saved canonical data after explicit confirmation."""
+    del request
+    return delete_workspace(
+        container.workspace_store,
+        container.session_factory,
+        workspace_id,
+    )
+
+
+@router.get(
+    "/api/v1/workspaces/{workspace_id}/download",
+    response_model=WorkspaceCsvDownload,
+    tags=["workspaces"],
+    summary="Download the finalized canonical table as CSV",
+)
+def download_workspace_route(
+    workspace_id: str,
+    container: ContainerDependency,
+) -> WorkspaceCsvDownload:
+    """Build a canonical CSV response without writing an export to disk."""
+    return workspace_csv_download(
+        container.workspace_store,
+        container.session_factory,
+        workspace_id,
+    )
 
 
 @router.get(

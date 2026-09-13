@@ -27,16 +27,16 @@ class NavigationItem(BaseModel):
 
 NAVIGATION_ITEMS = (
     NavigationItem(
-        page_id=PageId.HOME,
-        title="Dashboard",
-        icon="⌂",
-        summary="See verified balances, spending, and monthly cash movement.",
+        page_id=PageId.IMPORT,
+        title="Bank statements",
+        icon="+",
+        summary="Upload, combine, edit, and approve CSV or digital-PDF statements.",
     ),
     NavigationItem(
-        page_id=PageId.IMPORT,
-        title="Add a statement",
-        icon="+",
-        summary="Upload and review a bank CSV export or selectable-text digital PDF.",
+        page_id=PageId.HOME,
+        title="Overview",
+        icon="⌂",
+        summary="See balances and spending after finalising your statement workspace.",
     ),
     NavigationItem(
         page_id=PageId.TRANSACTIONS,

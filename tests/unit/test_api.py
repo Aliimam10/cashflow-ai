@@ -1132,7 +1132,7 @@ def test_default_factory_cli_and_manual_demo_are_runnable(
     monkeypatch.chdir(tmp_path)
     default_app = create_app()
     assert default_app.debug is False
-    with TestClient(default_app) as client:
+    with TestClient(default_app, base_url="http://localhost") as client:
         assert client.get("/health").status_code == 200
 
     container = _container(tmp_path, name="cli.db")

@@ -10,10 +10,54 @@ named bank or every version of a bank's statement. An unknown or ambiguous layou
 must request explicit column mapping or fail safely and recommend CSV. Image-only,
 scanned, and camera-captured statements are outside the intended normal Version 1
 workflow. The existing OCR backend, routes, and tests remain temporarily available
-for internal regression testing until the interface checkpoint removes their normal
-controls.
+for internal regression testing, but the normal interface exposes no scanned-PDF or
+OCR control.
 
-## User workflow
+## Combined workspace import flow
+
+The normal UI now wraps the existing source adapters in a session statement workspace:
+
+```text
+same-account GBP CSV/PDF files
+        -> independent extraction or per-file mapping
+        -> combined candidate table
+        -> deterministic exact deduplication
+        -> probable-duplicate and row review
+        -> source/date/sign/coverage/balance confirmation
+        -> finalized canonical table
+```
+
+Several CSV and selectable-text PDF files may be submitted together, including a
+mixture of formats, but they must describe one GBP personal current or savings
+account. A source with ambiguous headings contributes no rows until the exact file is
+re-selected with an explicit mapping. An unsupported source can be removed while the
+other files and rows remain intact. Rejected formats recommend CSV and never fall
+through to OCR.
+
+The active workspace keeps source file/page/row provenance so the user can compare
+and correct each candidate. Exact duplicate elimination is limited to deterministic
+source or external identities. A merely similar cross-file row is a probable
+duplicate and remains unresolved until explicitly kept or rejected.
+
+Finalization requires every row decision, exact day/month and sign confirmation,
+honest coverage (including explicit gaps), and confirmation of any running-balance
+evidence. The workspace does not repeatedly export and re-import CSV as its trust
+boundary; downstream code will consume the finalized typed canonical rows directly.
+The optional CSV download is generated in memory for the user.
+
+Saved-workspace persistence is intentionally data-minimized: it retains only included
+canonical rows, confirmed coverage, and optional balance evidence. It does not retain
+source bytes, PDF text, filenames, hashes, page/record provenance, mapping samples, or
+rejected rows. Temporary workspaces remain process-memory only and clear on explicit
+start-over/delete or API shutdown. Closing a browser tab alone is not a reliable
+cleanup signal.
+
+## Existing per-file atomic import workflow
+
+The lower-level profile/account import boundary remains available for regression tests
+and developer tools. It preserves complete raw lineage and follows this per-file flow;
+the normal session-workspace path above uses its adapters but a minimized final saved
+projection.
 
 1. Prefer a CSV export; otherwise upload an embedded-text digital PDF and select the
    destination account.

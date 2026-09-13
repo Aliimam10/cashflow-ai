@@ -5,6 +5,23 @@ tests for complete trust-boundary workflows. Every committed fixture is fictiona
 and the normal test command enforces 100% statement and branch coverage across the
 Python package.
 
+## Session-workspace safeguards
+
+The workspace test set uses only fictional in-memory CSV and generated selectable-
+text PDF content. It covers mixed and repeated uploads, automatic and explicit
+per-file mappings, changed file identities and PDF structure digests, malformed and
+unsupported sources, exact and probable duplicates, stale workspace/row revisions,
+spreadsheet edits, penny precision, sign-compatible roles, explicit coverage and
+balance confirmation, saved reload/deletion, and temporary-memory cleanup.
+
+Persistence allow-list assertions prove the saved projection contains canonical
+transactions, coverage/gaps, and optional balance evidence without source bytes, PDF
+text, filenames, hashes, page/record provenance, mapping samples, rejected rows, or
+issue evidence. Frontend tests prove startup is blank, legacy demo data is not loaded,
+mapping choices begin unselected, unsupported sources can be removed, uncertain rows
+cannot be bulk-approved, later pages remain gated, and scanned/OCR controls are absent
+from normal navigation.
+
 ## End-to-end workflows
 
 `tests/integration/test_end_to_end_safeguards.py` exercises two readable flows:
@@ -62,8 +79,38 @@ discarded as a page number.
 | Temporary OCR cleanup | both the scanned-PDF workflow and `test_scanned_pdf_is_rendered_preprocessed_and_converted_to_candidates` |
 | Accessibility-labelled PDF rows | fictional cases in `test_spatial_pdf.py` prove stable complete bundles are projected without changing raw cells and inconsistent bundles fail closed |
 | Page-scoped PDF row accounting | `test_text_pdf_spatial_bridge.py` and `test_text_pdf_extraction.py` cover omitted/conflicting signals and date-plus-pagination artefacts without accepting row counts alone |
+| Mixed statement workspace | `test_workspace_service.py` covers combined fictional CSV/PDF review, mapping, source removal, deduplication, edits, and finalization |
+| Saved-data minimization | `test_workspace_persistence.py` and workspace migration tests assert the explicit saved-column allow list plus selected/all-workspace deletion |
+| Temporary cleanup | workspace service/API lifespan tests prove no SQLite write and memory clearing on explicit deletion or API shutdown |
+| Local API workspace boundary | `test_api_security.py` and `test_workspace_api.py` cover Host rejection, pre-parser body limits, `no-store` responses, mapping limits, and privacy-safe failures |
+| Blank normal startup and gated later pages | `test_frontend.py` and `test_frontend_workspace_page.py` prove legacy demo data is not loaded implicitly |
 
 ## Manual verification
+
+Run the readable synthetic workspace walkthrough:
+
+```bash
+make demo-workspace
+```
+
+Expected output:
+
+```text
+CashFlow AI synthetic statement-workspace check
+mixed sources accepted: 2
+combined canonical rows: 3
+saved rows restored: 3
+original CSV/PDF bytes persisted: no
+temporary workspace persisted: no
+temporary workspace in memory after API-stop cleanup: no
+```
+
+The command creates no real upload, filesystem database, or retained PDF. Safe
+parameters to vary are fictional dates, descriptions, and exact two-decimal amounts
+inside `src/cashflow_ai/workspaces/demo.py`. Do not paste real financial data into a
+demo, fixture, assertion failure, screenshot, or coverage artefact.
+
+The older cross-boundary checks remain available:
 
 Run only the two synthetic cross-boundary workflows:
 

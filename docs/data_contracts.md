@@ -74,6 +74,57 @@ Every approved PDF carries explicitly confirmed `StatementCoverage`. If no relia
 statement-period label was extracted, the review interface proposes transaction-date
 bounds, but those bounds remain user-confirmed evidence rather than parser fact.
 
+## Session statement-workspace contracts
+
+`StatementWorkspace` is the typed normal-UI boundary for one isolated GBP personal
+current or savings account. It has an optimistic `revision`, `draft` or `finalized`
+status, `saved` or `temporary` retention, bounded source summaries, canonical
+candidate rows, and—only after finalization—confirmed coverage and an optional latest
+balance. Workspace UTC timestamps cannot move backwards.
+
+`WorkspaceSourceFile` exposes only the review evidence needed by the client: a safe
+display name, private exact-file hash, source kind, state, controlled reason/guidance,
+row/page counts, suggested coverage, and at most 20 mapping columns and 20 aligned
+sample rows. Mapping evidence is valid only for `mapping_required`. A PDF mapping is
+bound to both the exact SHA-256 file hash and the reconstructed structure digest.
+Unsupported sources cannot receive a mapping or contribute rows.
+
+`WorkspaceTransactionRow` is the spreadsheet-editable projection. While a workspace
+is active it may include source/page/record provenance, provisional date,
+description, amount, running balance, category, financial role, issues, and probable-
+duplicate identity. `ready` and `confirmed` rows require a date, non-empty description,
+and non-zero amount. A confirmed financial role must agree with the amount sign.
+`WorkspaceRowRevision` permits only a confirmed include or rejected exclude decision
+and carries the expected row revision. `WorkspaceEditRequest` also carries the
+expected workspace revision and cannot revise the same row twice.
+
+`WorkspaceImportReview` counts accepted, mapping-required, and unsupported files,
+automatically removed exact duplicates, and probable duplicates still needing a user
+decision. `WorkspaceDuplicateDecision` permits an explicit `keep` or `reject` only;
+similarity alone cannot exclude a financial row.
+
+`WorkspaceFinalizeRequest` requires literal `true` confirmation for the combined
+statement, day/month date interpretation, amount-sign convention, and coverage.
+`WorkspaceCoverageConfirmation` keeps complete/partial/gapped/overlapping/unknown
+semantics and requires every gapped interval to be chronological, non-overlapping,
+and contained in the overall range. `WorkspaceBalanceConfirmation` is optional unless
+the reviewed table presents balance evidence; when provided it is a GBP decimal and
+date, not a synthetic transaction.
+
+`WorkspaceFinalizeResult` states included/rejected row counts and whether the result
+was persisted. `persisted` is true only for saved mode. `WorkspaceCsvDownload` is an
+in-memory export of a finalized canonical table and never writes an export file.
+`WorkspaceDeleteRequest` and `WorkspaceSourceRemoveRequest` make destructive scope and
+optimistic revision explicit. Identifier-specific deletion names one workspace;
+collection deletion requires a separate literal confirmation and returns only active
+and saved deletion counts.
+
+The saved projection intentionally drops source IDs/types, filenames, hashes,
+page/record coordinates, extraction text, issue codes, mapping samples, rejected rows,
+and original bytes. It retains only included canonical fields, category and financial
+role, confirmed coverage/gaps, optional balance, and minimal workspace lifecycle
+metadata. Temporary workspaces never cross the persistence boundary.
+
 ## Confidence and issues
 
 Confidence values are bounded from 0 to 1. At most one confidence record is
