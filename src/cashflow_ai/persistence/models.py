@@ -320,6 +320,138 @@ Index(
 )
 
 
+class SavedWorkspaceRecord(Base):
+    """Metadata for a finalized, locally saved statement workspace."""
+
+    __tablename__ = "saved_workspaces"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    account_name: Mapped[str] = mapped_column(String(100))
+    retention_mode: Mapped[str] = mapped_column(String(20), default="saved")
+    status: Mapped[str] = mapped_column(String(20), default="finalized")
+    revision: Mapped[int] = mapped_column(Integer)
+    finalized_at: Mapped[datetime] = mapped_column(UTCDateTime())
+    created_at: Mapped[datetime] = mapped_column(UTCDateTime(), default=utc_now)
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(account_name)) > 0", name="ck_saved_workspaces_account_name"
+        ),
+        CheckConstraint(
+            "retention_mode = 'saved'", name="ck_saved_workspaces_retention"
+        ),
+        CheckConstraint("status = 'finalized'", name="ck_saved_workspaces_status"),
+        CheckConstraint("revision >= 1", name="ck_saved_workspaces_revision"),
+        CheckConstraint(
+            "finalized_at >= created_at", name="ck_saved_workspaces_timestamps"
+        ),
+    )
+
+
+class SavedWorkspaceTransactionRecord(Base):
+    """One user-approved canonical row without uploaded-source payloads."""
+
+    __tablename__ = "saved_workspace_transactions"
+
+    id: Mapped[str] = mapped_column(String(ID_LENGTH), primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("saved_workspaces.id", ondelete="CASCADE"), index=True
+    )
+    position: Mapped[int] = mapped_column(Integer)
+    account_id: Mapped[str] = mapped_column(String(255))
+    transaction_date: Mapped[date] = mapped_column(Date)
+    posting_date: Mapped[date | None] = mapped_column(Date)
+    description: Mapped[str] = mapped_column(Text)
+    merchant: Mapped[str | None] = mapped_column(String(500))
+    amount: Mapped[Decimal] = mapped_column(MONEY)
+    balance_after: Mapped[Decimal | None] = mapped_column(MONEY)
+    currency: Mapped[str] = mapped_column(String(3), default="GBP")
+    external_id: Mapped[str | None] = mapped_column(String(255))
+    transaction_type: Mapped[str | None] = mapped_column(String(255))
+    direction: Mapped[str] = mapped_column(String(10))
+    category_id: Mapped[str | None] = mapped_column(String(100))
+    financial_role: Mapped[str] = mapped_column(String(30), default="unknown")
+
+    __table_args__ = (
+        UniqueConstraint(
+            "workspace_id", "position", name="uq_saved_workspace_transactions_order"
+        ),
+        CheckConstraint(
+            "position >= 1", name="ck_saved_workspace_transactions_position"
+        ),
+        CheckConstraint(
+            "length(trim(description)) > 0",
+            name="ck_saved_workspace_transactions_description",
+        ),
+        CheckConstraint("amount != 0", name="ck_saved_workspace_transactions_amount"),
+        CheckConstraint(
+            "currency = 'GBP'", name="ck_saved_workspace_transactions_currency"
+        ),
+        CheckConstraint(
+            "direction IN ('inflow', 'outflow')",
+            name="ck_saved_workspace_transactions_direction",
+        ),
+        CheckConstraint(
+            "(amount > 0 AND direction = 'inflow') OR "
+            "(amount < 0 AND direction = 'outflow')",
+            name="ck_saved_workspace_transactions_signed_direction",
+        ),
+        CheckConstraint(
+            "financial_role IN ('income', 'expense', 'transfer_in', "
+            "'transfer_out', 'refund', 'reimbursement', 'cash_withdrawal', "
+            "'excluded', 'unknown')",
+            name="ck_saved_workspace_transactions_financial_role",
+        ),
+    )
+
+
+class SavedWorkspaceCoverageRecord(Base):
+    """Confirmed combined date coverage for a finalized workspace."""
+
+    __tablename__ = "saved_workspace_coverage"
+
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("saved_workspaces.id", ondelete="CASCADE"), primary_key=True
+    )
+    statement_start_date: Mapped[date] = mapped_column(Date)
+    statement_end_date: Mapped[date] = mapped_column(Date)
+    coverage_status: Mapped[str] = mapped_column(String(20))
+    missing_periods_json: Mapped[list[dict[str, str]]] = mapped_column(
+        JSON, default=list
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "statement_end_date >= statement_start_date",
+            name="ck_saved_workspace_coverage_dates",
+        ),
+        CheckConstraint(
+            "coverage_status IN "
+            "('complete', 'partial', 'gapped', 'overlapping', 'unknown')",
+            name="ck_saved_workspace_coverage_status",
+        ),
+    )
+
+
+class SavedWorkspaceBalanceRecord(Base):
+    """Latest confirmed balance evidence for a finalized workspace."""
+
+    __tablename__ = "saved_workspace_balances"
+
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("saved_workspaces.id", ondelete="CASCADE"), primary_key=True
+    )
+    balance: Mapped[Decimal] = mapped_column(MONEY)
+    currency: Mapped[str] = mapped_column(String(3), default="GBP")
+    as_of_date: Mapped[date] = mapped_column(Date)
+
+    __table_args__ = (
+        CheckConstraint(
+            "currency = 'GBP'", name="ck_saved_workspace_balances_currency"
+        ),
+    )
+
+
 class UserFlagRecord(Base):
     """User-applied structured transaction flag."""
 

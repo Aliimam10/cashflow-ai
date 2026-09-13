@@ -12,6 +12,11 @@ from cashflow_ai.api.container import AppContainer, build_container
 from cashflow_ai.api.decision_routes import router as decision_router
 from cashflow_ai.api.errors import register_exception_handlers
 from cashflow_ai.api.routes import router
+from cashflow_ai.api.security import LocalApiSecurityMiddleware
+from cashflow_ai.config import Environment
+from cashflow_ai.workspaces import MAX_WORKSPACE_UPLOAD_BYTES
+
+MAX_WORKSPACE_REQUEST_OVERHEAD_BYTES = 1024 * 1024
 
 OPENAPI_TAGS = [
     {
@@ -30,6 +35,12 @@ OPENAPI_TAGS = [
         "name": "ingestion",
         "description": (
             "Stateless CSV/PDF review and exact-file confirmed statement imports."
+        ),
+    },
+    {
+        "name": "workspaces",
+        "description": (
+            "Session-based mixed-statement review and canonical-table approval."
         ),
     },
     {
@@ -86,8 +97,11 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         del app
-        yield
-        resolved.engine.dispose()
+        try:
+            yield
+        finally:
+            resolved.workspace_store.clear()
+            resolved.engine.dispose()
 
     app = FastAPI(
         title=resolved.settings.app_name,
@@ -103,6 +117,16 @@ def create_app(container: AppContainer | None = None) -> FastAPI:
         license_info={"name": "MIT"},
     )
     app.state.container = resolved
+    allowed_hosts = {"127.0.0.1", "localhost", "::1", resolved.settings.api_host}
+    if resolved.settings.environment is Environment.TEST:
+        allowed_hosts.add("testserver")
+    app.add_middleware(
+        LocalApiSecurityMiddleware,
+        allowed_hosts=tuple(sorted(allowed_hosts)),
+        max_workspace_request_bytes=(
+            MAX_WORKSPACE_UPLOAD_BYTES + MAX_WORKSPACE_REQUEST_OVERHEAD_BYTES
+        ),
+    )
     register_exception_handlers(app)
     app.include_router(router)
     app.include_router(decision_router)

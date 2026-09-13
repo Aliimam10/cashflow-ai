@@ -25,6 +25,49 @@ normal Version 1 import path)
 
 Business logic will remain outside API routes and Streamlit pages.
 
+## Session-based statement workspace
+
+The redesigned normal path introduces `cashflow_ai.workspaces` as an application
+boundary over the existing CSV and digital-PDF adapters:
+
+```text
+Streamlit upload widget
+        -> typed loopback workspace API
+        -> bounded per-file adapters / exact-file mapping
+        -> API-owned draft WorkspaceStore
+        -> combined editable canonical candidates
+        -> explicit row, duplicate, date, sign, coverage, and balance review
+        -> finalized typed table
+              | saved                     | temporary
+              v                           v
+     minimized SQLite projection       process memory only
+```
+
+The page and HTTP routes remain thin. Parsing, normalisation, deduplication, edit
+validation, optimistic revision checks, and finalization are owned by the workspace
+service. CSV and selectable-text PDF sources may be mixed only for the same GBP
+personal current or savings account. Per-file mapping contributes rows only after the
+exact file identity is rechecked. Deterministic exact duplicates are removed;
+probable duplicates remain explicit user decisions.
+
+`WorkspaceStore` owns drafts and temporary finalized tables. It is process-local and
+cleared during API shutdown. Explicit start-over/delete removes one selected
+workspace; closing a browser tab alone is not an architectural cleanup event because
+the server may receive no request.
+
+Saved mode crosses a separate minimized repository boundary only after finalization.
+That projection retains included canonical fields, category and financial role,
+confirmed coverage/gaps, optional balance, and lifecycle metadata. It intentionally
+has no fields for source bytes, PDF text, filenames, hashes, page/row provenance,
+mapping samples, rejected rows, or extraction issues. Restoring a saved workspace is
+an explicit API operation; normal startup does not consult the legacy database.
+
+The first checkpoint gates Overview, transaction analytics, forecasting, and planning
+instead of adapting them implicitly to legacy records. Subsequent commits will make
+those consumers accept the finalized typed workspace table directly. Existing
+database-backed domain and API services remain isolated for regression tests and
+developer demonstrations.
+
 ## Local container topology
 
 The same application package now produces one non-root Docker image containing the
@@ -628,18 +671,19 @@ readiness responses against the public API schemas. It translates network, HTTP,
 schema failures into controlled display-safe errors without echoing URLs, response
 bodies, raw statements, or local paths.
 
-The Overview page owns no financial calculation. It presents local service readiness,
-the local privacy boundary, and the forecast disclaimer. The import page now composes
-profile/account setup and review-gated CSV/PDF forms over typed API requests. CSV
-confirmation delegates its atomic write to the backend. Digital-PDF review sends the
-exact document again, applies any hash- and structure-bound column mapping, and
-receives a review rather than trusted data. Confirmation sends the exact document and
-explicit decisions again for atomic persistence. Neither the page nor its session
+The normal entry page owns no financial calculation. It creates or explicitly restores
+a statement workspace and renders typed API-owned source summaries and rows. Mixed
+CSV/PDF review sends bytes only for the current request; exact-file mappings are
+rechecked before candidates are added. Finalization submits only explicit edits and
+confirmations to the service-owned trust boundary. Neither the page nor its session
 state becomes a source of trusted transaction data. Normal navigation exposes CSV and
 selectable-text digital PDF only; OCR regression routes remain internal.
-Transactions/analytics
-is a review and presentation client over the transaction API. The recurring and
-forecasting page likewise builds only typed policy/scope requests: the backend detects
+
+Overview, Transactions, and Forecast & plans are gated during this checkpoint. The
+previous database-backed pages remain regression clients over their APIs but are not
+an implicit fallback in normal navigation. When the next checkpoints connect them to
+the finalized workspace, the recurring and forecasting page will continue to build
+only typed policy/scope requests: the backend detects
 series, trains/selects models, anchors verified balances, and simulates paths. The UI
 does not persist model objects, forecast paths, transaction evidence, or source rows.
 Its ordinary recurring-series read is side-effect free; only the explicit refresh

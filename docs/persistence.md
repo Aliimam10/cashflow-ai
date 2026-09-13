@@ -94,6 +94,38 @@ financial row. Downgrade drops only these metadata tables, so all account, impor
 transaction, balance, recurrence, planning, forecast, anomaly, and model records are
 preserved.
 
+Migration `0011` additively creates four data-minimized tables for the redesigned
+statement workspace:
+
+- `saved_workspaces` stores the workspace identity, account label, revision, and UTC
+  lifecycle timestamps;
+- `saved_workspace_transactions` stores only finalized included canonical rows in a
+  stable order;
+- `saved_workspace_coverage` stores confirmed statement bounds, coverage status, and
+  explicit missing periods; and
+- `saved_workspace_balances` stores an optional confirmed GBP balance and evidence
+  date.
+
+Only a `saved` and `finalized` workspace with at least one canonical transaction and
+confirmed coverage can enter these tables. The repository replaces one workspace
+revision and its children in one caller-owned transaction. Temporary workspaces never
+enter SQLite. Drafts, rejected rows, original CSV/PDF bytes, extracted PDF text,
+source names and hashes, page/record provenance, mapping previews, and extraction
+issues have no column in this projection.
+
+Loading the normal UI does not query legacy profile/account/import tables. Restoring
+saved workspace data happens only through an explicit workspace request. Deletion
+cascades through these four tables for the selected workspace only; it does not touch
+another saved workspace or the legacy data/model tables. Downgrade `0011` refuses to
+run while a saved workspace exists, preventing an accidental destructive schema
+rollback.
+
+The in-process `WorkspaceStore` is not durable storage. It holds active drafts and
+temporary finalized workspaces, is emptied on local API shutdown, and can be cleared
+for one workspace through the explicit delete/start-over flow. A browser/tab close is
+not guaranteed to invoke server cleanup, so users requiring immediate removal should
+use the control or stop the API.
+
 ## Repository transactions
 
 Repositories stage and flush records but do not commit independently. Callers

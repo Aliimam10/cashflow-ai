@@ -35,6 +35,42 @@ account access, backups, and secure removal.
 - Treat model vocabularies, fingerprints, aggregate results from very small groups,
   and backups as potentially identifying private data.
 
+## Statement-workspace retention
+
+The normal Streamlit entry point starts blank and does not automatically reveal the
+legacy demo database. A saved workspace is restored only after the user explicitly
+chooses **Resume saved workspace**.
+
+Upload bytes and extracted PDF text are consumed in bounded local memory. While a
+draft is active, the API also holds the minimum source name/hash/page/row and mapping
+evidence required for correction and duplicate review. None of those source fields is
+part of the saved schema. On finalization, saved mode writes only included canonical
+rows, category/financial-role decisions, confirmed coverage/gaps, and an optional
+latest balance. Original files, extracted PDF text, source names/hashes, page/row
+provenance, mapping samples, issue evidence, and rejected rows are not persisted by
+this minimized workspace path.
+
+Temporary mode remains only in the local API process memory, both before and after
+finalization. It is cleared when the user explicitly starts blank, deletes the
+workspace, or stops the API. Closing a browser tab alone is not guaranteed to send a
+cleanup request. A user who requires immediate removal should use the explicit
+control or stop the API process.
+
+**Delete workspace data** removes only the selected workspace. **Delete all local
+workspace data** removes every active and saved statement workspace. Both require an
+explicit confirmation. Legacy imports, model artefacts, user-created CSV downloads,
+screenshots, operating-system backups, and copied SQLite files remain separate
+responsibilities.
+
+Workspace responses are marked `no-store`; the local API accepts only configured
+loopback Host headers and caps workspace request bodies before form parsing. Canonical
+CSV exports neutralise formula-leading text so a description or identifier is not
+interpreted as a spreadsheet instruction.
+
+Overview, analytics, forecasts, and planning are gated during this first redesign
+checkpoint. This prevents the normal UI from silently using legacy demo transactions
+when no workspace has been finalized.
+
 Repository rules:
 
 - do not commit real statements or personal transaction data;
@@ -43,7 +79,9 @@ Repository rules:
   artefacts outside version control;
 - do not include private descriptions in logs or screenshots;
 - preserve raw imported rows for local audit while applying safe retention and
-  deletion controls in later stages.
+  deletion controls in later stages. The minimized session-workspace path instead
+  keeps that provenance only during active review and persists only the explicitly
+  approved canonical projection, as described above.
 
 ## Import fingerprints
 
@@ -374,24 +412,28 @@ provided by a page. Loopback binding reduces exposure but is not authentication;
 UI and API must not be published to a local network or the internet.
 
 Streamlit session state stores only the selected page, optional local profile/account
-identifiers, and whether the privacy notice was shown. It must not hold upload bytes,
-raw or verified transaction text, amounts, balances, API payloads, model features, or
-forecast results. Common errors render only controlled client messages and stable
-codes; untrusted API bodies, URLs, source descriptions, and local paths are discarded.
-The Overview page keeps compact privacy and forecast notices visible without making
-technical warnings the primary content.
+identifiers, workspace identity/revision/status/retention metadata, and whether the
+privacy notice was shown. It must not hold upload bytes, raw or verified transaction
+text, amounts, balances, complete API payloads, model features, or forecast results.
+Common errors render only controlled client messages and stable codes; untrusted API
+bodies, URLs, source descriptions, and local paths are discarded. During the current
+redesign checkpoint, Overview and later pages show only the workspace gate.
 
-The import page reads bytes only from the current upload widget and sends them to the
-loopback API. It creates no application-managed upload file or preview cache. Raw
-transaction text and extracted values are intentionally visible in the local review
+The statement page reads bytes only from the current upload widget and sends them to
+the loopback API. The widget identity advances with a successful workspace revision
+so old upload objects are released on the next rerun. It creates no application-
+managed upload file or preview cache. Raw transaction text and extracted values are
+intentionally visible in the local review
 screen but must not be copied into normal logs, screenshots, bug reports, or committed
 fixtures. Profile/account setup requests descriptive local metadata only—not bank
-credentials or account numbers. CSV and digital-PDF persistence occur only after
-exact-file confirmation. The page exposes no scanned-PDF or OCR controls; the internal
-OCR implementation and regression endpoints remain testable without being presented
-as Version 1 support. An internal OCR approval must not be described as a persisted OCR import.
-Committed manual fixtures are generated from fixed fictional
-statements under the ignored demo-data directory.
+credentials or account numbers. Workspace persistence occurs only after all rows and
+final evidence are explicitly confirmed. In the retained per-file boundary, CSV and
+digital-PDF persistence occur only after exact-file confirmation. The page exposes no
+scanned-PDF or OCR
+controls; the internal OCR implementation and regression endpoints remain testable
+without being presented as Version 1 support. An internal OCR approval must not be described as a persisted OCR import.
+Committed manual fixtures are generated from fixed fictional statements under the
+ignored demo-data directory.
 
 The transaction workspace necessarily shows verified descriptions and fixed-precision
 amounts on the same machine. It does not put search results, review items, dashboard

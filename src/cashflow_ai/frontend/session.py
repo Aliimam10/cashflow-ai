@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict
 
 from cashflow_ai.frontend.navigation import PageId
 from cashflow_ai.schemas.transactions import Identifier
+from cashflow_ai.schemas.workspaces import WorkspaceRetentionMode, WorkspaceStatus
 
 SESSION_KEY = "cashflow_ai_ui"
 
@@ -29,9 +30,13 @@ class FrontendSessionState(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    selected_page: PageId = PageId.HOME
+    selected_page: PageId = PageId.IMPORT
     user_profile_id: Identifier | None = None
     account_id: Identifier | None = None
+    workspace_id: Identifier | None = None
+    workspace_revision: int | None = None
+    workspace_status: WorkspaceStatus | None = None
+    retention_mode: WorkspaceRetentionMode = WorkspaceRetentionMode.SAVED
     privacy_notice_seen: bool = False
 
 

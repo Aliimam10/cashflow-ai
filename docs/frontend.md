@@ -6,7 +6,31 @@ data cards, cool indigo highlights, green income cues, amber spending cues, and 
 animated verified-balance pulse line. Labels prefer the local `DM Sans` font and
 numbers prefer local `JetBrains Mono`, with system fallbacks so the interface never
 contacts a font CDN. Developer health details stay behind friendly readiness wording
-rather than dominating the home page. It provides:
+rather than dominating the home page.
+
+## Current workspace-first checkpoint
+
+The normal application now opens on **Bank statements** with no financial data
+loaded. It does not query the legacy demo profile, accounts, or transactions. A user
+must create a blank GBP workspace or explicitly resume the latest finalized saved
+workspace. **Overview**, **Transactions**, and **Forecast & plans** render a gate until
+the later dashboard checkpoint connects them to that finalized workspace.
+
+The active statement page provides:
+
+- a saved-or-temporary workspace choice and same-account GBP scope;
+- mixed multi-file CSV and selectable-text digital-PDF review;
+- exact-file-bound per-source column mapping and safe unsupported-source removal;
+- one spreadsheet-style canonical table for date, description, signed amount,
+  balance, category, financial role, and include/exclude decisions;
+- automatic deterministic exact-duplicate removal plus explicit probable-duplicate
+  decisions;
+- explicit source, date-format, sign, coverage, gap, and balance confirmations;
+- final canonical CSV download without a filesystem export; and
+- selected-workspace start-over and deletion controls.
+
+The previous database-backed screens and services remain available to automated
+regression tests and developer demos. Their implemented capabilities include:
 
 - a functional home dashboard with local readiness, verified cash balance history,
   latest activity, statement coverage, and cash-flow analytics;
@@ -47,11 +71,20 @@ document extraction calls. Loopback is not authentication: do not expose either
 process to another machine.
 
 Streamlit application session state contains only page, profile, and account
-identifiers plus a display preference. The application does not copy upload bytes,
-transaction text, amounts, balances, API responses, or forecasts into that state or
-an application-managed file cache. Streamlit's upload widget supplies the current
-file to a request; stateless confirmation deliberately sends the exact bytes again
-so the backend can re-extract and verify them.
+identifiers, workspace identity/revision/status/retention metadata, and a display
+preference. The application does not copy upload bytes, transaction text, amounts,
+balances, complete API responses, or forecasts into its application session model or
+an application-managed file cache. Streamlit's upload widget supplies each current
+file to one request. Its key changes after a successful workspace revision so the
+widget releases old `UploadedFile` objects on the next rerun.
+
+The API keeps draft and temporary workspaces only in process memory. Saved mode does
+not write anything until finalization, then stores only included canonical rows,
+confirmed coverage, and an optional latest balance. It omits source bytes, extracted
+PDF text, source display names and hashes, page/record provenance, rejected rows, and
+mapping samples. Temporary workspaces never enter SQLite and clear on explicit
+start-over/delete or API shutdown. A browser-tab close alone is not a reliable
+server-side cleanup signal.
 
 Transaction searches and dashboard results are requested again on each Streamlit
 rerun; they are not copied into the application-managed session model. Descriptions
@@ -81,6 +114,51 @@ unconfirmed and cannot bypass statement review. Free-text statement notes are
 reference-only metadata and do not alter categories, roles, analytics, or forecasts.
 
 ## Manual verification with fictional data
+
+Run the self-contained statement-workspace check first:
+
+```bash
+make demo-workspace
+```
+
+Expected output:
+
+```text
+CashFlow AI synthetic statement-workspace check
+mixed sources accepted: 2
+combined canonical rows: 3
+saved rows restored: 3
+original CSV/PDF bytes persisted: no
+temporary workspace persisted: no
+temporary workspace in memory after API-stop cleanup: no
+```
+
+For a browser-level check, first generate the fictional files:
+
+```bash
+make demo-data
+make demo-statements
+```
+
+Then start `make api` and `make ui` in separate terminals. Open
+`http://127.0.0.1:8501`, verify **No statements loaded**, and create a workspace.
+Upload these exact fictional files together:
+
+```text
+data/demo/generated/student/student_canonical.csv
+data/demo/generated/statements/fictional_digital_statement.pdf
+```
+
+Do not select `fictional_scanned_statement.pdf`; it exists only for the internal OCR
+regression path and the normal workspace must reject it. Confirm that the CSV and
+selectable-text PDF rows appear in one table, edit a synthetic cell, decide every
+row, enter honest coverage, and finalize. Confirm the other navigation items show
+the workspace gate rather than legacy demo balances. Choose **Start a blank
+workspace** and confirm the selection is blank; a finalized saved workspace can
+still be restored until its own **Delete workspace data** action is confirmed.
+
+The commands and steps below exercise the older database-backed regression workflow;
+they are retained as developer evidence and are not the normal workspace-first path.
 
 Prepare the local environment and reproducible synthetic files:
 
@@ -275,6 +353,17 @@ the generated digital source choice. Do not use real data in screenshots, fixtur
 or bug reports.
 
 ## Current limitations
+
+- Analytics, balance charts, forecasting, budgets, and special-case planning are not
+  yet connected to the finalized session workspace. Their older database-backed
+  services remain under regression coverage, but normal navigation is gated.
+- Temporary data is process-memory state, not a browser-owned session. Closing a tab
+  alone does not guarantee immediate cleanup; explicitly start over/delete or stop
+  the local API.
+- **Delete workspace data** affects the selected workspace. The blank start screen's
+  collapsed **Privacy and deletion** panel can erase all active and saved statement
+  workspaces. Neither control removes the legacy developer database, exports, backups,
+  or model artefacts.
 
 - Bank PDF layouts are not standardised. Digital extraction supports conservative
   generic layouts, not every institution or statement version; unsupported documents

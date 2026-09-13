@@ -22,6 +22,10 @@ from cashflow_ai.persistence.repositories import (
     TransactionRepository,
     UserProfileRepository,
 )
+from cashflow_ai.persistence.workspaces import (
+    SavedWorkspaceRecords,
+    SavedWorkspaceRepository,
+)
 
 __all__ = [
     "AccountRepository",
@@ -36,6 +40,8 @@ __all__ = [
     "MLTrainingCandidateRow",
     "ModelMetadataRepository",
     "PlanningRepository",
+    "SavedWorkspaceRecords",
+    "SavedWorkspaceRepository",
     "StatementRepository",
     "TransactionRepository",
     "UTCDateTime",

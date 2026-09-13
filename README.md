@@ -31,6 +31,37 @@ Start with the [Version 1 user guide](docs/user_guide.md), see the
 [architecture and data-flow diagrams](docs/diagrams.md), or read the
 [v1.0.0 release candidate notes](docs/releases/v1.0.0.md).
 
+## Current statement-workspace checkpoint
+
+The normal Streamlit experience now opens with **no statements loaded**. It does
+not automatically read the legacy demo profile, accounts, or transactions from
+`data/cashflow.db`. A user deliberately creates a new GBP workspace or explicitly
+resumes the latest finalized saved workspace.
+
+One draft workspace accepts up to 20 CSV exports and selectable-text digital PDFs
+for the same personal current or savings account. Files can be mixed in one review.
+Each source is parsed independently, ambiguous columns require an exact-file-bound
+mapping, deterministic exact duplicates are removed, and probable duplicates remain
+visible until the user keeps or rejects them. The combined canonical table is
+spreadsheet-editable. Finalization requires explicit row decisions plus confirmation
+of the source statements, UK date interpretation, signed-amount convention, coverage,
+and any running-balance evidence.
+
+Retention is explicit:
+
+- **Saved** stores only the finalized canonical transactions, confirmed coverage,
+  and optional latest balance. It never stores original CSV/PDF bytes, extracted PDF
+  text, source filenames or hashes, or page/row provenance.
+- **Temporary** remains in the local API process memory. It is cleared by **Start a
+  blank workspace**, explicit workspace deletion, or API shutdown. Closing a browser
+  tab alone is not a guaranteed server-side deletion event.
+
+Deletion applies only to the selected workspace. It does not erase other saved
+workspaces or the legacy database. Overview, transaction analytics, forecasting, and
+planning are intentionally gated in the redesigned navigation until the following
+dashboard and planning checkpoints consume the finalized workspace directly. The
+older database-backed APIs remain available for regression tests and developer demos.
+
 The repository currently contains the **project foundation, quality tooling,
 typed configuration, structured logging, reproducible synthetic demo data,
 canonical transaction and statement contracts, safe CSV preview and mapping,
@@ -294,6 +325,44 @@ bound to the exact file hash and reconstructed table digest. Confirmation re-ext
 the same bytes and enters the strict atomic persistence boundary. CSV remains the
 recommended stable format, and the legacy scanned-PDF controls are hidden while
 internal OCR regression coverage remains available.
+
+The newer session-based statement workspace is a separate typed boundary over these
+source adapters. It combines mixed files into one reviewable table without trusting
+client-edited extraction evidence. A finalized saved workspace uses a deliberately
+smaller persistence projection; a temporary workspace never enters SQLite.
+
+## Verify the statement workspace safely
+
+Run the self-contained fictional walkthrough:
+
+```bash
+make demo-workspace
+```
+
+Expected output:
+
+```text
+CashFlow AI synthetic statement-workspace check
+mixed sources accepted: 2
+combined canonical rows: 3
+saved rows restored: 3
+original CSV/PDF bytes persisted: no
+temporary workspace persisted: no
+temporary workspace in memory after API-stop cleanup: no
+```
+
+The demo constructs one fictional CSV and one selectable-text PDF in memory, reviews
+and finalizes their combined rows, proves a saved canonical table can be restored,
+deletes that selected workspace, and proves a temporary workspace disappears when
+the API-owned memory store is cleared. It does not create an upload file or retain a
+database. Vary only the synthetic dates, descriptions, and penny-precise amounts in
+`src/cashflow_ai/workspaces/demo.py`.
+
+The normal UI also provides an explicitly confirmed **Delete all local workspace
+data** action from its collapsed privacy panel. Workspace HTTP responses are not
+cacheable, request bodies are bounded before parsing, and the local API rejects
+unrecognised Host headers. These controls do not delete separate legacy developer
+databases, downloaded exports, backups, or model artefacts.
 
 ## Development setup
 
@@ -585,6 +654,12 @@ Version 1 release candidate documentation, diagrams, evaluation evidence, privac
 checklist, demonstration workflow, changelog, release notes, limitations, and future
 roadmap are now included. Tagging remains gated on the exact GitHub Actions run,
 synthetic screenshot review, and final pull-request review.
+
+The in-progress workspace redesign changes the normal entry point without deleting
+those earlier domain services. It now starts blank, supports mixed multi-statement
+review, persists only finalized canonical workspace data in saved mode, and keeps
+temporary mode in server memory. The redesigned overview, analytics, forecast, and
+planning pages are deliberately not connected in this checkpoint.
 
 ## Future roadmap
 

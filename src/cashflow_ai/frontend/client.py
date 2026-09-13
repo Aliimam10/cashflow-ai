@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from enum import StrEnum
 from types import TracebackType
+from typing import Any
 from urllib.parse import quote, urlsplit
 
 import httpx2
@@ -89,6 +91,21 @@ from cashflow_ai.schemas.recurrence import (
 )
 from cashflow_ai.schemas.scenarios import FinancialScenarioComparison
 from cashflow_ai.schemas.transactions import Currency
+from cashflow_ai.schemas.workspaces import (
+    StatementWorkspace,
+    WorkspaceCreateRequest,
+    WorkspaceCsvDownload,
+    WorkspaceDeleteAllRequest,
+    WorkspaceDeleteAllResult,
+    WorkspaceDeleteRequest,
+    WorkspaceDeleteResult,
+    WorkspaceEditRequest,
+    WorkspaceFileMapping,
+    WorkspaceFinalizeRequest,
+    WorkspaceFinalizeResult,
+    WorkspaceImportReview,
+    WorkspaceSourceRemoveRequest,
+)
 
 
 class ApiClientErrorCode(StrEnum):
@@ -98,6 +115,7 @@ class ApiClientErrorCode(StrEnum):
     INVALID_REQUEST_PATH = "invalid_request_path"
     CONNECTION_FAILED = "connection_failed"
     REQUEST_TIMED_OUT = "request_timed_out"
+    API_VERSION_MISMATCH = "api_version_mismatch"
     API_REJECTED_REQUEST = "api_rejected_request"
     INVALID_RESPONSE = "invalid_response"
 
@@ -238,21 +256,33 @@ class ApiClient:
         body: BaseModel | None = None,
         form: Mapping[str, str] | None = None,
         document: UploadedDocument | None = None,
+        documents: tuple[UploadedDocument, ...] | None = None,
         request_timeout_seconds: float | None = None,
         accepted_statuses: frozenset[int] = frozenset(),
     ) -> ResponseT:
         _validate_path(path)
-        files = (
-            None
-            if document is None
-            else {
+        if document is not None and documents is not None:
+            raise ApiClientError(
+                ApiClientErrorCode.INVALID_CONFIGURATION,
+                "one API request cannot mix single and multiple upload fields",
+            )
+        files: Any = None
+        if document is not None:
+            files = {
                 "file": (
                     document.filename,
                     document.content,
                     document.mime_type,
                 )
             }
-        )
+        elif documents is not None:
+            files = [
+                (
+                    "files",
+                    (item.filename, item.content, item.mime_type),
+                )
+                for item in documents
+            ]
         try:
             response = self._client.request(
                 method,
@@ -283,6 +313,20 @@ class ApiClient:
                 problem = ApiProblem.model_validate(response.json())
             except (TypeError, ValueError):
                 problem = None
+            if (
+                response.status_code == 404
+                and path.startswith("/api/v1/workspaces")
+                and (problem is None or problem.code == "http_error")
+            ):
+                raise ApiClientError(
+                    ApiClientErrorCode.API_VERSION_MISMATCH,
+                    (
+                        "the running local API is older than this interface; "
+                        "stop it and run make api again"
+                    ),
+                    status_code=response.status_code,
+                    problem_code=None if problem is None else problem.code,
+                )
             raise ApiClientError(
                 ApiClientErrorCode.API_REJECTED_REQUEST,
                 "the local API rejected the request",
@@ -328,6 +372,131 @@ class ApiClient:
             "/ready",
             ReadinessResponse,
             accepted_statuses=frozenset({503}),
+        )
+
+    def create_workspace(
+        self,
+        request: WorkspaceCreateRequest,
+    ) -> StatementWorkspace:
+        """Create an isolated workspace without loading legacy demo records."""
+        return self.post("/api/v1/workspaces", request, StatementWorkspace)
+
+    def latest_saved_workspace(self) -> StatementWorkspace | None:
+        """Explicitly request the latest approved, locally saved workspace."""
+        try:
+            return self.get(
+                "/api/v1/workspaces/latest-saved",
+                StatementWorkspace,
+            )
+        except ApiClientError as error:
+            if error.status_code == 404 and error.problem_code == "workspace_not_found":
+                return None
+            raise
+
+    def get_workspace(self, workspace_id: str) -> StatementWorkspace:
+        """Return only the explicitly selected active or saved workspace."""
+        return self.get(
+            f"/api/v1/workspaces/{_path_segment(workspace_id)}",
+            StatementWorkspace,
+        )
+
+    def review_workspace_files(
+        self,
+        workspace_id: str,
+        documents: tuple[UploadedDocument, ...],
+        *,
+        mappings: tuple[WorkspaceFileMapping, ...] = (),
+    ) -> WorkspaceImportReview:
+        """Upload a bounded mixed batch for non-persistent review."""
+        form = None
+        if mappings:
+            form = {
+                "mappings_json": json.dumps(
+                    [mapping.model_dump(mode="json") for mapping in mappings],
+                    separators=(",", ":"),
+                )
+            }
+        return self._request(
+            "POST",
+            f"/api/v1/workspaces/{_path_segment(workspace_id)}/review",
+            WorkspaceImportReview,
+            form=form,
+            documents=documents,
+            request_timeout_seconds=120.0,
+        )
+
+    def edit_workspace(
+        self,
+        workspace_id: str,
+        request: WorkspaceEditRequest,
+    ) -> StatementWorkspace:
+        """Apply spreadsheet edits to server-owned rows."""
+        return self._request(
+            "PATCH",
+            f"/api/v1/workspaces/{_path_segment(workspace_id)}/rows",
+            StatementWorkspace,
+            body=request,
+        )
+
+    def remove_workspace_source(
+        self,
+        workspace_id: str,
+        source_id: str,
+        request: WorkspaceSourceRemoveRequest,
+    ) -> StatementWorkspace:
+        """Discard one source from a draft while retaining all other files."""
+        return self._request(
+            "DELETE",
+            (
+                f"/api/v1/workspaces/{_path_segment(workspace_id)}/sources/"
+                f"{_path_segment(source_id)}"
+            ),
+            StatementWorkspace,
+            body=request,
+        )
+
+    def finalize_workspace(
+        self,
+        workspace_id: str,
+        request: WorkspaceFinalizeRequest,
+    ) -> WorkspaceFinalizeResult:
+        """Approve one canonical table for downstream use."""
+        return self.post(
+            f"/api/v1/workspaces/{_path_segment(workspace_id)}/finalize",
+            request,
+            WorkspaceFinalizeResult,
+        )
+
+    def delete_workspace(
+        self,
+        workspace_id: str,
+        request: WorkspaceDeleteRequest,
+    ) -> WorkspaceDeleteResult:
+        """Delete active and saved state after explicit confirmation."""
+        return self._request(
+            "DELETE",
+            f"/api/v1/workspaces/{_path_segment(workspace_id)}",
+            WorkspaceDeleteResult,
+            body=request,
+        )
+
+    def delete_all_workspace_data(
+        self,
+        request: WorkspaceDeleteAllRequest,
+    ) -> WorkspaceDeleteAllResult:
+        """Delete every active and saved statement workspace after confirmation."""
+        return self._request(
+            "DELETE",
+            "/api/v1/workspaces",
+            WorkspaceDeleteAllResult,
+            body=request,
+        )
+
+    def download_workspace_csv(self, workspace_id: str) -> WorkspaceCsvDownload:
+        """Download the finalized canonical table without a local server file."""
+        return self.get(
+            f"/api/v1/workspaces/{_path_segment(workspace_id)}/download",
+            WorkspaceCsvDownload,
         )
 
     def current_profile(self) -> UserProfileResponse:

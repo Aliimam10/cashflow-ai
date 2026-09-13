@@ -17,8 +17,6 @@ from cashflow_ai.frontend.components import (
     render_privacy_notice,
     render_service_status,
 )
-from cashflow_ai.frontend.forecast_page import render_forecast_page
-from cashflow_ai.frontend.import_page import render_import_page
 from cashflow_ai.frontend.navigation import (
     NAVIGATION_ITEMS,
     NavigationItem,
@@ -35,8 +33,8 @@ from cashflow_ai.frontend.transaction_page import (
     TransactionApi,
     _dashboard_boundary_transactions,
     _render_dashboard,
-    render_transaction_page,
 )
+from cashflow_ai.frontend.workspace_page import WorkspaceApi, render_workspace_page
 from cashflow_ai.schemas.api import (
     AccountResponse,
     HealthResponse,
@@ -44,6 +42,7 @@ from cashflow_ai.schemas.api import (
     ReadinessResponse,
     UserProfileResponse,
 )
+from cashflow_ai.schemas.workspaces import WorkspaceStatus
 
 _NAVIGATION_WIDGET_KEY = "cashflow_main_navigation"
 
@@ -175,6 +174,32 @@ def render_placeholder(item: NavigationItem) -> None:
         render_forecast_disclaimer()
 
 
+def render_workspace_gate(
+    item: NavigationItem,
+    session: FrontendSessionState,
+) -> None:
+    """Keep later product areas isolated from legacy database-backed screens."""
+    render_page_header("Workspace", item.title, item.summary)
+    if session.workspace_status is not WorkspaceStatus.FINALIZED:
+        render_empty_state(
+            "Start with your statements",
+            "Upload and finalise a statement workspace before opening this area.",
+        )
+    else:
+        render_empty_state(
+            "Your statement table is ready",
+            "This area will use only your finalised workspace in the next checkpoint.",
+        )
+    st.button(
+        "Open bank statements",
+        type="primary",
+        on_click=_navigate_to,
+        args=(PageId.IMPORT,),
+    )
+    if item.page_id is PageId.FORECAST_AND_PLANNING:
+        render_forecast_disclaimer()
+
+
 def selected_navigation_item(title: str) -> NavigationItem:
     """Resolve a sidebar title to its stable data-only navigation entry."""
     return next(item for item in NAVIGATION_ITEMS if item.title == title)
@@ -186,19 +211,12 @@ def render_application_page(
     base_url: str,
     session: FrontendSessionState,
 ) -> FrontendSessionState:
-    """Render the selected shell page while opening the API only when required."""
-    if item.page_id is PageId.HOME:
-        with ApiClient(base_url) as client:
-            render_home(client)
-        return session
+    """Render the workspace-first product without loading legacy demo data."""
     if item.page_id is PageId.IMPORT:
         with ApiClient(base_url) as client:
-            return render_import_page(client, session)
-    if item.page_id is PageId.TRANSACTIONS:
-        with ApiClient(base_url) as client:
-            return render_transaction_page(client, session)
-    with ApiClient(base_url) as client:
-        return render_forecast_page(client, session)
+            return render_workspace_page(cast(WorkspaceApi, client), session)
+    render_workspace_gate(item, session)
+    return session
 
 
 def main() -> None:
@@ -247,11 +265,11 @@ def main() -> None:
         unsafe_allow_html=True,
     )
     selected = selected_navigation_item(selected_title)
-    selected_state = FrontendSessionState(
-        selected_page=selected.page_id,
-        user_profile_id=current.user_profile_id,
-        account_id=current.account_id,
-        privacy_notice_seen=True,
+    selected_state = current.model_copy(
+        update={
+            "selected_page": selected.page_id,
+            "privacy_notice_seen": True,
+        }
     )
     updated = render_application_page(
         selected,

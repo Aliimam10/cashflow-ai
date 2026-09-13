@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session, sessionmaker
@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from cashflow_ai.config import Settings, load_settings
 from cashflow_ai.imports import OcrEngine, PytesseractOcrEngine
 from cashflow_ai.persistence import create_session_factory, create_sqlite_engine
+from cashflow_ai.workspaces.store import WorkspaceStore
 
 
 @dataclass(frozen=True, slots=True)
@@ -21,6 +22,7 @@ class AppContainer:
     engine: Engine
     session_factory: sessionmaker[Session]
     ocr_engine_factory: Callable[[], OcrEngine] = PytesseractOcrEngine
+    workspace_store: WorkspaceStore = field(default_factory=WorkspaceStore)
 
 
 def build_container(settings: Settings | None = None) -> AppContainer:

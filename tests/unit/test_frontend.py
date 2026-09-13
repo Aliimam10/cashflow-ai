@@ -35,6 +35,7 @@ from cashflow_ai.schemas.api import (
     UserProfileResponse,
 )
 from cashflow_ai.schemas.transactions import Currency
+from cashflow_ai.schemas.workspaces import WorkspaceStatus
 
 
 def _settings() -> Settings:
@@ -103,7 +104,8 @@ def test_navigation_metadata_and_data_minimised_session_state() -> None:
     assert tuple(navigation_item(item.page_id) for item in NAVIGATION_ITEMS) == (
         NAVIGATION_ITEMS
     )
-    assert app.selected_navigation_item("Add a statement").page_id is PageId.IMPORT
+    assert default.selected_page is PageId.IMPORT
+    assert app.selected_navigation_item("Bank statements").page_id is PageId.IMPORT
 
 
 @pytest.mark.parametrize("invalid", [{"unexpected": "value"}, 42])
@@ -188,6 +190,7 @@ def test_application_styles_are_installed_as_static_css(
     assert "@keyframes cf-draw-pulse" in styles.APP_STYLES
     assert "prefers-reduced-motion" in styles.APP_STYLES
     assert 'data-testid="stToolbar"' in styles.APP_STYLES
+    assert 'data-testid="stDataEditor"' in styles.APP_STYLES
     ui.markdown.assert_called_once_with(styles.APP_STYLES, unsafe_allow_html=True)
 
 
@@ -422,26 +425,47 @@ def test_placeholder_is_truthful_and_forecast_warning_stays_visible(
     assert disclaimer.called is expects_disclaimer
 
 
-def test_page_dispatch_opens_api_for_implemented_pages(
+def test_workspace_gate_explains_draft_and_finalized_access(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    ui = MagicMock()
+    empty = MagicMock()
+    disclaimer = MagicMock()
+    monkeypatch.setattr(app, "st", ui)
+    monkeypatch.setattr(app, "render_page_header", MagicMock())
+    monkeypatch.setattr(app, "render_empty_state", empty)
+    monkeypatch.setattr(app, "render_forecast_disclaimer", disclaimer)
+
+    app.render_workspace_gate(
+        navigation_item(PageId.TRANSACTIONS),
+        FrontendSessionState(workspace_status=WorkspaceStatus.DRAFT),
+    )
+    assert empty.call_args.args[0] == "Start with your statements"
+    disclaimer.assert_not_called()
+
+    app.render_workspace_gate(
+        navigation_item(PageId.FORECAST_AND_PLANNING),
+        FrontendSessionState(workspace_status=WorkspaceStatus.FINALIZED),
+    )
+    assert empty.call_args.args[0] == "Your statement table is ready"
+    disclaimer.assert_called_once()
+    assert ui.button.call_count == 2
+
+
+def test_page_dispatch_opens_api_only_for_workspace_and_gates_later_pages(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     client = MagicMock()
     context = MagicMock()
     context.__enter__.return_value = client
     client_factory = MagicMock(return_value=context)
-    home = MagicMock()
-    import_page = MagicMock(return_value=FrontendSessionState(account_id="account-1"))
-    transaction_page = MagicMock(
-        return_value=FrontendSessionState(account_id="account-2")
+    workspace_page = MagicMock(
+        return_value=FrontendSessionState(workspace_id="workspace-1")
     )
-    forecast_page = MagicMock(return_value=FrontendSessionState(account_id="account-3"))
-    placeholder = MagicMock()
+    gate = MagicMock()
     monkeypatch.setattr(app, "ApiClient", client_factory)
-    monkeypatch.setattr(app, "render_home", home)
-    monkeypatch.setattr(app, "render_import_page", import_page)
-    monkeypatch.setattr(app, "render_transaction_page", transaction_page)
-    monkeypatch.setattr(app, "render_forecast_page", forecast_page)
-    monkeypatch.setattr(app, "render_placeholder", placeholder)
+    monkeypatch.setattr(app, "render_workspace_page", workspace_page)
+    monkeypatch.setattr(app, "render_workspace_gate", gate)
     session = FrontendSessionState()
 
     home_result = app.render_application_page(
@@ -466,16 +490,13 @@ def test_page_dispatch_opens_api_for_implemented_pages(
         session=session,
     )
 
-    assert client_factory.call_count == 4
-    home.assert_called_once_with(client)
-    import_page.assert_called_once_with(client, session)
-    transaction_page.assert_called_once_with(client, session)
-    forecast_page.assert_called_once_with(client, session)
-    placeholder.assert_not_called()
+    assert client_factory.call_count == 1
+    workspace_page.assert_called_once_with(client, session)
+    assert gate.call_count == 3
     assert home_result == session
-    assert import_result.account_id == "account-1"
-    assert transaction_result.account_id == "account-2"
-    assert forecast_result.account_id == "account-3"
+    assert import_result.workspace_id == "workspace-1"
+    assert transaction_result == session
+    assert forecast_result == session
 
 
 def test_application_main_restores_and_saves_navigation(
@@ -483,7 +504,7 @@ def test_application_main_restores_and_saves_navigation(
 ) -> None:
     ui = MagicMock()
     ui.session_state = {}
-    ui.sidebar.radio.return_value = "Add a statement"
+    ui.sidebar.radio.return_value = "Bank statements"
     rendered = MagicMock(
         side_effect=lambda item, base_url, session: session.model_copy(
             update={"account_id": "account-1"}
@@ -506,7 +527,7 @@ def test_application_main_restores_and_saves_navigation(
     assert radio_call.kwargs["index"] == 0
     assert radio_call.kwargs["label_visibility"] == "collapsed"
     assert radio_call.kwargs["key"] == app._NAVIGATION_WIDGET_KEY
-    assert radio_call.kwargs["format_func"]("Dashboard") == "⌂  Dashboard"
+    assert radio_call.kwargs["format_func"]("Overview") == "⌂  Overview"
     apply_styles.assert_called_once_with()
     assert ui.session_state[SESSION_KEY]["selected_page"] == "import"
     assert ui.session_state[SESSION_KEY]["account_id"] == "account-1"
@@ -530,7 +551,7 @@ def test_home_action_selects_statement_import(
 
     app._navigate_to(PageId.IMPORT)
 
-    assert ui.session_state[app._NAVIGATION_WIDGET_KEY] == "Add a statement"
+    assert ui.session_state[app._NAVIGATION_WIDGET_KEY] == "Bank statements"
 
 
 def test_packaged_cli_uses_loopback_settings(
