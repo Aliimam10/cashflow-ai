@@ -50,6 +50,10 @@ latest balance. Original files, extracted PDF text, source names/hashes, page/ro
 provenance, mapping samples, issue evidence, and rejected rows are not persisted by
 this minimized workspace path.
 
+The supported consolidated CSV adapter exposes only controlled layout metadata and
+aggregate selected/excluded row counts alongside the normal local review table. It
+does not log source rows, descriptions, account details, balances, or amounts.
+
 Temporary mode remains only in the local API process memory, both before and after
 finalization. It is cleared when the user explicitly starts blank, deletes the
 workspace, or stops the API. Closing a browser tab alone is not guaranteed to send a
@@ -67,9 +71,11 @@ loopback Host headers and caps workspace request bodies before form parsing. Can
 CSV exports neutralise formula-leading text so a description or identifier is not
 interpreted as a spreadsheet instruction.
 
-Overview, analytics, forecasts, and planning are gated during this first redesign
-checkpoint. This prevents the normal UI from silently using legacy demo transactions
-when no workspace has been finalized.
+Overview, Transactions, and Forecast remain gated while a workspace is absent or
+still a draft. After finalization, those pages call only revision-bound workspace
+result endpoints; they never substitute legacy demo transactions. Workspace-native
+budget, savings-goal, and special-case planning controls are not exposed yet and
+remain a later redesign checkpoint.
 
 Repository rules:
 
@@ -417,7 +423,10 @@ privacy notice was shown. It must not hold upload bytes, raw or verified transac
 text, amounts, balances, complete API payloads, model features, or forecast results.
 Common errors render only controlled client messages and stable codes; untrusted API
 bodies, URLs, source descriptions, and local paths are discarded. During the current
-redesign checkpoint, Overview and later pages show only the workspace gate.
+redesign checkpoint, draft workspaces see a gate on Overview, Transactions, and
+Forecast. Finalized workspaces fetch revision-bound analytics, transaction-search,
+and forecast responses for the current render only; those payloads are not copied
+into application-managed session state. Workspace-native planning remains absent.
 
 The statement page reads bytes only from the current upload widget and sends them to
 the loopback API. The widget identity advances with a successful workspace revision

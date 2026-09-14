@@ -331,6 +331,11 @@ def _review_csv(
                         "mapping it."
                     ),
                     row_count=0,
+                    parser_name=document.parser_name,
+                    parser_version=document.parser_version,
+                    layout_version=document.layout_version,
+                    warning_codes=document.warning_codes,
+                    excluded_transaction_rows=document.excluded_transaction_rows,
                     suggested_period=suggested_period,
                 ),
                 [],
@@ -345,6 +350,11 @@ def _review_csv(
                 reason_code="csv_columns_ambiguous",
                 guidance="Match the CSV columns before reviewing its rows.",
                 row_count=0,
+                parser_name=document.parser_name,
+                parser_version=document.parser_version,
+                layout_version=document.layout_version,
+                warning_codes=document.warning_codes,
+                excluded_transaction_rows=document.excluded_transaction_rows,
                 mapping_columns=document.columns,
                 mapping_sample_rows=tuple(
                     tuple(_mapping_sample_cell(value) for value in row.values)
@@ -400,6 +410,18 @@ def _review_csv(
         suggested_period = DateRange(
             start_date=min(parsed_dates), end_date=max(parsed_dates)
         )
+    consolidated_table = document.parser_name == "revolut_consolidated_csv"
+    consolidated_guidance = (
+        "A reconciled GBP transaction table was selected from this supported "
+        "consolidated layout."
+    )
+    if document.excluded_transaction_rows:
+        consolidated_guidance += (
+            f" {document.excluded_transaction_rows} transaction row(s) from "
+            "non-GBP sections were excluded; confirm that scope before finalizing."
+        )
+    else:
+        consolidated_guidance += " Review every row, sign, row count and coverage."
     return (
         WorkspaceSourceFile(
             source_id=source_id,
@@ -407,9 +429,22 @@ def _review_csv(
             display_name=display_name,
             file_hash=document.file_hash,
             state=WorkspaceSourceReviewState.READY,
-            reason_code="review_ready",
-            guidance="Review every row, sign and coverage before finalizing.",
+            reason_code=(
+                "consolidated_csv_review_ready"
+                if consolidated_table
+                else "review_ready"
+            ),
+            guidance=(
+                consolidated_guidance
+                if consolidated_table
+                else "Review every row, sign and coverage before finalizing."
+            ),
             row_count=len(rows),
+            parser_name=document.parser_name,
+            parser_version=document.parser_version,
+            layout_version=document.layout_version,
+            warning_codes=document.warning_codes,
+            excluded_transaction_rows=document.excluded_transaction_rows,
             suggested_period=suggested_period,
         ),
         rows,
@@ -973,6 +1008,14 @@ def _validate_finalize(
         raise WorkspaceError(
             WorkspaceErrorCode.REVIEW_REQUIRED,
             "every uploaded statement must be ready before finalization",
+        )
+    if (
+        any(source.excluded_transaction_rows for source in workspace.sources)
+        and not request.source_exclusions_confirmed
+    ):
+        raise WorkspaceError(
+            WorkspaceErrorCode.REVIEW_REQUIRED,
+            "confirm the disclosed non-GBP source exclusions before finalization",
         )
     included = tuple(
         row

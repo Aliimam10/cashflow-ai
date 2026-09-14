@@ -491,12 +491,59 @@ def test_page_dispatch_opens_api_only_for_workspace_and_gates_later_pages(
     )
 
     assert client_factory.call_count == 1
-    workspace_page.assert_called_once_with(client, session)
+    workspace_page.assert_called_once_with(client, session, navigate=app._navigate_to)
     assert gate.call_count == 3
     assert home_result == session
     assert import_result.workspace_id == "workspace-1"
     assert transaction_result == session
     assert forecast_result == session
+
+
+def test_finalized_workspace_dispatches_to_real_result_pages(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = MagicMock()
+    context = MagicMock()
+    context.__enter__.return_value = client
+    client_factory = MagicMock(return_value=context)
+    overview = MagicMock(side_effect=lambda client, session, navigate: session)
+    transactions = MagicMock(side_effect=lambda client, session, navigate: session)
+    forecast = MagicMock(side_effect=lambda client, session: session)
+    gate = MagicMock()
+    monkeypatch.setattr(app, "ApiClient", client_factory)
+    monkeypatch.setattr(app, "render_workspace_overview", overview)
+    monkeypatch.setattr(app, "render_workspace_transactions", transactions)
+    monkeypatch.setattr(app, "render_workspace_forecast", forecast)
+    monkeypatch.setattr(app, "render_workspace_gate", gate)
+    session = FrontendSessionState(
+        workspace_id="synthetic-workspace",
+        workspace_revision=3,
+        workspace_status=WorkspaceStatus.FINALIZED,
+    )
+
+    for page_id in (
+        PageId.HOME,
+        PageId.TRANSACTIONS,
+        PageId.FORECAST_AND_PLANNING,
+    ):
+        assert (
+            app.render_application_page(
+                navigation_item(page_id),
+                base_url="http://127.0.0.1:8765",
+                session=session,
+            )
+            == session
+        )
+
+    assert client_factory.call_count == 3
+    overview.assert_called_once_with(client, session, navigate=app._navigate_to)
+    transactions.assert_called_once_with(
+        client,
+        session,
+        navigate=app._navigate_to,
+    )
+    forecast.assert_called_once_with(client, session)
+    gate.assert_not_called()
 
 
 def test_application_main_restores_and_saves_navigation(

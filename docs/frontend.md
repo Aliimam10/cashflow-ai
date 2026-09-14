@@ -10,11 +10,11 @@ rather than dominating the home page.
 
 ## Current workspace-first checkpoint
 
-The normal application now opens on **Bank statements** with no financial data
-loaded. It does not query the legacy demo profile, accounts, or transactions. A user
-must create a blank GBP workspace or explicitly resume the latest finalized saved
-workspace. **Overview**, **Transactions**, and **Forecast & plans** render a gate until
-the later dashboard checkpoint connects them to that finalized workspace.
+The normal application opens on **Bank statements** with no financial data loaded.
+It does not query the legacy demo profile, accounts, or transactions. A user creates
+a blank GBP workspace or explicitly resumes the latest finalized saved workspace.
+Draft workspaces keep later pages gated; a finalized workspace unlocks **Overview**,
+**Transactions**, and the forecast area of **Forecast & plans**.
 
 The active statement page provides:
 
@@ -26,8 +26,22 @@ The active statement page provides:
 - automatic deterministic exact-duplicate removal plus explicit probable-duplicate
   decisions;
 - explicit source, date-format, sign, coverage, gap, and balance confirmations;
+- a visible adapter/layout label, excluded non-GBP row count, and dedicated
+  confirmation when the supported multi-section consolidated CSV contains a paired
+  currency table;
 - final canonical CSV download without a filesystem export; and
 - selected-workspace start-over and deletion controls.
+
+The finalized result pages provide:
+
+- an account-balance hero and animated pulse drawn only through verified balance
+  points, with confirmed gaps left visibly disconnected;
+- role-aware income, spending, external net cash flow, and transfer metrics;
+- an expense-only category donut, observed monthly cash-flow chart, explicit
+  statement-coverage timeline, and recent approved rows;
+- a read-only view of the canonical transaction table; and
+- 15-, 30-, 60-, and 90-day balance forecasts, or specific corrective reasons why a
+  future graph is withheld.
 
 The previous database-backed screens and services remain available to automated
 regression tests and developer demos. Their implemented capabilities include:
@@ -93,10 +107,10 @@ are not returned by its transaction endpoints. Chart conversion from `Decimal` t
 floating point is a presentation-only copy; stored and API money remains fixed
 precision.
 
-Recurring candidates and forecasts are also requested again rather than stored in
-session state. The browser supplies identifiers, dates, horizon, and explicit review
-actions; the API rebuilds all evidence and models locally. Confirming or rejecting a
-series changes derived-data state through the existing backend invalidation rules.
+Workspace analytics, approved rows, and forecasts are requested again rather than
+stored in application session state. The browser supplies only the workspace
+identity, expected revision, and selected horizon. The API reloads the server-owned
+finalized table and recalculates each response locally.
 
 Budgets and goals are stored only after an explicit save action. Scenario definitions
 and comparison paths remain temporary and are requested again on each rerun. Anomaly
@@ -153,9 +167,16 @@ Do not select `fictional_scanned_statement.pdf`; it exists only for the internal
 regression path and the normal workspace must reject it. Confirm that the CSV and
 selectable-text PDF rows appear in one table, edit a synthetic cell, decide every
 row, enter honest coverage, and finalize. Confirm the other navigation items show
-the workspace gate rather than legacy demo balances. Choose **Start a blank
-workspace** and confirm the selection is blank; a finalized saved workspace can
-still be restored until its own **Delete workspace data** action is confirmed.
+the redesigned workspace results rather than legacy demo balances: **Overview** uses
+the uploaded date range, **Transactions** shows approved rows, and **Forecast &
+plans** either draws a supported path or lists the precise evidence still required.
+Choose **Start a blank workspace** and confirm the selection is blank; a finalized
+saved workspace can still be restored until its own **Delete workspace data** action
+is confirmed.
+
+For a quicker calculation-level check, run `make demo-workspace-results`. It prints
+complete synthetic coverage, role-aware totals, 15/30-day forecast ranges, and an
+unknown-role refusal without reading or writing a statement or database.
 
 The commands and steps below exercise the older database-backed regression workflow;
 they are retained as developer evidence and are not the normal workspace-first path.
@@ -354,9 +375,13 @@ or bug reports.
 
 ## Current limitations
 
-- Analytics, balance charts, forecasting, budgets, and special-case planning are not
-  yet connected to the finalized session workspace. Their older database-backed
-  services remain under regression coverage, but normal navigation is gated.
+- Budget controls, savings-goal progress, and free-text special-case planning are not
+  yet connected to the finalized session workspace; they are the next checkpoint.
+- The workspace forecast uses a transparent recent 60-day weekday baseline. A
+  one-shot upload cannot honestly support a historical personal-model backtest, so
+  this screen does not claim that the older advanced candidate was selected. It also
+  labels cash flow as unclassified total movement because the workspace has no
+  user-confirmed recurring-series membership; no amount is called discretionary.
 - Temporary data is process-memory state, not a browser-owned session. Closing a tab
   alone does not guarantee immediate cleanup; explicitly start over/delete or stop
   the local API.

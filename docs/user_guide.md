@@ -59,6 +59,9 @@ old transactions until you deliberately choose **Resume saved workspace**.
    to the same GBP personal current or savings account.
 3. Select one or more CSV exports and selectable-text digital PDFs together, then
    choose **Review selected files**.
+   A supported Revolut consolidated V2 export may contain report material before
+   the GBP table. The app locates that exact layout automatically; a changed layout
+   is rejected rather than guessed.
 4. For any ambiguous file, inspect the bounded sample, map the date, description,
    signed amount or debit/credit columns, and optional running balance, then re-select
    that exact file. Remove unsupported files or obtain a CSV export.
@@ -72,9 +75,11 @@ old transactions until you deliberately choose **Resume saved workspace**.
    uncovered date remains unknown rather than becoming zero spending.
 8. Check the rows against the source statements, confirm the day/month date
    interpretation and positive-in/negative-out sign convention, and confirm any
-   displayed running-balance evidence.
-9. Finalize the canonical table. Only then can it be downloaded or consumed by a
-   later dashboard boundary.
+   displayed running-balance evidence. If a consolidated export also contains a
+   paired non-GBP transaction section, check the displayed excluded-row count and
+   explicitly confirm that only GBP should enter this workspace.
+9. Finalize the canonical table. Choose **View your overview**, or use the left
+   navigation to open the approved transactions and forecast.
 
 Source filenames, hashes, page/row provenance, upload bytes, and extracted PDF text
 exist only while a draft is reviewed. In saved mode, SQLite receives only the final
@@ -89,6 +94,12 @@ affect only the selected workspace. From the blank start screen, **Privacy and
 deletion → Delete all local workspace data** erases every active and saved statement
 workspace after a second explicit confirmation. Neither control removes legacy
 developer data, downloaded CSV files, backups, or model artefacts.
+
+For the supported consolidated CSV layout, every adjacent GBP running balance and
+the table's signed footer total must reconcile exactly before rows are shown. The
+original bank category is kept as source metadata only. It is not trusted as the
+app's category or financial role, so the user still reviews those fields. Summary,
+interest, and paired foreign-currency sections never become hidden GBP transactions.
 
 Temporary state is cleared by explicit start-over/deletion or when the local API
 process stops. Closing only the browser tab is not guaranteed to notify the server,
@@ -169,24 +180,25 @@ background retraining.
 
 ## Analytics, forecasting, and planning
 
-During the current workspace redesign checkpoint, **Overview**, **Transactions**, and
-**Forecast & plans** are intentionally gated. Finalizing a workspace proves the table
-is ready, but those normal pages will not use it until the next dashboard and planning
-commits. The older database-backed services and APIs below remain available for
-regression testing and developer demos; the normal UI does not silently fall back to
-their demo data.
+Draft workspaces keep **Overview**, **Transactions**, and **Forecast & plans** gated.
+After finalization, the normal UI uses only that approved workspace and never falls
+back to old demo balances:
 
-The transactions dashboard can filter verified activity, review probable duplicates
-and roles, correct categories, and show coverage-aware totals and category breakdowns.
-The forecasting and planning screen can:
+- **Overview** shows the latest verified account balance, gap-preserving pulse line,
+  observed income and expenses, transfers separately, expense-only category totals,
+  monthly cash flow, statement coverage, and recent activity.
+- **Transactions** shows up to the newest 100 approved canonical rows. It is read-only
+  because finalization freezes the reviewed table; start a new workspace to make a
+  corrected version.
+- **Forecast & plans** currently provides 15-, 30-, 60-, and 90-day balance horizons.
+  If financial roles, recent continuous coverage, 60 days of history, or a fresh
+  latest balance are missing, it explains the exact issue and draws no future graph.
 
-- review and confirm recurring payments;
-- compare the advanced forecast candidate with simple baselines;
-- show a daily expected balance with an empirical likely range;
-- track monthly category and weekly discretionary budgets;
-- track a savings target or minimum-balance goal;
-- estimate conservative safe weekly spending; and
-- compare isolated one-off or recurring what-if scenarios.
+The new workspace forecast uses a reproducible recent 60-day weekday cash-flow
+baseline plus an empirical interval. It does not claim that the older advanced model
+won a historical test: all rows in a one-shot workspace became known together when
+the table was finalized. Budget controls, savings-goal progress, and deterministic
+special-case recommendations remain the next workspace checkpoint.
 
 Forecast intervals are empirical estimates, not guarantees. Longer paths reuse
 earlier predictions, so error can compound. Scenario results are hypothetical and
@@ -216,6 +228,30 @@ temporary workspace in memory after API-stop cleanup: no
 This uses one in-memory fictional CSV and one in-memory selectable-text PDF. Safe
 parameters to vary are only the synthetic dates, descriptions, and penny-precise
 amounts in `src/cashflow_ai/workspaces/demo.py`.
+
+Then verify the exact analytics/forecast boundary without a database or file:
+
+```bash
+make demo-workspace-results
+```
+
+Expected output includes complete `90/90` synthetic coverage, income and expense
+totals, transfers kept separate, two expense categories, available 15- and 30-day
+paths with ranges, and `unresolved-role guard: withheld
+(unknown_financial_roles)`. Safe values to vary are only the fictional dates and
+two-decimal amounts in `src/cashflow_ai/workspaces/results_demo.py`.
+
+To see a forecast compared with outcomes it was not allowed to inspect, run:
+
+```bash
+make demo-workspace-backtest
+```
+
+This produces Git-ignored fictional 90-, 60-, and 30-day consolidated-layout CSVs.
+The real workspace importer finalizes the first 60 days, the app forecasts the next
+30, and only then does the demo reveal those 30 actual days for comparison. Expected
+final error is -£8.44 (forecast minus actual). This demonstrates chronological
+separation; it does not validate future accuracy for a real account.
 
 The older developer demonstrations remain available:
 

@@ -1,6 +1,8 @@
 """Tests for safe CSV decoding, preview, suggestions, and validation."""
 
+import csv
 from datetime import date
+from io import StringIO
 
 import pytest
 from pydantic import ValidationError
@@ -54,6 +56,174 @@ def assert_error(
         preview_csv(content, filename, **limits)
 
     assert error.value.code is code
+
+
+def _padded_row(*values: str) -> list[str]:
+    return [*values, *("" for _ in range(13 - len(values)))]
+
+
+def _consolidated_csv(
+    *,
+    currency_symbol: str = "£",
+    duplicate_gbp_table: bool = False,
+    malformed_row: bool = False,
+    unexpected_trailing_value: bool = False,
+    missing_total: bool = False,
+    total_mismatch: bool = False,
+    balance_mismatch: bool = False,
+    reverse_dates: bool = False,
+    missing_category: bool = False,
+    invalid_tax: bool = False,
+    invalid_calendar_date: bool = False,
+    include_non_gbp_table: bool = False,
+    include_empty_gbp_table: bool = False,
+    include_blank_gbp_section: bool = False,
+    include_changed_table: bool = False,
+    non_gbp_row: bool = True,
+    non_gbp_total: bool = True,
+    non_gbp_blank_termination: bool = False,
+    footer_issue: str | None = None,
+) -> bytes:
+    """Build a fictional multi-section export without bank or user data."""
+    header = _padded_row(
+        "Date",
+        "Description",
+        "Category",
+        "Money in/out",
+        "Balance",
+        "Tax withheld",
+        "Other taxes",
+        "Fees",
+    )
+    first = _padded_row(
+        "Apr 1, 2026",
+        "SYNTHETIC PAY",
+        "Income",
+        f"{currency_symbol}100.00",
+        f"{currency_symbol}600.00",
+        f"{currency_symbol}0.00",
+        f"{currency_symbol}0.00",
+        f"{currency_symbol}0.00",
+    )
+    second = _padded_row(
+        "Apr 2, 2026",
+        "SYNTHETIC FOOD",
+        "Food",
+        f"-{currency_symbol}20.00",
+        f"{currency_symbol}580.00",
+        f"{currency_symbol}0.00",
+        f"{currency_symbol}0.00",
+        f"{currency_symbol}0.00",
+    )
+    if malformed_row:
+        second[0] = "not-a-date"
+    if unexpected_trailing_value:
+        second[-1] = "unexpected"
+    if balance_mismatch:
+        second[4] = f"{currency_symbol}579.00"
+    if reverse_dates:
+        second[0] = "Mar 31, 2026"
+    if missing_category:
+        second[2] = ""
+    if invalid_tax:
+        second[5] = "not-money"
+    if invalid_calendar_date:
+        second[0] = "Apr 31, 2026"
+    total = f"{currency_symbol}{'81.00' if total_mismatch else '80.00'}"
+    footer = _padded_row("Total", "", "", total)
+    if footer_issue == "short":
+        footer = ["Total"]
+    elif footer_issue == "trailing":
+        footer[-1] = "unexpected"
+    elif footer_issue == "invalid_money":
+        footer[3] = "not-money"
+    table = [
+        header,
+        first,
+        second,
+        *(() if missing_total else (footer,)),
+        _padded_row(),
+    ]
+    rows = [
+        _padded_row("Fictional consolidated statement"),
+        _padded_row(),
+        *table,
+        _padded_row("Other currency summary"),
+    ]
+    if include_non_gbp_table:
+        rows.append(
+            _padded_row(
+                "Date",
+                "Description",
+                "Category",
+                "Money in/out",
+                "Money in/out",
+                "Balance",
+                "Balance",
+                "Tax withheld",
+                "Tax withheld",
+                "Other taxes",
+                "Other taxes",
+                "Fees",
+                "Fees",
+            )
+        )
+        if non_gbp_row:
+            rows.append(
+                _padded_row(
+                    "Apr 3, 2026",
+                    "SYNTHETIC FOREIGN PURCHASE",
+                    "Card",
+                    "-€10.00",
+                    "-£8.50",
+                    "€90.00",
+                    "£76.50",
+                    "€0.00",
+                    "£0.00",
+                    "€0.00",
+                    "£0.00",
+                    "€0.00",
+                    "£0.00",
+                ),
+            )
+        if non_gbp_total:
+            rows.append(_padded_row("Total", "", "", "-€10.00"))
+        if non_gbp_blank_termination:
+            rows.append(_padded_row())
+    if include_empty_gbp_table:
+        rows.extend(
+            (
+                header,
+                _padded_row(
+                    "Total",
+                    "",
+                    "",
+                    f"{currency_symbol}0.00",
+                    "",
+                    f"{currency_symbol}0.00",
+                    f"{currency_symbol}0.00",
+                    f"{currency_symbol}0.00",
+                ),
+                _padded_row(),
+            )
+        )
+    if include_blank_gbp_section:
+        rows.extend((header, _padded_row()))
+    if include_changed_table:
+        rows.append(
+            _padded_row(
+                "Date",
+                "Description",
+                "Category",
+                "Changed field",
+                "Money in/out",
+            )
+        )
+    if duplicate_gbp_table:
+        rows.extend(table)
+    output = StringIO(newline="")
+    csv.writer(output, lineterminator="\n").writerows(rows)
+    return output.getvalue().encode()
 
 
 def test_utf8_signed_amount_preview_is_limited_but_counts_every_row() -> None:
@@ -141,6 +311,131 @@ def test_snake_case_bank_headers_are_recognised_for_date_detection() -> None:
     assert preview.suggested_statement_period is not None
     assert preview.suggested_statement_period.start_date == date(2025, 9, 1)
     assert preview.suggested_statement_period.end_date == date(2026, 8, 31)
+
+
+def test_consolidated_export_selects_one_strict_gbp_transaction_table() -> None:
+    content = _consolidated_csv(include_non_gbp_table=True)
+
+    preview = preview_csv(content, "fictional-consolidated.csv")
+    document = parse_csv_document(content, "fictional-consolidated.csv")
+
+    assert preview.columns == (
+        "Date",
+        "Description",
+        "Category",
+        "Money in/out",
+        "Balance",
+        "Tax withheld",
+        "Other taxes",
+        "Fees",
+    )
+    assert preview.total_data_rows == 2
+    assert [row.source_row_number for row in document.rows] == [4, 5]
+    assert document.parser_name == "revolut_consolidated_csv"
+    assert document.parser_version == "1.0.0"
+    assert document.layout_version == "consolidated_v2_gbp_1"
+    assert document.warning_codes == ("non_gbp_transaction_sections_excluded",)
+    assert document.excluded_transaction_rows == 1
+    gbp_only = parse_csv_document(
+        _consolidated_csv(),
+        "fictional-gbp-only-consolidated.csv",
+    )
+    assert gbp_only.warning_codes == ()
+    assert gbp_only.excluded_transaction_rows == 0
+    assert preview.suggestions.transaction_date == ("Date",)
+    assert preview.suggestions.description == ("Description",)
+    assert preview.suggestions.signed_amount == ("Money in/out",)
+    assert preview.suggestions.running_balance == ("Balance",)
+    assert preview.suggested_statement_period is not None
+    assert preview.suggested_statement_period.start_date == date(2026, 4, 1)
+    assert preview.suggested_statement_period.end_date == date(2026, 4, 2)
+
+
+def test_consolidated_export_ignores_an_empty_repeated_gbp_section() -> None:
+    document = parse_csv_document(
+        _consolidated_csv(
+            include_non_gbp_table=True,
+            include_empty_gbp_table=True,
+        ),
+        "fictional-consolidated.csv",
+    )
+
+    assert document.parser_name == "revolut_consolidated_csv"
+    assert len(document.rows) == 2
+    assert document.warning_codes == (
+        "non_gbp_transaction_sections_excluded",
+        "empty_gbp_transaction_sections_ignored",
+    )
+    assert document.excluded_transaction_rows == 1
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        _consolidated_csv(currency_symbol="€"),
+        _consolidated_csv(duplicate_gbp_table=True),
+        _consolidated_csv(include_blank_gbp_section=True),
+        _consolidated_csv(malformed_row=True),
+        _consolidated_csv(unexpected_trailing_value=True),
+        _consolidated_csv(missing_total=True),
+        _consolidated_csv(total_mismatch=True),
+        _consolidated_csv(balance_mismatch=True),
+        _consolidated_csv(reverse_dates=True),
+        _consolidated_csv(missing_category=True),
+        _consolidated_csv(invalid_tax=True),
+        _consolidated_csv(invalid_calendar_date=True),
+        _consolidated_csv(include_changed_table=True),
+        _consolidated_csv(
+            include_non_gbp_table=True,
+            non_gbp_total=False,
+        ),
+        _consolidated_csv(
+            include_non_gbp_table=True,
+            non_gbp_row=False,
+        ),
+        _consolidated_csv(
+            include_non_gbp_table=True,
+            non_gbp_total=False,
+            non_gbp_blank_termination=True,
+        ),
+        _consolidated_csv(footer_issue="short"),
+        _consolidated_csv(footer_issue="trailing"),
+        _consolidated_csv(footer_issue="invalid_money"),
+    ],
+)
+def test_consolidated_export_fails_closed_when_the_table_is_not_unambiguous(
+    content: bytes,
+) -> None:
+    assert_error(
+        content,
+        "fictional-consolidated.csv",
+        CsvImportErrorCode.INVALID_HEADER,
+    )
+
+
+def test_consolidated_export_fails_closed_when_gbp_header_has_no_rows() -> None:
+    output = StringIO(newline="")
+    csv.writer(output, lineterminator="\n").writerows(
+        (
+            _padded_row("Fictional consolidated statement"),
+            _padded_row(),
+            _padded_row(
+                "Date",
+                "Description",
+                "Category",
+                "Money in/out",
+                "Balance",
+                "Tax withheld",
+                "Other taxes",
+                "Fees",
+            ),
+        )
+    )
+    assert_error(
+        output.getvalue().encode(),
+        "fictional-empty-consolidated.csv",
+        CsvImportErrorCode.INVALID_HEADER,
+    )
 
 
 @pytest.mark.parametrize(

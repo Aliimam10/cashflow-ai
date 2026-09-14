@@ -130,11 +130,25 @@ missing balances by summing transactions.
 
 - Version 1 analytics supports one shared account currency and currently validates
   GBP.
-- The visual dashboard displays the first staged analytics. It is not yet the
-  forecasting, budgeting, goal, scenario, or anomaly interface.
+- The normal workspace dashboard now displays approved balance points, role-aware
+  totals, category spending, monthly cash flow, coverage, and recent rows. Budget,
+  goal, and special-case planning controls remain a later workspace checkpoint.
 - Budget planning consumes these coverage indicators and verified breakdowns.
-- Approved PDF rows are still review-only until their complete atomic persistence
-  workflow is implemented.
+
+## Finalized-workspace adapter
+
+`cashflow_ai.workspaces.analytics` calculates directly from one finalized canonical
+workspace rather than copying it into the legacy transaction tables. Requests carry
+the expected workspace revision, and drafts or stale revisions fail safely. The
+default period is exactly the confirmed uploaded coverage, not the current month.
+
+Transfers, refunds, reimbursements, withdrawals, unknown roles, and excluded rows
+remain separate exactly as in the core formulas. Only `expense` rows enter the
+category donut. Custom category identifiers receive a readable title-cased label.
+Because the workspace has no reviewed recurrence membership, its expense cadence is
+honestly reported as unclassified rather than guessed. Its balance chart uses only
+row-level running balances and an explicitly confirmed balance, and never joins
+points across a confirmed gap.
 
 ## Confirmed recurring expenses
 

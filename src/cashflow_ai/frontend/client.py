@@ -91,6 +91,17 @@ from cashflow_ai.schemas.recurrence import (
 )
 from cashflow_ai.schemas.scenarios import FinancialScenarioComparison
 from cashflow_ai.schemas.transactions import Currency
+from cashflow_ai.schemas.workspace_analytics import (
+    WorkspaceAnalytics,
+    WorkspaceAnalyticsRequest,
+    WorkspaceTransactionSearchRequest,
+    WorkspaceTransactionSearchResult,
+)
+from cashflow_ai.schemas.workspace_forecasts import (
+    WorkspaceForecastRequest,
+    WorkspaceForecastResponse,
+    WorkspaceForecastResult,
+)
 from cashflow_ai.schemas.workspaces import (
     StatementWorkspace,
     WorkspaceCreateRequest,
@@ -498,6 +509,43 @@ class ApiClient:
             f"/api/v1/workspaces/{_path_segment(workspace_id)}/download",
             WorkspaceCsvDownload,
         )
+
+    def workspace_analytics(
+        self,
+        workspace_id: str,
+        request: WorkspaceAnalyticsRequest,
+    ) -> WorkspaceAnalytics:
+        """Calculate trusted results directly from a finalized workspace."""
+        return self.post(
+            f"/api/v1/workspaces/{_path_segment(workspace_id)}/analytics",
+            request,
+            WorkspaceAnalytics,
+        )
+
+    def search_workspace_transactions(
+        self,
+        workspace_id: str,
+        request: WorkspaceTransactionSearchRequest,
+    ) -> WorkspaceTransactionSearchResult:
+        """Search the approved canonical table without using legacy records."""
+        return self.post(
+            (f"/api/v1/workspaces/{_path_segment(workspace_id)}/transactions/search"),
+            request,
+            WorkspaceTransactionSearchResult,
+        )
+
+    def workspace_forecast(
+        self,
+        workspace_id: str,
+        request: WorkspaceForecastRequest,
+    ) -> WorkspaceForecastResult:
+        """Return an available balance path or controlled withholding reasons."""
+        response = self.post(
+            f"/api/v1/workspaces/{_path_segment(workspace_id)}/forecast",
+            request,
+            WorkspaceForecastResponse,
+        )
+        return response.root
 
     def current_profile(self) -> UserProfileResponse:
         """Read the current local profile without exposing raw financial data."""

@@ -1,5 +1,76 @@
 # Coverage-aware forecasting data and baselines
 
+## Finalized-workspace balance forecast
+
+The normal redesigned UI has a deliberately conservative adapter in
+`cashflow_ai.workspaces.forecasting`. It accepts only a finalized canonical workspace,
+its current revision, and a horizon of 15, 30, 60, or 90 days. It returns either an
+exact tomorrow-through-horizon daily balance path or a typed `withheld` result; a
+refusal is a normal safety outcome and the UI draws no substitute graph.
+
+Availability requires confirmed, source-detached rows; no unknown financial roles; a
+latest verified balance; at least 60 recent covered days; no gap intersecting that
+training window; and coverage/balance evidence no more than 45 days old. Future-dated
+evidence also blocks a path. Transfers affect this single account's balance but remain
+excluded from the spending donut and external income/expense totals.
+
+The adapter uses the mean observed signed cash movement for each weekday across the
+latest 60 covered days. A fixed-seed residual bootstrap supplies an 80% empirical
+interval, with a minimum daily uncertainty so flat history never creates a false
+zero-width guarantee. If the last verified balance predates today but remains fresh,
+the same baseline bridges only uncovered days and discloses that limitation.
+
+The session workspace does not yet carry user-confirmed recurring-series membership.
+For that reason this adapter labels its input as **unclassified total account cash
+flow**: it does not call any portion discretionary and does not claim to project
+confirmed recurring events separately. The UI discloses this limitation on every
+available path. The older model pipeline retains its explicit recurring/discretionary
+composition for developer regression use.
+
+This is not presented as the advanced primary model. Every row in a one-shot upload
+became known together at workspace finalization, so a claimed historical personal
+backtest would backdate knowledge. The returned metadata explicitly says no historical
+backtest or advanced-model selection was performed. Use:
+
+```bash
+make demo-workspace-results
+```
+
+The deterministic synthetic output includes available 15- and 30-day ranges and a
+separate unknown-role case that is withheld. Intervals are estimates, not guarantees,
+and uncertainty grows over longer horizons.
+
+### Synthetic 60/30 chronological backtest
+
+To make the forecast comparison inspectable without using a real statement, run:
+
+```bash
+make demo-workspace-backtest
+```
+
+The command creates one reproducible fictional 90-day ledger in the supported
+Revolut consolidated-v2 structure and splits it at a fixed chronological cutoff.
+Days 1-60 are first written to
+`data/demo/generated/forecast-backtest/fictional_revolut_consolidated_v2_training_60_days.csv`.
+That exact file passes through the real workspace CSV review, explicit synthetic-row
+edits and temporary-workspace finalization. Its fictional dual-currency section
+exercises the visible non-GBP exclusion warning and explicit scope confirmation.
+Only the resulting finalized 60 GBP rows are supplied to forecasting.
+
+After the forecast exists, days 61-90 are written to
+`fictional_revolut_consolidated_v2_evaluation_30_days.csv`, the complete source is
+written to `fictional_revolut_consolidated_v2_master_90_days.csv`, and the hidden
+actual balances are revealed for scoring. All three generated files are ignored by
+Git and use only fictional descriptions. The order is deliberate: evaluation and
+master files do not exist when the forecast is produced.
+
+The output reports final predicted versus actual balance, signed final error, daily
+mean absolute error (MAE), daily root mean squared error (RMSE), and empirical
+interval coverage. This is a synthetic chronological holdout check of the transparent
+weekday-mean baseline through the same finalized-workspace boundary used by the UI.
+It proves the code keeps later outcomes out of fitting; it does not prove accuracy on
+a real user, every future month, or an advanced ML model.
+
 Commit 22 creates trustworthy inputs and simple references, not an ML forecast. The
 daily calendar uses the intersection of verified coverage across selected accounts.
 Covered dates with no eligible transactions are zero; uncovered dates and dates with

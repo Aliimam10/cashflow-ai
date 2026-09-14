@@ -35,6 +35,12 @@ from cashflow_ai.frontend.transaction_page import (
     _render_dashboard,
 )
 from cashflow_ai.frontend.workspace_page import WorkspaceApi, render_workspace_page
+from cashflow_ai.frontend.workspace_results_page import (
+    WorkspaceResultsApi,
+    render_workspace_forecast,
+    render_workspace_overview,
+    render_workspace_transactions,
+)
 from cashflow_ai.schemas.api import (
     AccountResponse,
     HealthResponse,
@@ -214,9 +220,33 @@ def render_application_page(
     """Render the workspace-first product without loading legacy demo data."""
     if item.page_id is PageId.IMPORT:
         with ApiClient(base_url) as client:
-            return render_workspace_page(cast(WorkspaceApi, client), session)
-    render_workspace_gate(item, session)
-    return session
+            return render_workspace_page(
+                cast(WorkspaceApi, client),
+                session,
+                navigate=_navigate_to,
+            )
+    if (
+        session.workspace_status is not WorkspaceStatus.FINALIZED
+        or session.workspace_id is None
+        or session.workspace_revision is None
+    ):
+        render_workspace_gate(item, session)
+        return session
+    with ApiClient(base_url) as client:
+        results_client = cast(WorkspaceResultsApi, client)
+        if item.page_id is PageId.HOME:
+            return render_workspace_overview(
+                results_client,
+                session,
+                navigate=_navigate_to,
+            )
+        if item.page_id is PageId.TRANSACTIONS:
+            return render_workspace_transactions(
+                results_client,
+                session,
+                navigate=_navigate_to,
+            )
+        return render_workspace_forecast(results_client, session)
 
 
 def main() -> None:

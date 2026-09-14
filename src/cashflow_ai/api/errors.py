@@ -36,6 +36,7 @@ from cashflow_ai.planning import PlanningServiceError, ScenarioPlanningError
 from cashflow_ai.recurrence import RecurrenceServiceError
 from cashflow_ai.schemas.api import ApiProblem, ApiValidationIssue
 from cashflow_ai.workspaces import WorkspaceError
+from cashflow_ai.workspaces.analytics import WorkspaceAnalyticsError
 
 
 def _response(status_code: int, problem: ApiProblem) -> JSONResponse:
@@ -222,6 +223,7 @@ def register_exception_handlers(app: FastAPI) -> None:
     @app.exception_handler(ScenarioPlanningError)
     @app.exception_handler(RecurrenceServiceError)
     @app.exception_handler(WorkspaceError)
+    @app.exception_handler(WorkspaceAnalyticsError)
     async def controlled_domain_error(request: Request, error: Any) -> JSONResponse:
         del request
         code = str(error.code.value)

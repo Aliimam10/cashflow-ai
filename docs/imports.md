@@ -133,6 +133,14 @@ verified evidence or silently define coverage.
 Failures use stable `CsvImportErrorCode` values so a later API or interface can
 show useful messages without parsing exception text.
 
+The versioned Revolut consolidated-V2 adapter also supports the harmless case in
+which an export appends a repeated GBP transaction heading followed immediately by
+a zero-value total. The adapter selects the one non-empty, balance-reconciled GBP
+table and records that the empty section was ignored. It still rejects a second GBP
+section that contains transactions, a non-zero empty-section total, a changed
+heading, an unreconciled balance sequence, or a mismatched total. This avoids
+guessing which account or movement belongs in a one-account workspace.
+
 The preview includes a SHA-256 identity of the exact bytes. Confirmation must
 refer to that identity; changing the file after preview invalidates approval.
 `parse_csv_document` revalidates the same constraints and retains all rows in
