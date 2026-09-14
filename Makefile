@@ -1,4 +1,4 @@
-.PHONY: setup format format-check lint typecheck test test-safeguards test-containers coverage pre-commit check check-import check-ocr api ui demo-api demo-data demo-dashboard demo-dashboard-api demo-statements demo-pdf-import demo-workspace demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade docker-config docker-build docker-up docker-down
+.PHONY: setup format format-check lint typecheck test test-safeguards test-containers coverage pre-commit check check-import check-ocr api ui demo-api demo-data demo-dashboard demo-dashboard-api demo-statements demo-pdf-import demo-workspace demo-workspace-results demo-workspace-backtest demo-recurrence demo-forecast demo-forecast-model demo-forecast-path demo-anomalies demo-model-registry demo-planning demo-scenario demo-invalidation db-upgrade db-downgrade docker-config docker-build docker-up docker-down
 
 setup:
 	uv sync --dev
@@ -66,6 +66,12 @@ demo-pdf-import:
 
 demo-workspace:
 	uv run cashflow-workspace-demo
+
+demo-workspace-results:
+	uv run python -c "from cashflow_ai.workspaces.results_demo import main; main()"
+
+demo-workspace-backtest:
+	uv run python -c "from cashflow_ai.workspaces.forecast_backtest_demo import main; main()"
 
 demo-recurrence:
 	uv run python scripts/demo_recurrence.py

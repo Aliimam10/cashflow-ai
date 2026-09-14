@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from html import escape
@@ -18,6 +18,7 @@ from cashflow_ai.frontend.components import (
     render_page_header,
     render_privacy_notice,
 )
+from cashflow_ai.frontend.navigation import PageId
 from cashflow_ai.frontend.session import FrontendSessionState
 from cashflow_ai.frontend.workspace_workflow import (
     CATEGORY_OPTIONS,
@@ -365,6 +366,13 @@ def _render_source_review(
         unsafe_allow_html=True,
     )
     if source.state is WorkspaceSourceReviewState.READY:
+        if source.excluded_transaction_rows:
+            st.warning(source.guidance)
+            st.caption(
+                "Detected adapter: "
+                f"{source.parser_name or 'unknown'} / "
+                f"{source.layout_version or 'unknown'}"
+            )
         return workspace
     if source.state is WorkspaceSourceReviewState.UNSUPPORTED:
         st.warning(source.guidance)
@@ -681,6 +689,19 @@ def _render_finalization(
             balance_confirmed = st.checkbox(
                 "I checked this latest balance against the statement."
             )
+    excluded_source_rows = sum(
+        source.excluded_transaction_rows for source in workspace.sources
+    )
+    source_exclusions_confirmed = not excluded_source_rows
+    if excluded_source_rows:
+        st.warning(
+            f"{excluded_source_rows} transaction row(s) from non-GBP source "
+            "sections will not enter this GBP workspace."
+        )
+        source_exclusions_confirmed = st.checkbox(
+            "I checked the excluded non-GBP sections and want to continue with "
+            "GBP only."
+        )
     statement_confirmed = st.checkbox(
         "I checked the combined rows against every source statement."
     )
@@ -697,10 +718,12 @@ def _render_finalization(
         or not dates_confirmed
         or not signs_confirmed
         or not balance_confirmed
+        or not source_exclusions_confirmed
     ):
         st.error(
-            "Confirm the source rows, date interpretation, amount signs, and any "
-            "running-balance evidence before finalising."
+            "Confirm the source rows, date interpretation, amount signs, any "
+            "running-balance evidence, and disclosed currency exclusions before "
+            "finalising."
         )
         return workspace
     try:
@@ -709,6 +732,7 @@ def _render_finalization(
             statement_confirmed=True,
             date_interpretation_confirmed=True,
             sign_convention_confirmed=True,
+            source_exclusions_confirmed=source_exclusions_confirmed,
             coverage=build_coverage_confirmation(
                 start_date=start,
                 end_date=end,
@@ -826,6 +850,8 @@ def _render_workspace_status(workspace: StatementWorkspace) -> None:
 def render_workspace_page(
     client: WorkspaceApi,
     session: FrontendSessionState,
+    *,
+    navigate: Callable[[PageId], None] | None = None,
 ) -> FrontendSessionState:
     """Render one workspace without retaining uploads or rows in session metadata."""
     render_page_header(
@@ -867,6 +893,13 @@ def render_workspace_page(
             workspace = _render_source_review(client, workspace, source)
         workspace = _render_editor(client, workspace)
     workspace = _render_finalization(client, workspace)
+    if workspace.status is WorkspaceStatus.FINALIZED and navigate is not None:
+        st.button(
+            "View your overview",
+            type="primary",
+            on_click=navigate,
+            args=(PageId.HOME,),
+        )
     return _session_with_workspace(current_session, workspace)
 
 

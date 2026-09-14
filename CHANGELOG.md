@@ -21,6 +21,14 @@ repository rather than implying that a hosted service has been deployed.
   cleanup of temporary state.
 - Added confirmed controls for deleting either one selected workspace or every
   active and saved statement workspace.
+- Added finalized-workspace analytics, bounded transaction search, and conservative
+  balance-forecast APIs, plus normal Overview, Transactions, and Forecast screens
+  that never read the legacy demo database.
+- Added a synthetic `make demo-workspace-results` walkthrough for role-aware totals,
+  expense categories, verified balances, 15/30-day paths, and forecast withholding.
+- Added a synthetic 90-day chronological forecast backtest that fits only the first
+  60 days and reveals the final 30 days afterward for daily and closing-balance
+  comparison.
 
 ### Changed
 
@@ -36,9 +44,15 @@ repository rather than implying that a hosted service has been deployed.
   geometry-stable accessibility labels while preserving raw cells and page-scoped
   row-accounting evidence.
 - Changed normal Streamlit startup to a blank workspace instead of automatically
-  loading the legacy demo database. Overview, analytics, forecast, and planning
-  navigation remain gated until they consume finalized workspace rows in later
-  redesign checkpoints.
+  loading the legacy demo database. Drafts remain gated; finalized workspace rows now
+  drive the redesigned overview, transaction, and forecast pages directly.
+- Added a fail-closed, versioned adapter for the supported Revolut consolidated V2
+  GBP CSV structure. It reconciles adjacent balances and the footer, preserves
+  physical row provenance, and discloses paired non-GBP rows behind a dedicated
+  finalization confirmation.
+- Extended that adapter to accept a zero-value repeated GBP section after one
+  reconciled transaction table, while continuing to reject a second data-bearing or
+  malformed GBP section.
 
 ### Security and privacy
 

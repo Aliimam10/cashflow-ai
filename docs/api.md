@@ -16,10 +16,10 @@ server-side from owned, cutoff-bound inputs; a caller cannot submit a fabricated
 model result or balance path as trusted evidence.
 
 The current normal navigation uses the newer statement-workspace routes described
-below and deliberately gates the older profile/account analytics, forecast, and
-planning screens. Those existing routes remain supported for regression tests and
-developer demos; they are not loaded as an implicit fallback when the workspace UI
-starts blank.
+below. Its overview, transaction table, and forecast consume only the explicitly
+selected finalized workspace. Older profile/account routes remain supported for
+regression tests and developer demos; they are never an implicit fallback when the
+workspace UI starts blank.
 
 ## Running locally
 
@@ -67,6 +67,9 @@ digital-PDF use must not fail merely because Tesseract is absent.
 | `DELETE /api/v1/workspaces/{workspace_id}/sources/{source_id}` | Remove one draft source and its rows | Draft memory only |
 | `POST /api/v1/workspaces/{workspace_id}/finalize` | Approve the canonical table after every required confirmation | Canonical saved projection, or none in temporary mode |
 | `GET /api/v1/workspaces/{workspace_id}/download` | Build finalized canonical CSV in memory | None |
+| `POST /api/v1/workspaces/{workspace_id}/analytics` | Calculate coverage- and role-aware finalized-workspace results | None |
+| `POST /api/v1/workspaces/{workspace_id}/transactions/search` | Search approved canonical rows with bounded filters | None |
+| `POST /api/v1/workspaces/{workspace_id}/forecast` | Return an exact-horizon balance path or controlled withholding reasons | None |
 | `DELETE /api/v1/workspaces/{workspace_id}` | Delete the selected workspace after explicit confirmation | Selected workspace deletion |
 | `POST /api/v1/imports/csv/preview` | Validate and preview an uploaded CSV | None |
 | `POST /api/v1/imports/csv/confirm` | Revalidate and atomically import an exact confirmed CSV | Confirmed import and retained source rows |
@@ -128,6 +131,11 @@ bound to its hash and, for PDF, its structure digest. Unknown, scanned, encrypte
 unsafe layouts are represented as unsupported and can be removed without discarding
 other draft sources.
 
+The supported Revolut consolidated V2 CSV returns its adapter/parser/layout versions,
+the number of selected GBP rows, and controlled warnings plus a count for any known
+paired non-GBP transaction rows. It rejects changed tables and any GBP balance/footer
+reconciliation failure without echoing financial values.
+
 The server combines usable candidates, removes only deterministic exact duplicates,
 and flags probable duplicates for a keep-or-reject decision. `PATCH .../rows` applies
 an optimistic workspace revision and a per-row expected revision so a stale browser
@@ -137,7 +145,8 @@ non-zero penny-precise signed amount, category, and sign-compatible financial ro
 Finalization is rejected until every row is included or excluded and every probable
 duplicate has a decision. The request must explicitly confirm source review, day/month
 date interpretation, positive-in/negative-out signs, statement coverage and gaps,
-and any latest balance evidence. Temporary mode keeps the finalized table only in the
+any latest balance evidence, and disclosed non-GBP source exclusions when present.
+Temporary mode keeps the finalized table only in the
 API process store. Saved mode writes only the included canonical rows, confirmed
 coverage, and optional balance; it never writes upload bytes, extracted PDF text,
 source names or hashes, page/row provenance, mapping samples, or rejected rows.
@@ -147,10 +156,17 @@ collection delete endpoint removes every active and saved statement workspace. B
 require a request body whose `confirmed` field is literally `true`. Neither operation
 deletes legacy imports, models, downloaded exports, backups, or copied databases. API
 shutdown clears the process-memory store. Browser/tab close alone does not guarantee a
-server request, so it is not a temporary-workspace deletion contract. Analytics,
-forecast, and planning workspace endpoints are deliberately absent from this
-checkpoint; their legacy database-backed API routes remain available for regression
-use.
+server request, so it is not a temporary-workspace deletion contract.
+
+Analytics and transaction search require the current finalized workspace revision.
+Analytics distinguishes expenses from income, refunds, reimbursements, withdrawals,
+transfers, exclusions, and unknown roles; gaps produce observed-only results rather
+than invented zeroes. Forecast requests accept only 15, 30, 60, or 90 days. A typed
+`withheld` response explains missing or stale balance/coverage, less than 60 recent
+covered days, recent gaps, unresolved rows or roles, future-dated evidence, or a stale
+revision. An `available` response identifies its transparent baseline, knowledge
+cutoff, deterministic seed, empirical interval method, and exact tomorrow-through-
+horizon points. No result endpoint persists a report or model.
 
 All `/api/v1/workspaces` responses include `Cache-Control: no-store`. The local API
 rejects non-loopback/unrecognised Host headers to prevent DNS-rebinding access. A

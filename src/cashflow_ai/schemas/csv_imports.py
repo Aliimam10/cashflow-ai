@@ -81,6 +81,11 @@ class CsvPreview(_CsvContract):
     suggestions: CsvColumnSuggestions
     suggested_date_column: ColumnName | None = None
     suggested_statement_period: DateRange | None = None
+    parser_name: str = Field(default="generic_csv", min_length=1, max_length=100)
+    parser_version: str = Field(default="1.0.0", min_length=1, max_length=50)
+    layout_version: str = Field(default="flat_v1", min_length=1, max_length=100)
+    warning_codes: tuple[Annotated[str, Field(min_length=1, max_length=100)], ...] = ()
+    excluded_transaction_rows: int = Field(default=0, ge=0)
 
     @model_validator(mode="after")
     def validate_date_suggestion(self) -> CsvPreview:
@@ -110,6 +115,11 @@ class CsvDocument(_CsvContract):
     columns: tuple[ColumnName, ...] = Field(min_length=1)
     rows: tuple[CsvPreviewRow, ...] = Field(min_length=1)
     suggestions: CsvColumnSuggestions
+    parser_name: str = Field(default="generic_csv", min_length=1, max_length=100)
+    parser_version: str = Field(default="1.0.0", min_length=1, max_length=50)
+    layout_version: str = Field(default="flat_v1", min_length=1, max_length=100)
+    warning_codes: tuple[Annotated[str, Field(min_length=1, max_length=100)], ...] = ()
+    excluded_transaction_rows: int = Field(default=0, ge=0)
 
 
 class CsvColumnMapping(_CsvContract):

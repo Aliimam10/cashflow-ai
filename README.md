@@ -12,20 +12,29 @@ balance forecasts with uncertainty.
 
 ## What a local user can do
 
-- Review and persist CSV statements without losing the original source rows.
-- Reconstruct an embedded-text digital PDF locally, correct every extracted row,
-  require balance reconciliation within the documented one-penny tolerance, and
-  persist the approved statement without losing page-level source evidence. When a
-  stable table is found but headings are ambiguous, the interface requests an
-  explicit column mapping and re-extracts the exact file before confirmation.
-- Correct categories and explicitly distinguish expenses, income, internal transfers,
-  refunds, reimbursements, withdrawals, and exclusions.
-- View coverage-aware analytics, recurring payments, cautious balance forecasts,
-  budgets, goals, safe-spending estimates, scenarios, and unusual-activity reviews.
-- Keep statements, SQLite data, and model artefacts on the local machine without
-  supplying bank credentials. The older OCR backend remains available for internal
-  regression testing, but scanned statements are not the intended normal Version 1
-  import path.
+The normal statement-workspace flow currently lets a user:
+
+- Upload and combine several CSV exports and selectable-text digital PDFs for one
+  GBP current or savings account. If a stable PDF table has ambiguous headings, the
+  interface requests an explicit mapping and re-extracts the exact file.
+- Review and edit the combined canonical rows, including dates, descriptions,
+  amounts, balances, existing category choices, and financial roles, before
+  finalization.
+- Keep the finalized canonical table as a minimized saved workspace or use a
+  temporary in-memory workspace without retaining the original files or PDF text.
+- View finalized-workspace balance evidence, role-aware spending and cash-flow
+  analytics, approved transactions, and conservative 15-, 30-, 60-, or 90-day
+  forecasts when the documented trust gates pass.
+- Keep statements and derived results on the local machine without supplying bank
+  credentials. The older OCR backend remains available for internal regression
+  testing, but scanned statements are not a normal Version 1 import path.
+
+Earlier database-backed APIs, services, and developer demos still cover recurrence,
+anomaly review, budgets, goals, safe-spending estimates, scenarios, and model
+evaluation. They are retained as legacy developer/regression boundaries and are not
+silently loaded by the normal statement workspace. Adding or renaming custom
+categories, workspace-native budget controls, savings goals, and free-text
+special-case planning remain for the next redesign checkpoint.
 
 Start with the [Version 1 user guide](docs/user_guide.md), see the
 [architecture and data-flow diagrams](docs/diagrams.md), or read the
@@ -47,6 +56,15 @@ spreadsheet-editable. Finalization requires explicit row decisions plus confirma
 of the source statements, UK date interpretation, signed-amount convention, coverage,
 and any running-balance evidence.
 
+The CSV adapter also recognises one narrowly versioned Revolut consolidated V2 GBP
+layout. It selects only the reconciled GBP transaction table, retains its original
+physical row numbers, and validates chronological order, every adjacent running
+balance, and the footer total. A changed or unreconciled layout is rejected instead
+of guessed. Any paired non-GBP table is counted, excluded from this GBP-only
+workspace, shown as a warning, and requires a separate confirmation before
+finalization. The bank-provided category is retained only as untrusted source
+metadata; it does not silently become CashFlow's category or financial role.
+
 Retention is explicit:
 
 - **Saved** stores only the finalized canonical transactions, confirmed coverage,
@@ -57,10 +75,13 @@ Retention is explicit:
   tab alone is not a guaranteed server-side deletion event.
 
 Deletion applies only to the selected workspace. It does not erase other saved
-workspaces or the legacy database. Overview, transaction analytics, forecasting, and
-planning are intentionally gated in the redesigned navigation until the following
-dashboard and planning checkpoints consume the finalized workspace directly. The
-older database-backed APIs remain available for regression tests and developer demos.
+workspaces or the legacy database. After finalization, **Overview** now shows verified
+balance evidence, role-aware totals, expense categories, monthly cash flow, coverage,
+and recent activity. **Transactions** reads the approved canonical table, and
+**Forecast & plans** offers conservative 15-, 30-, 60-, or 90-day balance paths when
+all trust gates pass. These pages never fall back to the legacy demo database.
+Custom category management, workspace budgets and savings goals, and special-case
+planning remain the next redesign checkpoint.
 
 The repository currently contains the **project foundation, quality tooling,
 typed configuration, structured logging, reproducible synthetic demo data,
@@ -79,20 +100,21 @@ forecast data and baselines, and an evaluated weekly gradient-boosting candidate
 Residual-bootstrap forecast intervals, confirmed recurring-flow composition, and
 daily balance paths are also implemented. Review-only financial rules and a
 coverage-gated Isolation Forest now identify unusual transactions without claiming
-fraud. A loopback-only FastAPI boundary now exposes profile/account setup, safe
-statement preview and confirmation, verified transactions, categorisation and
-financial-role review, analytics, recurrence, forecasting, anomaly detection,
-budgets, goals, scenarios, data freshness, and model information. Its digital-PDF
-routes now return a ready, mapping-required, or unsupported-layout result and
-atomically persist an exact confirmed statement. The Streamlit frontend currently
-provides local profile and account setup plus review-gated CSV and digital-PDF
-workflows over its typed API
-client. It also provides verified-transaction search and corrections, explicit
-role/duplicate review, and coverage-aware cash-flow dashboards. Forecast/planning
-screens now add recurring review, uncertainty-aware forecasts, budgets, goals,
-safe-spending estimates, isolated scenarios, anomaly feedback, and aggregate model
-evaluation. Scanned-PDF controls and OCR support claims are absent from the normal
-Version 1 interface; the older local OCR routes remain hidden for regression tests.
+fraud. A loopback-only FastAPI boundary exposes profile/account setup, safe statement
+preview and confirmation, verified transactions, categorisation and financial-role
+review, analytics, recurrence, forecasting, anomaly detection, budgets, goals,
+scenarios, data freshness, and model information. Its digital-PDF routes return a
+ready, mapping-required, or unsupported-layout result and atomically persist an exact
+confirmed statement. Those older database-backed capabilities remain available to
+tests and developer demos. The normal Streamlit entry point instead uses the newer
+typed statement-workspace APIs: it combines and reviews CSV/PDF rows, then reads only
+the finalized workspace for Overview, Transactions, and conservative Forecast views.
+It never falls back to the legacy demo database. Legacy recurrence, anomaly,
+budget/goal, scenario, and model-evaluation screens are not part of that normal flow.
+Workspace-native custom category creation/renaming, budgets, savings goals, and
+special-case planning are not implemented yet. Scanned-PDF controls and OCR support
+claims remain absent from the normal Version 1 interface; the older local OCR routes
+remain hidden for regression tests.
 Production model lifecycle management is not implemented yet. The
 application is now packaged as one local Docker image with
 separate FastAPI and Streamlit services, persistent private SQLite/model volumes,
@@ -145,7 +167,9 @@ pages.
 - CSV exports can now be decoded and structurally validated into a limited,
   non-persistent preview. Common headings produce mapping suggestions, while the
   user-selected mapping supports either a signed amount or separate debit and
-  credit columns.
+  credit columns. The supported Revolut consolidated V2 GBP adapter locates its
+  embedded transaction table and fails closed if dates, money formats, balances,
+  footer totals, or known section structure do not reconcile.
 - Mapped rows can be normalised into provisional drafts while retaining exact
   source text, parser identity, source fingerprint, and matching fingerprint.
   Exact duplicates can be distinguished from probable matches requiring review.
@@ -540,13 +564,16 @@ then run the following in a second terminal and open `http://127.0.0.1:8501`:
 make ui
 ```
 
-The **Dashboard** page reports local readiness in user-friendly language. **Add a
-statement** provides account setup and review-gated CSV/PDF workflows;
-**Transactions** adds correction and observed-data dashboards; and **Forecast &
-plans** exposes
-review-gated recurrence, uncertainty-aware balance forecasts, budgets and goals,
-hypothetical scenarios, anomaly review, and model evaluation metadata. See
-[`docs/frontend.md`](docs/frontend.md) for the exact manual check and privacy boundary.
+The normal interface opens at **Bank statements** with no demo transactions loaded.
+Create or resume a workspace, upload and review synthetic CSV/PDF statements, and
+finalize the combined table. **Overview** then shows workspace-only balance and
+cash-flow analytics, **Transactions** shows the approved canonical rows, and
+**Forecast & plans** offers a conservative workspace-only balance forecast when its
+trust gates pass. Adding or renaming custom categories, workspace-native budgets,
+savings goals, and free-text special-case planning are still pending. Older
+database-backed screens and APIs remain developer/regression facilities, not a
+fallback for the normal workspace. See [`docs/frontend.md`](docs/frontend.md) for the
+exact manual check and privacy boundary.
 
 To run the same application boundaries in local containers, install Docker Desktop
 and use:
@@ -640,10 +667,14 @@ decisions, coverage-aware analytics, recurrence, forecasting, anomaly detection,
 budgets, goals, scenario comparisons, derived-data freshness, and model information
 with bounded pagination and generated OpenAPI documentation. Digital-PDF review now
 supports file-bound generic column mapping, controlled unsupported-layout responses,
-and exact-file atomic confirmation. Streamlit navigation, its typed API client, home/status,
-data-minimised session state, profile/account setup, and review-gated CSV/PDF import
-are now implemented. Transaction review and the first coverage-aware dashboard are
-also implemented. The forecast and planning interface is now implemented. Synthetic
+and exact-file atomic confirmation. The normal Streamlit navigation and typed client
+now provide blank workspace creation/resumption, data-minimised session state,
+mixed-file review, and explicit finalization. Its redesigned Overview, Transactions,
+and conservative Forecast pages consume only that finalized workspace. Older
+profile/account, transaction-review, and forecast/planning screens remain available
+only as database-backed developer/regression facilities. Workspace-native custom
+category creation/renaming, budgets, savings goals, and special-case planning are not
+implemented yet. Synthetic
 cross-boundary CSV/forecast, OCR/reconciliation, and digital-PDF persistence tests now
 harden privacy, security, and ingestion failure behaviour. The normal UI exposes CSV
 and selectable-text digital PDFs only; OCR remains an internal regression boundary.
@@ -656,10 +687,12 @@ roadmap are now included. Tagging remains gated on the exact GitHub Actions run,
 synthetic screenshot review, and final pull-request review.
 
 The in-progress workspace redesign changes the normal entry point without deleting
-those earlier domain services. It now starts blank, supports mixed multi-statement
+those earlier domain services. It starts blank, supports mixed multi-statement
 review, persists only finalized canonical workspace data in saved mode, and keeps
-temporary mode in server memory. The redesigned overview, analytics, forecast, and
-planning pages are deliberately not connected in this checkpoint.
+temporary mode in server memory. The redesigned overview, transaction table, and
+conservative forecast now consume that finalized workspace directly. Custom category
+management, workspace budgets and savings goals, and deterministic special-case
+planning form the remaining redesign checkpoint.
 
 ## Future roadmap
 

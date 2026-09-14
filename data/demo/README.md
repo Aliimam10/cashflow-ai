@@ -36,6 +36,30 @@ the normal UI with `make ui` in another terminal, and open
 The automatic approvals are permitted only because every row and label is generated
 fictional ground truth. Normal CSV and PDF uploads remain review-gated.
 
+## Inspectable 60-day forecast and 30-day holdout
+
+Run the following to generate a fictional 90-day Revolut consolidated-v2-style
+statement, split it into 60-day training and 30-day evaluation exports, forecast from
+the first part only, and compare the 30-day path with the hidden final part:
+
+```bash
+make demo-workspace-backtest
+```
+
+The training, evaluation and full 90-day master files are created under
+`data/demo/generated/forecast-backtest/`. Each contains a fictional secondary EUR
+section so the real parser discloses and requires confirmation of one excluded
+non-GBP row. The training file covers 2026-06-17 through 2026-08-15 and passes through
+the real review/edit/finalize service in temporary mode. Only after its forecast is
+produced does the command write the evaluation and master files; the evaluation
+period covers 2026-08-16 through 2026-09-14.
+
+Expected headline metrics are a £2,839.56 predicted closing balance versus a
+£2,848.00 fictional actual balance, £9.39 daily MAE, £11.93 daily RMSE, and 28/30 days
+inside the model's nominal 80% interval. These fixed figures make accidental
+behaviour changes visible; they are not a promise of real financial forecasting
+accuracy.
+
 To rebuild the demo later, stop its API first and preserve the old ignored database:
 
 ```bash

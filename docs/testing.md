@@ -13,14 +13,27 @@ per-file mappings, changed file identities and PDF structure digests, malformed 
 unsupported sources, exact and probable duplicates, stale workspace/row revisions,
 spreadsheet edits, penny precision, sign-compatible roles, explicit coverage and
 balance confirmation, saved reload/deletion, and temporary-memory cleanup.
+It also exercises a fictional multi-section consolidated V2 CSV: the GBP table must
+reconcile chronologically, row-by-row, and against its footer; changed layouts fail
+closed; paired non-GBP rows are counted and require explicit exclusion confirmation.
 
 Persistence allow-list assertions prove the saved projection contains canonical
 transactions, coverage/gaps, and optional balance evidence without source bytes, PDF
 text, filenames, hashes, page/record provenance, mapping samples, rejected rows, or
 issue evidence. Frontend tests prove startup is blank, legacy demo data is not loaded,
 mapping choices begin unselected, unsupported sources can be removed, uncertain rows
-cannot be bulk-approved, later pages remain gated, and scanned/OCR controls are absent
-from normal navigation.
+cannot be bulk-approved, drafts remain gated, finalized pages use only workspace
+result endpoints, and scanned/OCR controls are absent from normal navigation.
+
+The finalized-results test set covers role-aware totals, expense-only categories,
+presentation and filtering of pre-existing custom category identifiers,
+complete/gapped/unknown coverage, disconnected balance evidence, revision-bound
+transaction search, all four supported horizons, stale/insufficient/future/
+unknown-role forecast refusals, deterministic interval reproduction, API
+serialization, local-client routing, and friendly Streamlit empty/error states. It
+does not claim that the normal UI can add or rename custom categories, create
+workspace budgets or savings goals, or run special-case planning; those controls
+remain for the next checkpoint.
 
 ## End-to-end workflows
 
@@ -83,7 +96,7 @@ discarded as a page number.
 | Saved-data minimization | `test_workspace_persistence.py` and workspace migration tests assert the explicit saved-column allow list plus selected/all-workspace deletion |
 | Temporary cleanup | workspace service/API lifespan tests prove no SQLite write and memory clearing on explicit deletion or API shutdown |
 | Local API workspace boundary | `test_api_security.py` and `test_workspace_api.py` cover Host rejection, pre-parser body limits, `no-store` responses, mapping limits, and privacy-safe failures |
-| Blank normal startup and gated later pages | `test_frontend.py` and `test_frontend_workspace_page.py` prove legacy demo data is not loaded implicitly |
+| Blank startup, draft gating, and finalized workspace routing | `test_frontend.py`, `test_frontend_workspace_page.py`, and `test_frontend_workspace_results_page.py` prove legacy demo data is not loaded implicitly and finalized pages use workspace result endpoints |
 
 ## Manual verification
 
@@ -109,6 +122,46 @@ The command creates no real upload, filesystem database, or retained PDF. Safe
 parameters to vary are fictional dates, descriptions, and exact two-decimal amounts
 inside `src/cashflow_ai/workspaces/demo.py`. Do not paste real financial data into a
 demo, fixture, assertion failure, screenshot, or coverage artefact.
+
+Run the read-only analytics and forecast walkthrough:
+
+```bash
+make demo-workspace-results
+```
+
+Expected output:
+
+```text
+CashFlow AI synthetic workspace-results check
+coverage: complete (90/90 days)
+income: £4,500.00
+spending: £2,760.00
+net transfers: -£200.00
+latest verified balance: £2,560.00
+expense categories: Rent/Housing=£1,800.00, Groceries=£960.00
+15-day forecast: available; expected £2,937.50; range £1,789.09 to £4,439.24
+30-day forecast: available; expected £3,132.50; range £1,322.67 to £5,378.25
+unresolved-role guard: withheld (unknown_financial_roles)
+files, databases, and real financial data created: no
+```
+
+It performs no file or database write. Safe parameters to vary are only fictional
+dates, categories, and two-decimal values in
+`src/cashflow_ai/workspaces/results_demo.py`.
+
+Run the inspectable 60/30 chronological holdout:
+
+```bash
+make demo-workspace-backtest
+```
+
+It creates three Git-ignored, fictional consolidated-V2-style CSVs: the complete
+90-day source, its 60-day training split, and its 30-day evaluation split. The
+forecast sees only the first split. Expected closing balances are £2,839.56 forecast
+and £2,848.00 actual, with £9.39 daily MAE and 28/30 actual days inside the nominal
+80% interval. Vary only the fictional patterns in
+`src/cashflow_ai/workspaces/forecast_backtest_demo.py`; these fixed results are a
+regression check, not an accuracy promise.
 
 The older cross-boundary checks remain available:
 

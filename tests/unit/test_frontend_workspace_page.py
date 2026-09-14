@@ -57,6 +57,7 @@ def _source(
     *,
     state: WorkspaceSourceReviewState = WorkspaceSourceReviewState.READY,
     source_type: WorkspaceSourceType = WorkspaceSourceType.CSV,
+    excluded_transaction_rows: int = 0,
 ) -> WorkspaceSourceFile:
     mapping = state is WorkspaceSourceReviewState.MAPPING_REQUIRED
     return WorkspaceSourceFile(
@@ -70,6 +71,15 @@ def _source(
         reason_code="review_ready" if not mapping else "columns_ambiguous",
         guidance="Review this fictional source.",
         row_count=1 if state is WorkspaceSourceReviewState.READY else 0,
+        parser_name=("revolut_consolidated_csv" if excluded_transaction_rows else None),
+        parser_version="1.0.0" if excluded_transaction_rows else None,
+        layout_version=("consolidated_v2_gbp_1" if excluded_transaction_rows else None),
+        warning_codes=(
+            ("non_gbp_transaction_sections_excluded",)
+            if excluded_transaction_rows
+            else ()
+        ),
+        excluded_transaction_rows=excluded_transaction_rows,
         page_count=1 if source_type is WorkspaceSourceType.DIGITAL_PDF else None,
         mapping_structure_digest=(
             "b" * 64
@@ -300,6 +310,12 @@ def test_source_review_handles_ready_unsupported_and_mapping_paths(
     client = MagicMock()
     workspace = _workspace()
     assert _render_source_review(client, workspace, _source()) == workspace
+    warning_source = _source(excluded_transaction_rows=2)
+    assert _render_source_review(client, workspace, warning_source) == workspace
+    ui.warning.assert_called_with("Review this fictional source.")
+    ui.caption.assert_called_with(
+        "Detected adapter: revolut_consolidated_csv / consolidated_v2_gbp_1"
+    )
     ui.button.return_value = False
     assert (
         _render_source_review(
@@ -685,6 +701,58 @@ def test_finalization_supports_optional_manual_balance_and_safe_failures(
     ui.display_error.assert_called()
 
 
+def test_finalization_requires_disclosed_currency_exclusion_confirmation(
+    ui: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = MagicMock()
+    confirmed = _workspace(
+        rows=(_row(state=WorkspaceRowReviewState.CONFIRMED),),
+        sources=(_source(excluded_transaction_rows=2),),
+    )
+    final = _workspace(status=WorkspaceStatus.FINALIZED)
+    coverage = WorkspaceCoverageConfirmation(
+        start_date=date(2026, 8, 1),
+        end_date=date(2026, 8, 31),
+        status=CoverageStatus.COMPLETE,
+        confirmed=True,
+    )
+    monkeypatch.setattr(
+        page,
+        "build_coverage_confirmation",
+        MagicMock(return_value=coverage),
+    )
+    client.finalize_workspace.return_value = WorkspaceFinalizeResult(
+        workspace=final,
+        included_rows=1,
+        rejected_rows=0,
+        persisted=True,
+    )
+    ui.date_input.side_effect = (
+        date(2026, 8, 1),
+        date(2026, 8, 31),
+        date(2026, 8, 1),
+    )
+    ui.selectbox.return_value = CoverageStatus.COMPLETE
+    ui.text_area.return_value = ""
+    ui.text_input.return_value = "90.00"
+    ui.checkbox.side_effect = (True, False, True, True, True)
+    ui.button.return_value = True
+
+    assert _render_finalization(client, confirmed) == confirmed
+    client.finalize_workspace.assert_not_called()
+
+    ui.date_input.side_effect = (
+        date(2026, 8, 1),
+        date(2026, 8, 31),
+        date(2026, 8, 1),
+    )
+    ui.checkbox.side_effect = (True, True, True, True, True)
+    assert _render_finalization(client, confirmed) == final
+    request = client.finalize_workspace.call_args.args[1]
+    assert request.source_exclusions_confirmed is True
+
+
 def test_workspace_controls_discard_drafts_keep_saved_results_and_delete(
     ui: MagicMock,
 ) -> None:
@@ -871,3 +939,10 @@ def test_status_and_page_orchestration_are_workspace_first(
     assert result.workspace_status is WorkspaceStatus.FINALIZED
     assert file_upload.call_count == file_calls
     assert editor.call_count == editor_calls
+
+    navigate = MagicMock()
+    render_workspace_page(client, session, navigate=navigate)
+    assert any(
+        call.args and call.args[0] == "View your overview"
+        for call in ui.button.call_args_list
+    )

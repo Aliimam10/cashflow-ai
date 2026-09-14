@@ -112,6 +112,82 @@ CSV_TOO_WIDE = (
 ).encode()
 
 
+def _fictional_consolidated_gbp_csv() -> bytes:
+    def padded(*values: str) -> list[str]:
+        return [*values, *("" for _ in range(13 - len(values)))]
+
+    rows = [
+        padded("Fictional consolidated statement"),
+        padded(),
+        padded(
+            "Date",
+            "Description",
+            "Category",
+            "Money in/out",
+            "Balance",
+            "Tax withheld",
+            "Other taxes",
+            "Fees",
+        ),
+        padded(
+            "Aug 1, 2026",
+            "SYNTHETIC RENT",
+            "Bills",
+            "-£400.00",
+            "£600.00",
+            "£0.00",
+            "£0.00",
+            "£0.00",
+        ),
+        padded(
+            "Aug 15, 2026",
+            "SYNTHETIC PAY",
+            "Income",
+            "£1,000.00",
+            "£1,600.00",
+            "£0.00",
+            "£0.00",
+            "£0.00",
+        ),
+        padded("Total", "", "", "£600.00"),
+        padded(),
+        padded(
+            "Date",
+            "Description",
+            "Category",
+            "Money in/out",
+            "Money in/out",
+            "Balance",
+            "Balance",
+            "Tax withheld",
+            "Tax withheld",
+            "Other taxes",
+            "Other taxes",
+            "Fees",
+            "Fees",
+        ),
+        padded(
+            "Aug 20, 2026",
+            "SYNTHETIC FOREIGN PURCHASE",
+            "Card",
+            "-€10.00",
+            "-£8.50",
+            "€90.00",
+            "£76.50",
+            "€0.00",
+            "£0.00",
+            "€0.00",
+            "£0.00",
+            "€0.00",
+            "£0.00",
+        ),
+        padded("Total", "", "", "-€10.00"),
+    ]
+    output = StringIO(newline="")
+    csv.writer(output, lineterminator="\n").writerows(rows)
+    return output.getvalue().encode()
+
+
 @pytest.fixture
 def factory() -> sessionmaker[Session]:
     engine = create_sqlite_engine("sqlite+pysqlite:///:memory:")
@@ -262,6 +338,66 @@ def test_mixed_batches_append_and_only_exact_source_identity_is_removed(
     assert (
         similar.workspace.rows[-1].review_state is WorkspaceRowReviewState.NEEDS_REVIEW
     )
+
+
+def test_consolidated_gbp_csv_is_selected_with_original_row_provenance(
+    factory: sessionmaker[Session],
+) -> None:
+    store = WorkspaceStore()
+    workspace_id = _workspace(store)
+
+    review = review_workspace_uploads(
+        store,
+        workspace_id,
+        (_upload("fictional-consolidated.csv", _fictional_consolidated_gbp_csv()),),
+        now=NOW,
+    )
+
+    assert review.accepted_files == 1
+    assert review.workspace.sources[0].reason_code == ("consolidated_csv_review_ready")
+    assert "1 transaction row(s) from non-GBP sections were excluded" in (
+        review.workspace.sources[0].guidance
+    )
+    assert review.workspace.sources[0].parser_name == "revolut_consolidated_csv"
+    assert review.workspace.sources[0].parser_version == "1.0.0"
+    assert review.workspace.sources[0].layout_version == "consolidated_v2_gbp_1"
+    assert review.workspace.sources[0].warning_codes == (
+        "non_gbp_transaction_sections_excluded",
+    )
+    assert review.workspace.sources[0].excluded_transaction_rows == 1
+    assert [row.source_record_number for row in review.workspace.rows] == [4, 5]
+    assert [row.amount for row in review.workspace.rows] == [
+        Decimal("-400.00"),
+        Decimal("1000.00"),
+    ]
+    assert all(
+        row.review_state is WorkspaceRowReviewState.READY
+        for row in review.workspace.rows
+    )
+    assert [row.transaction_type for row in review.workspace.rows] == [
+        "Bills",
+        "Income",
+    ]
+
+    _confirm_rows(store, workspace_id)
+    reviewed = store.get(workspace_id)
+    assert reviewed is not None
+    with pytest.raises(WorkspaceError, match="non-GBP source exclusions"):
+        finalize_workspace(
+            store,
+            factory,
+            workspace_id,
+            _finalize_request(reviewed.revision),
+        )
+    finalized = finalize_workspace(
+        store,
+        factory,
+        workspace_id,
+        _finalize_request(reviewed.revision).model_copy(
+            update={"source_exclusions_confirmed": True}
+        ),
+    )
+    assert finalized.workspace.status is WorkspaceStatus.FINALIZED
 
 
 def test_mapping_one_file_preserves_ready_files_rows_and_user_decisions(

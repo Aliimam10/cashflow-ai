@@ -38,6 +38,7 @@ _DATE_FORMATS: Final = (
     "%Y-%m-%d",
     "%d/%m/%Y",
     "%d-%m-%Y",
+    "%b %d, %Y",
     "%d %b %Y",
     "%d %B %Y",
 )

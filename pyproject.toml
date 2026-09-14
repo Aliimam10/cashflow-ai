@@ -47,6 +47,8 @@ cashflow-planning-demo = "cashflow_ai.planning.demo:main"
 cashflow-scenario-demo = "cashflow_ai.planning.scenario_demo:main"
 cashflow-invalidation-demo = "cashflow_ai.invalidation.demo:main"
 cashflow-workspace-demo = "cashflow_ai.workspaces.demo:main"
+cashflow-workspace-results-demo = "cashflow_ai.workspaces.results_demo:main"
+cashflow-workspace-backtest-demo = "cashflow_ai.workspaces.forecast_backtest_demo:main"
 cashflow-api = "cashflow_ai.api.cli:main"
 cashflow-api-demo = "cashflow_ai.api.demo:main"
 

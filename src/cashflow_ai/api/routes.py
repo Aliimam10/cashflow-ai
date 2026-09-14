@@ -82,6 +82,16 @@ from cashflow_ai.schemas.reconciliation import (
     StatementReview,
 )
 from cashflow_ai.schemas.transactions import Currency
+from cashflow_ai.schemas.workspace_analytics import (
+    WorkspaceAnalytics,
+    WorkspaceAnalyticsRequest,
+    WorkspaceTransactionSearchRequest,
+    WorkspaceTransactionSearchResult,
+)
+from cashflow_ai.schemas.workspace_forecasts import (
+    WorkspaceForecastRequest,
+    WorkspaceForecastResponse,
+)
 from cashflow_ai.schemas.workspaces import (
     StatementWorkspace,
     WorkspaceCreateRequest,
@@ -114,6 +124,11 @@ from cashflow_ai.workspaces import (
     review_workspace_uploads,
     workspace_csv_download,
 )
+from cashflow_ai.workspaces.analytics import (
+    compute_workspace_analytics,
+    search_workspace_transactions,
+)
+from cashflow_ai.workspaces.forecasting import forecast_statement_workspace
 
 ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     400: {"model": ApiProblem, "description": "The source data cannot be processed."},
@@ -366,6 +381,68 @@ def download_workspace_route(
         container.workspace_store,
         container.session_factory,
         workspace_id,
+    )
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/analytics",
+    response_model=WorkspaceAnalytics,
+    tags=["workspaces", "analytics"],
+    summary="Calculate finalized-workspace cash-flow analytics",
+)
+def workspace_analytics_route(
+    workspace_id: str,
+    request: WorkspaceAnalyticsRequest,
+    container: ContainerDependency,
+) -> WorkspaceAnalytics:
+    """Calculate role- and coverage-aware results from approved rows only."""
+    workspace = get_workspace(
+        container.workspace_store,
+        container.session_factory,
+        workspace_id,
+    )
+    return compute_workspace_analytics(workspace, request)
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/transactions/search",
+    response_model=WorkspaceTransactionSearchResult,
+    tags=["workspaces", "transactions"],
+    summary="Search finalized workspace transactions",
+)
+def workspace_transaction_search_route(
+    workspace_id: str,
+    request: WorkspaceTransactionSearchRequest,
+    container: ContainerDependency,
+) -> WorkspaceTransactionSearchResult:
+    """Return a bounded read-only view of the approved canonical table."""
+    workspace = get_workspace(
+        container.workspace_store,
+        container.session_factory,
+        workspace_id,
+    )
+    return search_workspace_transactions(workspace, request)
+
+
+@router.post(
+    "/api/v1/workspaces/{workspace_id}/forecast",
+    response_model=WorkspaceForecastResponse,
+    tags=["workspaces", "forecasts"],
+    summary="Generate or responsibly withhold a workspace balance forecast",
+)
+def workspace_forecast_route(
+    workspace_id: str,
+    request: WorkspaceForecastRequest,
+    container: ContainerDependency,
+) -> WorkspaceForecastResponse:
+    """Return exact-horizon output only when every workspace trust gate passes."""
+    workspace = get_workspace(
+        container.workspace_store,
+        container.session_factory,
+        workspace_id,
+    )
+    return WorkspaceForecastResponse(
+        root=forecast_statement_workspace(workspace, request)
     )
 
 

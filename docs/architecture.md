@@ -41,6 +41,9 @@ Streamlit upload widget
               | saved                     | temporary
               v                           v
      minimized SQLite projection       process memory only
+              \                           /
+               -> workspace analytics/search/forecast
+               -> redesigned Streamlit result pages
 ```
 
 The page and HTTP routes remain thin. Parsing, normalisation, deduplication, edit
@@ -62,9 +65,11 @@ has no fields for source bytes, PDF text, filenames, hashes, page/row provenance
 mapping samples, rejected rows, or extraction issues. Restoring a saved workspace is
 an explicit API operation; normal startup does not consult the legacy database.
 
-The first checkpoint gates Overview, transaction analytics, forecasting, and planning
-instead of adapting them implicitly to legacy records. Subsequent commits will make
-those consumers accept the finalized typed workspace table directly. Existing
+Drafts gate Overview, transaction analytics, forecasting, and planning instead of
+adapting them implicitly to legacy records. The result boundary now accepts only a
+finalized `StatementWorkspace` plus its expected revision. Analytics and read-only
+transaction search consume the approved rows directly. Forecasting either returns an
+exact 15-, 30-, 60-, or 90-day path or typed withholding reasons. Existing
 database-backed domain and API services remain isolated for regression tests and
 developer demonstrations.
 
@@ -93,10 +98,18 @@ the preserved raw source representation.
   limit, detects supported text encodings and delimiters, validates every row's
   shape, and retains only the first 25 rows in its returned preview. It writes
   neither the upload nor accepted transactions to storage.
+- A versioned `revolut_consolidated_csv` / `consolidated_v2_gbp_1` selector handles
+  one verified multi-section structure. It requires the exact GBP headings and
+  formats, chronological rows, penny-exact adjacent balance reconciliation, and a
+  matching signed footer total. Known paired-currency rows are counted and disclosed
+  as excluded; any unknown transaction-table variant rejects the whole adapter
+  result. Physical source-row provenance remains tied to the original full file.
 - CSV mapping contracts keep account selection, statement context, and the
   user's heading choices explicit. They support either one signed-amount column
   or a pair of debit and credit columns, plus optional posting date, running
   balance, currency, external ID, and transaction-type columns.
+  A bank-supplied `Category` is mapped only to untrusted transaction-type metadata,
+  never directly to the canonical category or financial role.
 - The digital-PDF adapter validates in-memory documents with PyMuPDF, requires
   usable embedded text on every page, extracts recognised tables with
   pdfplumber, and uses conservative text and deterministic spatial fallbacks.
@@ -679,15 +692,15 @@ confirmations to the service-owned trust boundary. Neither the page nor its sess
 state becomes a source of trusted transaction data. Normal navigation exposes CSV and
 selectable-text digital PDF only; OCR regression routes remain internal.
 
-Overview, Transactions, and Forecast & plans are gated during this checkpoint. The
-previous database-backed pages remain regression clients over their APIs but are not
-an implicit fallback in normal navigation. When the next checkpoints connect them to
-the finalized workspace, the recurring and forecasting page will continue to build
-only typed policy/scope requests: the backend detects
-series, trains/selects models, anchors verified balances, and simulates paths. The UI
-does not persist model objects, forecast paths, transaction evidence, or source rows.
-Its ordinary recurring-series read is side-effect free; only the explicit refresh
-control runs detection, and only confirm/reject controls change review state.
+Overview, Transactions, and Forecast & plans remain gated for drafts. Once finalized,
+the first two request revision-bound analytics/search results and the forecast page
+requests a supported horizon. The previous database-backed pages remain regression
+clients over their APIs but are not an implicit fallback in normal navigation. The
+workspace forecast deliberately uses a transparent recent-history baseline because
+all one-shot uploaded evidence became known together at finalization; it does not
+fabricate an older model-training cutoff or claim a historical advanced-model
+comparison. The UI does not persist model objects, forecast paths, transaction
+evidence, or source rows.
 
 The same page hosts thin adapters for persisted budget/goal creation, planning
 evaluation, temporary scenarios, anomaly review, and aggregate model-registry

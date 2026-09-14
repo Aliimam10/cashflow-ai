@@ -164,6 +164,7 @@ def test_csv_row_preserves_originals_and_cleans_a_signed_amount() -> None:
         ("2026-07-04", date(2026, 7, 4)),
         ("04/07/2026", date(2026, 7, 4)),
         ("04-07-2026", date(2026, 7, 4)),
+        ("Jul 4, 2026", date(2026, 7, 4)),
         ("04 Jul 2026", date(2026, 7, 4)),
         ("04 July 2026", date(2026, 7, 4)),
         ("04 Jul 26", date(2026, 7, 4)),

@@ -7,6 +7,9 @@ import hashlib
 import re
 from codecs import BOM_UTF8, BOM_UTF16_BE, BOM_UTF16_LE
 from collections.abc import Iterable
+from dataclasses import dataclass
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from enum import StrEnum
 from io import StringIO
 from typing import Final
@@ -76,7 +79,9 @@ _COLUMN_ALIASES: Final[dict[str, frozenset[str]]] = {
             "transaction details",
         }
     ),
-    "signed_amount": frozenset({"amount", "amount gbp", "transaction amount", "value"}),
+    "signed_amount": frozenset(
+        {"amount", "amount gbp", "money in out", "transaction amount", "value"}
+    ),
     "debit_amount": frozenset(
         {"debit", "debit amount", "money out", "paid out", "withdrawal"}
     ),
@@ -90,8 +95,55 @@ _COLUMN_ALIASES: Final[dict[str, frozenset[str]]] = {
     "external_id": frozenset(
         {"external id", "reference id", "transaction id", "txn id"}
     ),
-    "transaction_type": frozenset({"category type", "transaction type", "type"}),
+    "transaction_type": frozenset(
+        {"category", "category type", "transaction type", "type"}
+    ),
 }
+
+_CONSOLIDATED_GBP_HEADERS: Final = (
+    "date",
+    "description",
+    "category",
+    "money in out",
+    "balance",
+    "tax withheld",
+    "other taxes",
+    "fees",
+)
+_CONSOLIDATED_DUAL_CURRENCY_HEADERS: Final = (
+    "date",
+    "description",
+    "category",
+    "money in out",
+    "money in out",
+    "balance",
+    "balance",
+    "tax withheld",
+    "tax withheld",
+    "other taxes",
+    "other taxes",
+    "fees",
+    "fees",
+)
+_CONSOLIDATED_DATE = re.compile(r"^[A-Za-z]{3} \d{1,2}, \d{4}$")
+_CONSOLIDATED_GBP_MONEY = re.compile(r"^[+-]?£\d[\d,]*(?:\.\d{2})$")
+_GENERIC_PARSER_NAME: Final = "generic_csv"
+_GENERIC_LAYOUT_VERSION: Final = "flat_v1"
+_REVOLUT_PARSER_NAME: Final = "revolut_consolidated_csv"
+_REVOLUT_PARSER_VERSION: Final = "1.0.0"
+_REVOLUT_LAYOUT_VERSION: Final = "consolidated_v2_gbp_1"
+_NON_GBP_WARNING: Final = "non_gbp_transaction_sections_excluded"
+_EMPTY_GBP_SECTION_WARNING: Final = "empty_gbp_transaction_sections_ignored"
+
+
+@dataclass(frozen=True, slots=True)
+class _CsvTableSelection:
+    """One validated embedded transaction table and controlled metadata."""
+
+    headers: tuple[str, ...]
+    rows: tuple[CsvPreviewRow, ...]
+    warning_codes: tuple[str, ...]
+    excluded_transaction_rows: int
 
 
 def _normalise_heading(value: str) -> str:
@@ -174,11 +226,6 @@ def _validate_headers(raw_headers: list[str]) -> tuple[str, ...]:
             CsvImportErrorCode.INVALID_HEADER,
             "CSV headings must be non-empty and at most 255 characters",
         )
-    if len(headers) > MAX_CSV_COLUMNS:
-        raise CsvImportError(
-            CsvImportErrorCode.INVALID_HEADER,
-            f"CSV cannot contain more than {MAX_CSV_COLUMNS} columns",
-        )
     normalised = [_normalise_heading(value) for value in headers]
     if len(normalised) != len(set(normalised)):
         raise CsvImportError(
@@ -186,6 +233,207 @@ def _validate_headers(raw_headers: list[str]) -> tuple[str, ...]:
             "CSV headings must be unique",
         )
     return headers
+
+
+def _normalised_row(row: list[str]) -> tuple[str, ...]:
+    return tuple(_normalise_heading(value) for value in row)
+
+
+def _is_transaction_table_header(row: list[str]) -> bool:
+    """Recognise transaction-like headings so changed layouts fail closed."""
+    normalised = _normalised_row(row)
+    return (
+        len(normalised) >= 4
+        and normalised[:3] == ("date", "description", "category")
+        and "money in out" in normalised[3:]
+    )
+
+
+def _is_consolidated_header(row: list[str]) -> bool:
+    """Recognise the GBP transaction-table heading prefix."""
+    width = len(_CONSOLIDATED_GBP_HEADERS)
+    return (
+        len(row) >= width and _normalised_row(row[:width]) == _CONSOLIDATED_GBP_HEADERS
+    )
+
+
+def _is_consolidated_gbp_header(row: list[str]) -> bool:
+    """Recognise the narrow GBP-only table in the supported layout."""
+    width = len(_CONSOLIDATED_GBP_HEADERS)
+    return _is_consolidated_header(row) and all(
+        not value.strip() for value in row[width:]
+    )
+
+
+def _is_consolidated_dual_currency_header(row: list[str]) -> bool:
+    """Recognise the excluded paired-currency table in the supported layout."""
+    return _normalised_row(row) == _CONSOLIDATED_DUAL_CURRENCY_HEADERS
+
+
+def _parse_consolidated_date(value: str) -> datetime:
+    return datetime.strptime(value, "%b %d, %Y")
+
+
+def _parse_consolidated_gbp(value: str) -> Decimal:
+    try:
+        return Decimal(value.replace("£", "").replace(",", ""))
+    except InvalidOperation as error:  # pragma: no cover - guarded by the regex
+        raise ValueError("invalid consolidated money") from error
+
+
+def _embedded_table_row_count(
+    raw_rows: list[list[str]], header_index: int
+) -> int | None:
+    """Count a complete excluded table without inspecting its private values."""
+    for position, raw_row in enumerate(raw_rows[header_index + 1 :], start=1):
+        if not any(value.strip() for value in raw_row):
+            return None
+        if _normalise_heading(raw_row[0]) == "total":
+            return position - 1 or None
+    return None
+
+
+def _validated_gbp_rows(
+    raw_rows: list[list[str]], header_index: int
+) -> tuple[CsvPreviewRow, ...] | None:
+    """Require chronological, balance-reconciled rows and a matching total."""
+    width = len(_CONSOLIDATED_GBP_HEADERS)
+    selected: list[CsvPreviewRow] = []
+    amounts: list[Decimal] = []
+    previous_date: datetime | None = None
+    previous_balance: Decimal | None = None
+    footer_found = False
+    for row_index, raw_row in enumerate(
+        raw_rows[header_index + 1 :],
+        start=header_index + 2,
+    ):
+        if not any(value.strip() for value in raw_row):
+            break
+        if _normalise_heading(raw_row[0]) == "total":
+            footer_found = (
+                len(raw_row) >= width
+                and all(not value.strip() for value in raw_row[width:])
+                and _CONSOLIDATED_GBP_MONEY.fullmatch(raw_row[3].strip()) is not None
+                and _parse_consolidated_gbp(raw_row[3].strip()) == sum(amounts)
+            )
+            break
+        if (
+            len(raw_row) < width
+            or any(value.strip() for value in raw_row[width:])
+            or _CONSOLIDATED_DATE.fullmatch(raw_row[0].strip()) is None
+            or not raw_row[1].strip()
+            or not raw_row[2].strip()
+            or _CONSOLIDATED_GBP_MONEY.fullmatch(raw_row[3].strip()) is None
+            or _CONSOLIDATED_GBP_MONEY.fullmatch(raw_row[4].strip()) is None
+            or any(
+                value.strip()
+                and _CONSOLIDATED_GBP_MONEY.fullmatch(value.strip()) is None
+                for value in raw_row[5:8]
+            )
+        ):
+            return None
+        try:
+            parsed_date = _parse_consolidated_date(raw_row[0].strip())
+        except ValueError:
+            return None
+        amount = _parse_consolidated_gbp(raw_row[3].strip())
+        balance = _parse_consolidated_gbp(raw_row[4].strip())
+        if previous_date is not None and parsed_date < previous_date:
+            return None
+        if previous_balance is not None and balance != previous_balance + amount:
+            return None
+        selected.append(
+            CsvPreviewRow(
+                source_row_number=row_index,
+                values=tuple(raw_row[:width]),
+            )
+        )
+        amounts.append(amount)
+        previous_date = parsed_date
+        previous_balance = balance
+    if not selected or not footer_found:
+        return None
+    return tuple(selected)
+
+
+def _is_empty_gbp_table(raw_rows: list[list[str]], header_index: int) -> bool:
+    """Recognise a declared GBP table which contains only a zero-value total.
+
+    Some consolidated exports append a second account section even when it has no
+    transactions.  It is safe to ignore that section only when its first content
+    row is a structurally valid zero total; a malformed or data-bearing second
+    section must still make the layout unsupported.
+    """
+    width = len(_CONSOLIDATED_GBP_HEADERS)
+    for raw_row in raw_rows[header_index + 1 :]:
+        if not any(value.strip() for value in raw_row):
+            return False
+        if _normalise_heading(raw_row[0]) != "total":
+            return False
+        return (
+            len(raw_row) >= width
+            and all(not value.strip() for value in raw_row[width:])
+            and _CONSOLIDATED_GBP_MONEY.fullmatch(raw_row[3].strip()) is not None
+            and _parse_consolidated_gbp(raw_row[3].strip()) == Decimal("0.00")
+        )
+    return False
+
+
+def _consolidated_gbp_table(
+    raw_rows: list[list[str]],
+) -> _CsvTableSelection | None:
+    """Select one unambiguous GBP transaction table from a multi-section CSV."""
+    transaction_indexes = tuple(
+        index for index, row in enumerate(raw_rows) if _is_transaction_table_header(row)
+    )
+    gbp_indexes = tuple(
+        index
+        for index in transaction_indexes
+        if _is_consolidated_gbp_header(raw_rows[index])
+    )
+    excluded_indexes = tuple(
+        index
+        for index in transaction_indexes
+        if _is_consolidated_dual_currency_header(raw_rows[index])
+    )
+    if len(gbp_indexes) + len(excluded_indexes) != len(transaction_indexes):
+        return None
+    selected_tables = tuple(
+        (index, rows)
+        for index in gbp_indexes
+        if (rows := _validated_gbp_rows(raw_rows, index)) is not None
+    )
+    empty_gbp_indexes = tuple(
+        index
+        for index in gbp_indexes
+        if _validated_gbp_rows(raw_rows, index) is None
+        and _is_empty_gbp_table(raw_rows, index)
+    )
+    if len(selected_tables) != 1 or len(selected_tables) + len(
+        empty_gbp_indexes
+    ) != len(gbp_indexes):
+        return None
+    header_index, selected = selected_tables[0]
+    width = len(_CONSOLIDATED_GBP_HEADERS)
+    excluded_counts = tuple(
+        _embedded_table_row_count(raw_rows, index) for index in excluded_indexes
+    )
+    if any(count is None for count in excluded_counts):
+        return None
+    excluded_rows = sum(count for count in excluded_counts if count is not None)
+    return _CsvTableSelection(
+        headers=_validate_headers(raw_rows[header_index][:width]),
+        rows=selected,
+        warning_codes=tuple(
+            warning
+            for warning, applies in (
+                (_NON_GBP_WARNING, excluded_rows > 0),
+                (_EMPTY_GBP_SECTION_WARNING, bool(empty_gbp_indexes)),
+            )
+            if applies
+        ),
+        excluded_transaction_rows=excluded_rows,
+    )
 
 
 def _suggest_columns(columns: Iterable[str]) -> CsvColumnSuggestions:
@@ -261,6 +509,11 @@ def preview_csv(
         suggestions=document.suggestions,
         suggested_date_column=date_column,
         suggested_statement_period=statement_period,
+        parser_name=document.parser_name,
+        parser_version=document.parser_version,
+        layout_version=document.layout_version,
+        warning_codes=document.warning_codes,
+        excluded_transaction_rows=document.excluded_transaction_rows,
     )
 
 
@@ -290,34 +543,58 @@ def parse_csv_document(
     delimiter = _detect_delimiter(text)
     reader = csv.reader(StringIO(text, newline=""), delimiter=delimiter, strict=True)
     try:
-        headers = _validate_headers(next(reader))
-        rows: list[CsvPreviewRow] = []
-        total_data_rows = 0
-        for raw_row in reader:
-            total_data_rows += 1
-            if len(raw_row) != len(headers):
-                raise CsvImportError(
-                    CsvImportErrorCode.MALFORMED_CSV,
-                    f"CSV row {total_data_rows + 1} has an unexpected column count",
-                )
-            if any(len(value) > MAX_CELL_CHARACTERS for value in raw_row):
-                raise CsvImportError(
-                    CsvImportErrorCode.MALFORMED_CSV,
-                    f"CSV row {total_data_rows + 1} contains an oversized value",
-                )
-            rows.append(
-                CsvPreviewRow(
-                    source_row_number=total_data_rows + 1,
-                    values=tuple(raw_row),
-                )
-            )
+        raw_rows = list(reader)
     except csv.Error as exc:
         raise CsvImportError(
             CsvImportErrorCode.MALFORMED_CSV,
             "CSV quoting or row structure is malformed",
         ) from exc
 
-    if total_data_rows == 0:
+    if any(len(row) > MAX_CSV_COLUMNS for row in raw_rows):
+        raise CsvImportError(
+            CsvImportErrorCode.INVALID_HEADER,
+            f"CSV cannot contain more than {MAX_CSV_COLUMNS} columns",
+        )
+    if any(len(value) > MAX_CELL_CHARACTERS for row in raw_rows for value in row):
+        raise CsvImportError(
+            CsvImportErrorCode.MALFORMED_CSV,
+            "CSV contains an oversized value",
+        )
+
+    parser_name = _GENERIC_PARSER_NAME
+    parser_version = "1.0.0"
+    layout_version = _GENERIC_LAYOUT_VERSION
+    warning_codes: tuple[str, ...] = ()
+    excluded_transaction_rows = 0
+    try:
+        headers = _validate_headers(raw_rows[0])
+    except CsvImportError as original_error:
+        consolidated = _consolidated_gbp_table(raw_rows)
+        if consolidated is None:
+            raise original_error
+        headers = consolidated.headers
+        rows = list(consolidated.rows)
+        parser_name = _REVOLUT_PARSER_NAME
+        parser_version = _REVOLUT_PARSER_VERSION
+        layout_version = _REVOLUT_LAYOUT_VERSION
+        warning_codes = consolidated.warning_codes
+        excluded_transaction_rows = consolidated.excluded_transaction_rows
+    else:
+        rows = []
+        for source_row_number, raw_row in enumerate(raw_rows[1:], start=2):
+            if len(raw_row) != len(headers):
+                raise CsvImportError(
+                    CsvImportErrorCode.MALFORMED_CSV,
+                    f"CSV row {source_row_number} has an unexpected column count",
+                )
+            rows.append(
+                CsvPreviewRow(
+                    source_row_number=source_row_number,
+                    values=tuple(raw_row),
+                )
+            )
+
+    if not rows:
         raise CsvImportError(
             CsvImportErrorCode.EMPTY_FILE,
             "CSV contains headings but no data rows",
@@ -331,6 +608,11 @@ def parse_csv_document(
         columns=headers,
         rows=tuple(rows),
         suggestions=_suggest_columns(headers),
+        parser_name=parser_name,
+        parser_version=parser_version,
+        layout_version=layout_version,
+        warning_codes=warning_codes,
+        excluded_transaction_rows=excluded_transaction_rows,
     )
 
 

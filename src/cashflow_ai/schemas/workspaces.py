@@ -151,6 +151,11 @@ class WorkspaceSourceFile(_WorkspaceContract):
     reason_code: str = Field(min_length=1, max_length=100)
     guidance: str = Field(min_length=1, max_length=500)
     row_count: int = Field(ge=0)
+    parser_name: str | None = Field(default=None, min_length=1, max_length=100)
+    parser_version: str | None = Field(default=None, min_length=1, max_length=50)
+    layout_version: str | None = Field(default=None, min_length=1, max_length=100)
+    warning_codes: tuple[Annotated[str, Field(min_length=1, max_length=100)], ...] = ()
+    excluded_transaction_rows: int = Field(default=0, ge=0)
     page_count: PositiveInt | None = None
     mapping_structure_digest: Sha256Digest | None = None
     mapping_columns: tuple[Annotated[str, Field(min_length=1, max_length=255)], ...] = (
@@ -389,6 +394,7 @@ class WorkspaceFinalizeRequest(_WorkspaceContract):
     statement_confirmed: Literal[True]
     date_interpretation_confirmed: Literal[True]
     sign_convention_confirmed: Literal[True]
+    source_exclusions_confirmed: bool = False
     coverage: WorkspaceCoverageConfirmation
     balance: WorkspaceBalanceConfirmation | None = Field(default=None, repr=False)
 
